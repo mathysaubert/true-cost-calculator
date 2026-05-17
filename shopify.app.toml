@@ -45,7 +45,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://true-cost-calculator-silk.vercel.app/auth/callback" ]
+redirect_urls = [ "https://true-cost-calculator-silk.vercel.app/api/auth" ]
 
 [build]
 automatically_update_urls_on_dev = true
