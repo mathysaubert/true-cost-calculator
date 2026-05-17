@@ -10,14 +10,14 @@ import { redirect } from "react-router";
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
+  console.log("[api.auth] OAuth callback hit, shop:", shop, "url:", request.url);
 
   if (!shop) {
+    console.log("[api.auth] No shop param, redirecting to /auth/login");
     return redirect("/auth/login");
   }
 
-  // Redirect to the app inside Shopify admin — App Bridge will provide
-  // a session token and Token Exchange will create the session.
-  return redirect(
-    `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}`
-  );
+  const target = `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}`;
+  console.log("[api.auth] Redirecting to:", target);
+  return redirect(target);
 };
