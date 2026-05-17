@@ -1,4 +1,4 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from "react-router";
 
 export default function App() {
   return (
@@ -18,6 +18,28 @@ export default function App() {
         <Outlet />
         <ScrollRestoration />
         <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  console.error("[root] Unhandled error:", error);
+  return (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <title>Error</title>
+      </head>
+      <body style={{ fontFamily: "sans-serif", padding: "2rem" }}>
+        <h1>App Error</h1>
+        <p>{error?.message || String(error)}</p>
+        {error?.stack && (
+          <pre style={{ fontSize: "0.8rem", background: "#f5f5f5", padding: "1rem", overflow: "auto" }}>
+            {error.stack}
+          </pre>
+        )}
       </body>
     </html>
   );
