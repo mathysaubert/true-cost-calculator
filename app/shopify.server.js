@@ -4,7 +4,6 @@ import {
   AppDistribution,
   BillingInterval,
   shopifyApp,
-  LogSeverity,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
@@ -20,10 +19,6 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
-  logger: {
-    level: LogSeverity.Debug,
-    timestamps: true,
-  },
   future: {
     expiringOfflineAccessTokens: true,
   },
