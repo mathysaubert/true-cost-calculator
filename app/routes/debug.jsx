@@ -2,6 +2,7 @@ import { useLoaderData } from "react-router";
 
 export const loader = async () => {
   const secret = process.env.SHOPIFY_API_SECRET || "";
+  const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
   return {
     SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
       ? `${process.env.SHOPIFY_API_KEY.slice(0, 8)}...${process.env.SHOPIFY_API_KEY.slice(-4)}`
@@ -14,6 +15,9 @@ export const loader = async () => {
     DATABASE_URL: process.env.DATABASE_URL ? "SET" : "NOT SET",
     DIRECT_URL: process.env.DIRECT_URL ? "SET" : "NOT SET",
     SUPABASE_URL: process.env.SUPABASE_URL || "NOT SET",
+    ANTHROPIC_API_KEY: anthropicKey
+      ? `SET — length:${anthropicKey.length}, prefix:${anthropicKey.slice(0, 7)}`
+      : "NOT SET",
     NODE_ENV: process.env.NODE_ENV || "unknown",
   };
 };
