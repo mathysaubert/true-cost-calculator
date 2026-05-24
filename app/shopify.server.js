@@ -9,6 +9,7 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import prisma from "./db.server";
 
 export const PLAN_PRO = "True Cost Calculator Pro";
+export const PLAN_EXPERT = "True Cost Calculator Expert";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -27,6 +28,15 @@ const shopify = shopifyApp({
       lineItems: [
         {
           amount: 9,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+    },
+    [PLAN_EXPERT]: {
+      lineItems: [
+        {
+          amount: 29,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
         },
