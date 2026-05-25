@@ -593,7 +593,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
   // ── Save calculation ───────────────────────────────────────────────────────
   let hasActivePayment = false;
   try {
-    const result = await billing.check({ plans: [PLAN_PRO], isTest: true });
+    const result = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
     hasActivePayment = result.hasActivePayment;
   } catch (e) {
     console.error("[Billing] action check failed:", e?.message);
@@ -998,7 +998,7 @@ export default function Index() {
               </div>
             )}
 
-            {showUpgrade ? (
+            {showUpgrade && !isPro ? (
               <div style={{ padding: "24px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ fontSize: "36px", marginBottom: "12px" }}>🔒</div>
