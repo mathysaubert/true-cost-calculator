@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -87,6 +87,27 @@ const hintStyle  = { fontSize: "11px", color: "#6D7175", marginTop: "3px" };
 
 function FieldGroup({ label, tooltip, children }) {
   const [showTip, setShowTip] = useState(false);
+  const [flipLeft, setFlipLeft] = useState(false);
+  const tipRef = useRef(null);
+
+  // After the tooltip renders, check if it overflows the viewport on the right.
+  // useLayoutEffect runs before paint so there's no visible flash.
+  useLayoutEffect(() => {
+    if (!showTip || !tipRef.current) return;
+    const rect = tipRef.current.getBoundingClientRect();
+    setFlipLeft(rect.right > window.innerWidth - 8);
+  }, [showTip]);
+
+  const handleToggle = () => {
+    if (showTip) {
+      setShowTip(false);
+      setFlipLeft(false);
+    } else {
+      setFlipLeft(false); // reset before re-opening so measurement starts from left
+      setShowTip(true);
+    }
+  };
+
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
@@ -95,11 +116,14 @@ function FieldGroup({ label, tooltip, children }) {
           <div style={{ position: "relative" }}>
             <button
               type="button"
-              onClick={() => setShowTip(v => !v)}
+              onClick={handleToggle}
               style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >?</button>
             {showTip && (
-              <div style={{ position: "absolute", left: "22px", top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
+              <div
+                ref={tipRef}
+                style={{ position: "absolute", ...(flipLeft ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}
+              >
                 {tooltip}
               </div>
             )}
