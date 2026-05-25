@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useFetcher, useLoaderData, useRouteError } from "react-router";
+import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { supabase } from "../supabase.server";
@@ -650,12 +650,17 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 export default function Index() {
   const { isPro, isExpert, monthlyCount: initialCount, history, products, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations } = useLoaderData();
 
-  const saveFetcher      = useFetcher();
-  const subscribeFetcher = useFetcher();
-  const aiFetcher        = useFetcher();
-  const alertFetcher     = useFetcher();
-  const auditFetcher     = useFetcher();
-  const annotFetcher     = useFetcher();
+  const saveFetcher  = useFetcher();
+  const aiFetcher    = useFetcher();
+  const alertFetcher = useFetcher();
+  const auditFetcher = useFetcher();
+  const annotFetcher = useFetcher();
+
+  // Billing uses useSubmit (full-page navigation) so App Bridge can intercept
+  // the redirect thrown by billing.request() and open Shopify billing in the
+  // parent frame — useFetcher would follow the redirect inside the iframe.
+  const billingSubmit = useSubmit();
+  const navigation    = useNavigation();
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -882,10 +887,10 @@ export default function Index() {
   };
 
   const handleSubscribe = () => {
-    subscribeFetcher.submit({ _action: "subscribe" }, { method: "POST", encType: "application/json" });
+    billingSubmit({ _action: "subscribe" }, { method: "POST", encType: "application/json" });
   };
   const handleSubscribeExpert = () => {
-    subscribeFetcher.submit({ _action: "subscribe_expert" }, { method: "POST", encType: "application/json" });
+    billingSubmit({ _action: "subscribe_expert" }, { method: "POST", encType: "application/json" });
   };
   const handleAnnotate = (calcId) => { setAnnotModal(calcId); setAnnotText(annotations.find(a => a.calculation_id === calcId)?.note ?? ""); };
   const handleSaveAnnotation = () => {
@@ -910,7 +915,9 @@ export default function Index() {
   const shippingDisplay    = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
   const isSaving    = saveFetcher.state !== "idle";
   const saveStatus  = saveFetcher.data;
-  const isSubscribing = subscribeFetcher.state !== "idle";
+  // Show loading when a billing navigation is in progress
+  const isSubscribing = navigation.state !== "idle" &&
+    ["subscribe", "subscribe_expert"].includes(navigation.json?._action);
   const isSavingAlert = alertFetcher.state !== "idle";
 
   const subscribeBtn = (label = "Passer au Pro — 9$/mois") => (
