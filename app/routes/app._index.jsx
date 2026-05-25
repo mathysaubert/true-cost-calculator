@@ -1881,12 +1881,24 @@ export default function Index() {
       </s-section>
 
       <s-section slot="aside" heading="Taux de douane">
-        <s-paragraph>Source : nomenclature TARIC (règlement CE 2658/87). Taux moyens indicatifs.</s-paragraph>
+        <s-paragraph>
+          Chaque produit importé depuis l'étranger est soumis à une taxe douanière calculée sur sa valeur. Ce taux varie selon la catégorie du produit. Il est automatiquement intégré dans votre calcul de marge.
+        </s-paragraph>
         <s-unordered-list>
-          {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-            <s-list-item key={cat}>{cat} : {parseFloat((rate * 100).toFixed(1))}%</s-list-item>
-          ))}
+          <s-list-item>Vêtements & Textile : 12%</s-list-item>
+          <s-list-item>Électronique & High-tech : 5%</s-list-item>
+          <s-list-item>Cosmétique & Beauté : 10%</s-list-item>
+          <s-list-item>Accessoires & Bijoux : 7%</s-list-item>
+          <s-list-item>Sport & Fitness : 5%</s-list-item>
+          <s-list-item>Alimentation & Nutrition : 15%</s-list-item>
+          <s-list-item>Maroquinerie & Sacs : 3%</s-list-item>
+          <s-list-item>Jouets & Enfants : 0%</s-list-item>
+          <s-list-item>Mobilier & Décoration : 2.7%</s-list-item>
+          <s-list-item>Autre : 3%</s-list-item>
         </s-unordered-list>
+        <div style={{ fontSize: "12px", color: "#6D7175", fontStyle: "italic", marginTop: "10px", lineHeight: "1.5" }}>
+          Taux moyens indicatifs. Le montant exact dépend de l'origine du produit et de sa sous-catégorie douanière.
+        </div>
       </s-section>
 
     </s-page>
