@@ -11,7 +11,8 @@ const DEFAULT_ALERT_THRESHOLD = 25;
 
 const CUSTOMS_RATES = {
   Textile: 0.12, Électronique: 0.05, Cosmétique: 0.10,
-  Accessoires: 0.07, Sport: 0.05, Alimentation: 0.15, Autre: 0.03,
+  Accessoires: 0.07, Sport: 0.05, Alimentation: 0.15,
+  Maroquinerie: 0.03, Jouets: 0, Mobilier: 0.027, Autre: 0.03,
 };
 const SHIPPING_ESTIMATES = { Chine: 8, Inde: 6, Turquie: 4, UE: 2, Autre: 5 };
 
@@ -39,6 +40,15 @@ function validatePercentage(raw, label, errors) {
   const n = parseFloat(s);
   if (!Number.isFinite(n) || n < 0) { errors.push(`${label} : valeur invalide.`); return null; }
   if (n > 100) { errors.push(`${label} ne peut pas dépasser 100%.`); return null; }
+  return n;
+}
+
+function validateOptionalAmount(raw, label, errors) {
+  const s = normalizeDecimal(raw);
+  if (s === "" || s === "0") return 0;
+  if (!/^\d+(\.\d*)?$/.test(s)) { errors.push(`${label} : saisissez un montant valide (ex : 1.50).`); return null; }
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n < 0) { errors.push(`${label} : valeur invalide.`); return null; }
   return n;
 }
 
@@ -75,12 +85,28 @@ const hintStyle  = { fontSize: "11px", color: "#6D7175", marginTop: "3px" };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function FieldGroup({ label, hint, children }) {
+function FieldGroup({ label, tooltip, children }) {
+  const [showTip, setShowTip] = useState(false);
   return (
     <div style={{ marginBottom: "16px" }}>
-      <label style={labelStyle}>{label}</label>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>{label}</label>
+        {tooltip && (
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setShowTip(v => !v)}
+              style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+            >?</button>
+            {showTip && (
+              <div style={{ position: "absolute", left: "22px", top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
+                {tooltip}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       {children}
-      {hint && <div style={hintStyle}>{hint}</div>}
     </div>
   );
 }
@@ -770,6 +796,7 @@ export default function Index() {
     prixAchat: "20", prixVente: "49.99",
     categorie: "Textile", paysImport: "Chine",
     shopifyFee: "2", stripeFee: "2.5", retours: "5", ads: "15",
+    fraisRetour: "0", coutEmballage: "0",
   });
 
   // Feature 3: simulation form
@@ -866,10 +893,12 @@ export default function Index() {
     const stripeFeeVal  = validatePercentage(form.stripeFee,  "Frais Stripe",  errs);
     const retoursVal    = validatePercentage(form.retours,    "Taux de retours", errs);
     const adsVal        = validatePercentage(form.ads,        "Budget ads",    errs);
+    const fraisRetourVal   = validateOptionalAmount(form.fraisRetour,   "Frais de retour",  errs);
+    const coutEmballageVal = validateOptionalAmount(form.coutEmballage, "Coût d'emballage", errs);
 
     if (errs.length > 0) { setErrors(errs); setWarnings([]); setResults(null); return null; }
 
-    if (prixAchat > prixVente) warns.push("Attention : tu vends moins cher que tu achètes.");
+    if (prixAchat > prixVente) warns.push("Attention : vous vendez moins cher que vous achetez.");
     else if (prixAchat === prixVente) warns.push("Prix achat = prix vente : marge 0% avant frais.");
     const totalPct = shopifyFeeVal + stripeFeeVal + retoursVal + adsVal;
     if (totalPct > 100) warns.push(`Frais cumulés (${totalPct.toFixed(1)}%) dépassent 100% du CA.`);
@@ -884,9 +913,10 @@ export default function Index() {
     const retoursCost    = prixVente * (retoursVal    / 100);
     const adsCost        = prixVente * (adsVal        / 100);
     const totalFraisVente    = shopifyCost + stripeCost + retoursCost + adsCost;
+    const fraisFixes         = fraisRetourVal + coutEmballageVal;
     const margeBrute         = prixVente - coutRendu;
     const margeBrutePercent  = (margeBrute / prixVente) * 100;
-    const margeNette         = margeBrute - totalFraisVente;
+    const margeNette         = margeBrute - totalFraisVente - fraisFixes;
     const margeNettePercent  = (margeNette / prixVente) * 100;
     const margeApparente     = ((prixVente - prixAchat) / prixVente) * 100;
 
@@ -897,6 +927,7 @@ export default function Index() {
     const r = {
       prixAchat, prixVente, douane, tvaImport, shipping, coutRendu,
       shopifyCost, stripeCost, retoursCost, adsCost, totalFraisVente,
+      fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes,
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
       margeApparente, customsRate,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal,
@@ -1010,7 +1041,7 @@ export default function Index() {
     ? results.margeNettePercent < 10 ? "#FFF4F4" : results.margeNettePercent < 25 ? "#FFF9EC" : "#F1F8F5"
     : "#F1F8F5";
   const marginLabel = results
-    ? results.margeNettePercent < 0 ? "Marge négative" : results.margeNettePercent < 10 ? "Marge critique" : results.margeNettePercent < 25 ? "Marge faible" : "Marge saine"
+    ? results.margeNettePercent < 0 ? "Perte nette" : results.margeNettePercent < 10 ? "Rentabilité insuffisante" : results.margeNettePercent < 25 ? "Marge à surveiller" : "Marge saine"
     : "";
   const gaugeWidth = results ? `${Math.max(0, Math.min(100, safeNum(results.margeNettePercent)))}%` : "0%";
   const customsRateDisplay = ((CUSTOMS_RATES[form.categorie] ?? 0.03) * 100).toFixed(0);
@@ -1174,40 +1205,48 @@ export default function Index() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Données produit</div>
-                    <FieldGroup label="Prix d'achat fournisseur (€)">
+                    <FieldGroup label="Prix d'achat fournisseur (€)" tooltip="Prix hors taxes payé au fournisseur, livraison fournisseur non incluse. À retrouver sur votre facture pro-forma ou votre commande AliExpress / Alibaba.">
                       <input type="text" inputMode="decimal" value={form.prixAchat} onChange={update("prixAchat")} style={inputStyle} placeholder="ex : 20.00" />
                     </FieldGroup>
-                    <FieldGroup label="Prix de vente (€)">
+                    <FieldGroup label="Prix de vente (€)" tooltip="Prix public de vente sur votre boutique, frais de livraison client exclus. C'est le montant que vous encaissez.">
                       <input type="text" inputMode="decimal" value={form.prixVente} onChange={update("prixVente")} style={inputStyle} placeholder="ex : 49.99" />
                     </FieldGroup>
-                    <FieldGroup label="Catégorie produit" hint={`Taux de douane appliqué : ${customsRateDisplay}%`}>
+                    <FieldGroup label="Catégorie produit" tooltip="Utilisée pour estimer vos droits de douane selon la nomenclature TARIC (tarif douanier intégré de l'UE). Choisissez la catégorie la plus proche de votre produit.">
                       <select value={form.categorie} onChange={update("categorie")} style={inputStyle}>
                         {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                          <option key={cat} value={cat}>{cat} — douane {(rate * 100).toFixed(0)}%</option>
+                          <option key={cat} value={cat}>{cat} — douane {parseFloat((rate * 100).toFixed(1))}%</option>
                         ))}
                       </select>
+                      <div style={hintStyle}>Taux appliqué : {customsRateDisplay}%</div>
                     </FieldGroup>
-                    <FieldGroup label="Pays d'import" hint={`Frais de port estimés : ~${shippingDisplay}€`}>
+                    <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché — renseignez votre coût réel si vous le connaissez.">
                       <select value={form.paysImport} onChange={update("paysImport")} style={inputStyle}>
                         {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
                           <option key={pays} value={pays}>{pays} — shipping ~{cost}€</option>
                         ))}
                       </select>
+                      <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay}€</div>
                     </FieldGroup>
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais & déductions</div>
-                    <FieldGroup label="Frais Shopify (% du CA)" hint="Basic : 2% — Shopify : 1% — Advanced : 0.5%">
+                    <FieldGroup label="Frais Shopify (% du CA)" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.shopifyFee} onChange={update("shopifyFee")} style={inputStyle} placeholder="ex : 2" />
                     </FieldGroup>
-                    <FieldGroup label="Frais Stripe (% du CA)" hint="Stripe standard ≈ 1.5–2.5%">
+                    <FieldGroup label="Frais Stripe (% du CA)" tooltip="Frais de traitement de paiement prélevés par Stripe. En France : 1,5% + 0,25€ par transaction (≈ 2% sur une commande de 50€). Source : stripe.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.stripeFee} onChange={update("stripeFee")} style={inputStyle} placeholder="ex : 2.5" />
                     </FieldGroup>
-                    <FieldGroup label="Taux de retours (%)" hint="Moyenne e-commerce : 5–15%">
+                    <FieldGroup label="Taux de retours (%)" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
                       <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 5" />
                     </FieldGroup>
-                    <FieldGroup label="Budget ads (% du CA)" hint="Meta/TikTok Ads : 15–30% typique">
+                    <FieldGroup label="Budget ads (% du CA)" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
                       <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 15" />
+                    </FieldGroup>
+                    <FieldGroup label="Frais de retour (€)" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
+                      <input type="text" inputMode="decimal" value={form.fraisRetour} onChange={update("fraisRetour")} style={inputStyle} placeholder="0" />
+                    </FieldGroup>
+                    <FieldGroup label="Coût d'emballage (€)" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                      <input type="text" inputMode="decimal" value={form.coutEmballage} onChange={update("coutEmballage")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
                   </div>
                 </div>
@@ -1258,16 +1297,16 @@ export default function Index() {
                     ))}
                   </select>
                 </FieldGroup>
-                <FieldGroup label="Marge nette cible (%)" hint="La marge nette que vous souhaitez atteindre après tous les frais">
+                <FieldGroup label="Marge nette cible (%)" tooltip="La marge nette que vous souhaitez atteindre après tous les frais (Shopify, Stripe, retours, ads inclus).">
                   <input type="text" inputMode="decimal" value={simForm.targetMargin} onChange={updateSim("targetMargin")} style={{ ...inputStyle, borderColor: "#008060", fontWeight: "600" }} placeholder="ex : 35" />
                 </FieldGroup>
               </div>
               <div>
                 <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais à déduire</div>
-                <FieldGroup label="Frais Shopify (%)" hint="Basic : 2%">
+                <FieldGroup label="Frais Shopify (%)" tooltip="Basic 2% · Shopify 1% · Advanced 0,5%. Source : shopify.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.shopifyFee} onChange={updateSim("shopifyFee")} style={inputStyle} placeholder="2" />
                 </FieldGroup>
-                <FieldGroup label="Frais Stripe (%)" hint="Standard ≈ 2.5%">
+                <FieldGroup label="Frais Stripe (%)" tooltip="Frais de traitement Stripe. En France : 1,5% + 0,25€ par transaction. Source : stripe.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.stripeFee} onChange={updateSim("stripeFee")} style={inputStyle} placeholder="2.5" />
                 </FieldGroup>
                 <FieldGroup label="Taux de retours (%)">
@@ -1419,12 +1458,17 @@ export default function Index() {
         {/* ════════ ALERTS TAB (Feature 4) ════════════════════════════════ */}
         {activeTab === "alerts" && (
           <div>
-            <div style={{ fontSize: "14px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
-              Définissez un seuil de marge nette minimum. L'app affiche une alerte dès qu'un calcul est en dessous de ce seuil.
+            {/* Encadré explicatif */}
+            <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
+              Les alertes de marge vous notifient automatiquement quand un produit calculé tombe en dessous de votre seuil de rentabilité cible. Le seuil par défaut est 25% — c'est le minimum recommandé en e-commerce selon le Fevad pour maintenir une activité saine après charges fixes.
             </div>
 
-            <div style={{ maxWidth: "360px", marginBottom: "28px" }}>
-              <FieldGroup label="Seuil de marge minimum (%)" hint="Par défaut : 25%. L'alerte s'affiche si votre marge nette tombe en dessous.">
+            <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
+              L'alerte apparaît en rouge en haut de l'app à chaque connexion, sur les 20 derniers calculs.
+            </div>
+
+            <div style={{ maxWidth: "420px", marginBottom: "28px" }}>
+              <FieldGroup label="Seuil de rentabilité cible (%)">
                 <div style={{ display: "flex", gap: "10px" }}>
                   <input
                     type="text"
@@ -1443,11 +1487,14 @@ export default function Index() {
                   </button>
                 </div>
               </FieldGroup>
+              <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px", lineHeight: "1.6" }}>
+                Références marché : E-commerce généraliste 20–25% · Mode 15–20% · Électronique 8–12% · Cosmétique 30–40%
+              </div>
               {alertFetcher.data?.success && (
-                <div style={{ fontSize: "13px", color: "#008060", marginTop: "4px" }}>✓ Seuil mis à jour</div>
+                <div style={{ fontSize: "13px", color: "#008060", marginTop: "8px" }}>✓ Seuil mis à jour</div>
               )}
               {alertFetcher.data?.error && (
-                <div style={{ fontSize: "13px", color: "#D72C0D", marginTop: "4px" }}>{alertFetcher.data.error}</div>
+                <div style={{ fontSize: "13px", color: "#D72C0D", marginTop: "8px" }}>{alertFetcher.data.error}</div>
               )}
             </div>
 
@@ -1494,6 +1541,29 @@ export default function Index() {
             const winners = products.filter(p => p.netPct >= 15);
             return (
               <div>
+                {/* Guide: how to set unit cost in Shopify */}
+                <div style={{ padding: "16px 20px", borderRadius: "10px", background: "linear-gradient(135deg,#f8f6ff,#f0ecff)", border: "1px solid #7C3AED33", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "12px" }}>Avant de lancer l'audit : renseigner le coût par article dans Shopify</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
+                    {[
+                      "Ouvrez votre admin Shopify et cliquez sur Produits dans le menu latéral.",
+                      "Sélectionnez le produit à mettre à jour.",
+                      "Faites défiler jusqu'à la section Variantes.",
+                      "Cliquez sur la variante (ou sur Modifier si vous avez plusieurs variantes).",
+                      "Dans la section Expédition, remplissez le champ Coût par article (votre prix fournisseur HT).",
+                      "Cliquez sur Enregistrer. Répétez pour chaque produit.",
+                    ].map((step, i) => (
+                      <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                        <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#7C3AED", color: "#fff", fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
+                        <div style={{ fontSize: "13px", color: "#202223", lineHeight: "1.5", paddingTop: "2px" }}>{step}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#7C3AED", fontStyle: "italic" }}>
+                    Seuls les produits avec un coût renseigné apparaîtront dans les résultats de l'audit.
+                  </div>
+                </div>
+
                 {/* Params */}
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
@@ -1589,6 +1659,34 @@ export default function Index() {
                   </>
                 )}
 
+                {/* Analyse et recommandations */}
+                {auditData && !isAuditing && (losers.length > 0 || risky.length > 0) && (
+                  <div style={{ marginTop: "28px" }}>
+                    <div style={{ fontSize: "14px", fontWeight: "700", color: "#202223", marginBottom: "16px" }}>Analyse et recommandations</div>
+                    {losers.length > 0 && (
+                      <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF4F4", border: "1px solid #D72C0D33", marginBottom: "12px" }}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#D72C0D", marginBottom: "10px" }}>🚨 {losers.length} produit{losers.length > 1 ? "s" : ""} à marge négative — action immédiate requise</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
+                          <div>• <strong>Vérifiez le coût fournisseur</strong> dans Shopify : une saisie incorrecte peut fausser le calcul.</div>
+                          <div>• <strong>Augmentez le prix de vente</strong> : ces produits sont actuellement vendus à perte. Utilisez l'onglet Simulateur pour calculer le prix minimum.</div>
+                          <div>• <strong>Renégociez avec votre fournisseur</strong> ou changez de source d'approvisionnement si le prix de vente ne peut pas être augmenté.</div>
+                          <div>• <strong>Envisagez de désactiver ces produits</strong> jusqu'à résolution — chaque vente aggrave vos pertes.</div>
+                        </div>
+                      </div>
+                    )}
+                    {risky.length > 0 && (
+                      <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #B9890033" }}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} à marge insuffisante (0–15%) — à optimiser</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
+                          <div>• <strong>Marge insuffisante pour absorber les charges fixes</strong> (loyer, salaires, logistique). Ciblez au minimum 20–25% de marge nette.</div>
+                          <div>• <strong>Réduisez vos frais d'acquisition</strong> : ces produits ne peuvent pas supporter un budget publicitaire significatif.</div>
+                          <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur et améliorer le coût rendu.</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {!auditData && !isAuditing && (
                   <div style={{ textAlign: "center", padding: "40px 24px", color: "#6D7175" }}>
                     <div style={{ fontSize: "32px", marginBottom: "12px" }}>🔍</div>
@@ -1630,20 +1728,20 @@ export default function Index() {
           <div style={{ padding: "20px 24px", borderRadius: "8px", background: marginBg, borderLeft: `5px solid ${marginColor}`, marginBottom: "28px" }}>
             {results.margeNettePercent < 0 ? (
               <>
-                <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Attention : tu perds de l'argent sur chaque vente.</div>
+                <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Perte nette — vous perdez de l'argent à chaque vente.</div>
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
-                  Tu pensais faire <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong> de marge.
-                  Tu fais en réalité <strong style={{ color: "#D72C0D" }}>{pct(results.margeNettePercent)}%</strong>.
-                  Chaque vente te coûte <strong style={{ color: "#D72C0D" }}>{fmt(Math.abs(results.margeNette))}€</strong>.
+                  Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
+                  {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{pct(results.margeNettePercent)}%</strong>
+                  {" "}(<strong style={{ color: "#D72C0D" }}>−{fmt(Math.abs(results.margeNette))}€ par vente</strong>).
                 </div>
               </>
             ) : (
               <>
                 <div style={{ fontSize: "17px", fontWeight: "700", color: marginColor, marginBottom: "8px" }}>{marginLabel}</div>
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
-                  Tu pensais faire <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong> de marge.
-                  Tu fais en réalité <strong style={{ color: marginColor }}>{pct(results.margeNettePercent)}%</strong> de marge nette,
-                  soit <strong style={{ color: marginColor }}>{fmt(results.margeNette)}€</strong> par vente.
+                  Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
+                  {" → "}Votre marge nette réelle : <strong style={{ color: marginColor }}>{pct(results.margeNettePercent)}%</strong>
+                  {" "}(<strong style={{ color: marginColor }}>{fmt(results.margeNette)}€ par vente</strong>).
                 </div>
               </>
             )}
@@ -1667,7 +1765,7 @@ export default function Index() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "32px" }}>
-            <StatCard label="Marge apparente"    value={`${pct(results.margeApparente)}%`}    sub="Ce que tu croyais faire"        color="#6D7175"   bg="#F9FAFB" />
+            <StatCard label="Marge apparente"    value={`${pct(results.margeApparente)}%`}    sub="Marge apparente calculée"        color="#6D7175"   bg="#F9FAFB" />
             <StatCard label="Marge brute"         value={`${pct(results.margeBrutePercent)}%`} sub={`${fmt(results.margeBrute)}€ / vente`} color="#202223"   bg="#F9FAFB" />
             <StatCard label="Marge nette réelle"  value={`${pct(results.margeNettePercent)}%`} sub={`${fmt(results.margeNette)}€ / vente`} color={marginColor} bg={marginBg} />
           </div>
@@ -1706,6 +1804,8 @@ export default function Index() {
                 { label: `— Frais Stripe (${form.stripeFee}%)`,   value: results.stripeCost },
                 { label: `— Provision retours (${form.retours}%)`, value: results.retoursCost },
                 { label: `— Budget ads (${form.ads}%)`,           value: results.adsCost },
+                ...(results.fraisRetour > 0 ? [{ label: "— Frais de retour", value: results.fraisRetour }] : []),
+                ...(results.coutEmballage > 0 ? [{ label: "— Coût d'emballage", value: results.coutEmballage }] : []),
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color: "#D72C0D" }}>{label}</span>
@@ -1766,23 +1866,20 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Comment ça marche ?">
+      <s-section slot="aside" heading="Méthodologie">
         <s-paragraph>
-          Ce calculateur révèle votre <strong>vraie marge nette</strong> en intégrant tous les coûts cachés.
+          Calcul basé sur la structure de coût réelle d'un e-commerçant : coût fournisseur + droits de douane TARIC + TVA import 20% + frais de port estimés + commissions plateformes + provision retours.
         </s-paragraph>
-        <s-unordered-list>
-          <s-list-item>Sélection depuis votre catalogue Shopify</s-list-item>
-          <s-list-item>Droits de douane selon catégorie</s-list-item>
-          <s-list-item>TVA à l'import (20%)</s-list-item>
-          <s-list-item>Frais Shopify, Stripe, retours & ads</s-list-item>
-          <s-list-item>Recommandation IA (Claude) après chaque calcul</s-list-item>
-        </s-unordered-list>
+        <s-paragraph>
+          <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, données Fevad 2023 pour les taux de retour sectoriels.
+        </s-paragraph>
       </s-section>
 
       <s-section slot="aside" heading="Taux de douane">
+        <s-paragraph>Source : nomenclature TARIC (règlement CE 2658/87). Taux moyens indicatifs.</s-paragraph>
         <s-unordered-list>
           {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-            <s-list-item key={cat}>{cat} : {(rate * 100).toFixed(0)}%</s-list-item>
+            <s-list-item key={cat}>{cat} : {parseFloat((rate * 100).toFixed(1))}%</s-list-item>
           ))}
         </s-unordered-list>
       </s-section>
