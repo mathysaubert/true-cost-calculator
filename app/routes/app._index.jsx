@@ -281,17 +281,49 @@ function ExpertGate({ onUpgrade }) {
 // Break-Even ROAS (Expert feature)
 // Formula: PV / (PV - CoutRendu - FraisShopify - FraisStripe - ProvisionRetours)
 // Ads excluded from denominator — we compute available margin BEFORE ad spend
+const AD_PLATFORMS = [
+  { name: "Meta Ads", sub: "Facebook / Instagram", min: 2.5, max: 3.5,
+    icon: "f", iconBg: "#1877F2", iconColor: "#fff" },
+  { name: "TikTok Ads", sub: "TikTok For Business", min: 1.8, max: 2.5,
+    icon: "T", iconBg: "#010101", iconColor: "#fff" },
+  { name: "Google Shopping", sub: "Performance Max", min: 3.0, max: 5.0,
+    icon: "G", iconBg: "#4285F4", iconColor: "#fff" },
+];
+
+function platformStatus(roas, min, max) {
+  // roas < min  → platform typically exceeds break-even → viable (green)
+  // roas ≤ max  → break-even is within platform range   → limit  (orange)
+  // roas > max  → platform typically can't reach BE      → hard   (red)
+  if (roas < min) return {
+    color: "#008060", bg: "#F1F8F5", border: "#00806033",
+    icon: "✓", label: "Viable",
+    hint: "Votre seuil est sous le ROAS moyen — cette plateforme peut couvrir vos coûts.",
+  };
+  if (roas <= max) return {
+    color: "#B98900", bg: "#FFF9EC", border: "#B9890033",
+    icon: "⚠", label: "Limite",
+    hint: "Votre seuil est dans la fourchette — les campagnes devront être bien optimisées.",
+  };
+  return {
+    color: "#D72C0D", bg: "#FFF4F4", border: "#D72C0D33",
+    icon: "✗", label: "Difficile",
+    hint: "Votre seuil dépasse le ROAS habituel de cette plateforme.",
+  };
+}
+
 function BreakEvenROAS({ results }) {
   if (!results) return null;
   const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost } = results;
   const available = prixVente - coutRendu - shopifyCost - stripeCost - retoursCost;
+
   if (available <= 0) return (
     <div style={{ marginTop: "20px", padding: "14px 18px", borderRadius: "10px", background: "#FFF4F4", border: "1px solid #D72C0D44", display: "flex", gap: "10px", alignItems: "center" }}>
       <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
       <span style={{ fontSize: "13px", color: "#D72C0D" }}>Break-Even ROAS incalculable : marge disponible avant pub nulle ou négative.</span>
     </div>
   );
-  const roas = prixVente / available;
+
+  const roas      = prixVente / available;
   const roasColor = roas < 2 ? "#008060" : roas < 4 ? "#B98900" : "#D72C0D";
   const roasLabel = roas < 2 ? "Facile à atteindre" : roas < 4 ? "Atteignable" : "Difficile";
   const roasPhrase = roas < 2
@@ -299,24 +331,94 @@ function BreakEvenROAS({ results }) {
     : roas < 4
     ? "Ce seuil est atteignable avec une campagne Meta bien optimisée."
     : "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
+
+  const cpaColor = available < 5 ? "#D72C0D" : available <= 15 ? "#B98900" : "#008060";
+  const cpaAdvice = available < 5
+    ? "CPA très serré — privilégiez le contenu organique (UGC, SEO) plutôt que la publicité payante."
+    : available <= 15
+    ? "CPA correct pour TikTok Ads et Meta avec une créative bien optimisée."
+    : "Excellent — vous avez une marge confortable pour scaler vos campagnes Meta et Google.";
+
   return (
-    <div style={{ marginTop: "28px", padding: "24px 28px", borderRadius: "12px", background: "linear-gradient(135deg,rgba(255,255,255,0.97) 0%,rgba(250,248,255,0.97) 100%)", border: `1px solid ${roasColor}44`, boxShadow: "0 4px 20px rgba(0,0,0,0.06)", animation: "fsu 0.4s ease-out" }}>
+    <div style={{ marginTop: "28px", display: "flex", flexDirection: "column", gap: "12px", animation: "fsu 0.4s ease-out" }}>
       <style>{`@keyframes fsu{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
-        <span style={{ fontSize: "16px" }}>📈</span>
-        <span style={{ fontSize: "13px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.6px" }}>Break-Even ROAS</span>
-        <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "16px", marginBottom: "14px" }}>
-        <span style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{roas.toFixed(2)}x</span>
-        <div>
-          <div style={{ fontSize: "15px", fontWeight: "700", color: roasColor }}>{roasLabel}</div>
-          <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "2px" }}>ROAS minimum requis</div>
+
+      {/* ── Carte principale ROAS ── */}
+      <div style={{ padding: "24px 28px", borderRadius: "12px", background: "linear-gradient(135deg,rgba(255,255,255,0.97) 0%,rgba(250,248,255,0.97) 100%)", border: `1px solid ${roasColor}44`, boxShadow: "0 4px 20px rgba(0,0,0,0.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
+          <span style={{ fontSize: "16px" }}>📈</span>
+          <span style={{ fontSize: "13px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.6px" }}>Break-Even ROAS</span>
+          <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "16px", marginBottom: "14px" }}>
+          <span style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{roas.toFixed(2)}x</span>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: "700", color: roasColor }}>{roasLabel}</div>
+            <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "2px" }}>ROAS minimum requis</div>
+          </div>
+        </div>
+        <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6", marginBottom: "14px", fontStyle: "italic" }}>"{roasPhrase}"</div>
+        <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
+          Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{roas.toFixed(2)}€ de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
         </div>
       </div>
-      <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6", marginBottom: "14px", fontStyle: "italic" }}>"{roasPhrase}"</div>
-      <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-        Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{roas.toFixed(2)}€ de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
+
+      {/* ── Viabilité par plateforme ── */}
+      <div style={{ padding: "20px 24px", borderRadius: "12px", background: "linear-gradient(135deg,rgba(255,255,255,0.97),rgba(248,250,255,0.97))", border: "1px solid #E4E5E7", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ fontSize: "12px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "3px" }}>Viabilité par plateforme</div>
+          <div style={{ fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
+            Votre ROAS break-even comparé aux performances moyennes du marché.
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {AD_PLATFORMS.map(({ name, sub, min, max, icon, iconBg, iconColor }) => {
+            const s = platformStatus(roas, min, max);
+            return (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "10px", background: s.bg, border: `1px solid ${s.border}` }}>
+                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: iconColor, fontSize: "14px", fontWeight: "900", flexShrink: 0, fontFamily: "system-ui,sans-serif", letterSpacing: "-0.5px" }}>
+                  {icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223", marginBottom: "1px" }}>{name}</div>
+                  <div style={{ fontSize: "11px", color: "#6D7175" }}>{sub} · ROAS moyen marché : <strong>{min}x – {max}x</strong></div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: "right" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "20px", background: s.color + "18", border: `1px solid ${s.color}33`, marginBottom: "3px" }}>
+                    <span style={{ fontSize: "11px", fontWeight: "700" }}>{s.icon}</span>
+                    <span style={{ fontSize: "12px", fontWeight: "700", color: s.color }}>{s.label}</span>
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#6D7175", maxWidth: "150px", lineHeight: "1.4", fontStyle: "italic" }}>{s.hint}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── CPA Maximum ── */}
+      <div style={{ padding: "20px 24px", borderRadius: "12px", background: `linear-gradient(135deg,${cpaColor}08 0%,${cpaColor}04 100%)`, border: `1px solid ${cpaColor}33`, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "20px" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontSize: "15px" }}>🎯</span>
+              <span style={{ fontSize: "12px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.7px" }}>CPA Maximum</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "12px", fontStyle: "italic", lineHeight: "1.5" }}>
+              Budget acquisition maximum par client avant de perdre de l'argent.
+            </div>
+            <div style={{ padding: "10px 14px", borderRadius: "8px", background: cpaColor + "10", border: `1px solid ${cpaColor}22`, fontSize: "12px", color: "#202223", lineHeight: "1.6" }}>
+              <strong style={{ color: cpaColor }}>Conseil :</strong> {cpaAdvice}
+            </div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
+              Ne dépassez jamais ce seuil dans votre Business Manager.
+            </div>
+          </div>
+          <div style={{ textAlign: "center", flexShrink: 0, paddingTop: "4px" }}>
+            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{fmt(available)}€</div>
+            <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "5px", fontWeight: "500" }}>par acquisition</div>
+          </div>
+        </div>
       </div>
     </div>
   );
