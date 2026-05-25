@@ -136,10 +136,10 @@ function SparklineChart({ data, isExpert, annotations = [], onAnnotate, alertThr
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative" }} onMouseLeave={() => setTooltip(null)}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height: "120px", display: "block", cursor: isExpert ? "crosshair" : "default" }}
-        onMouseMove={handleMouseMove} onMouseLeave={() => setTooltip(null)}>
+        onMouseMove={handleMouseMove}>
         <line x1={PAD} y1={toY(0).toFixed(1)} x2={W-PAD} y2={toY(0).toFixed(1)} stroke="#E4E5E7" strokeWidth="0.8" strokeDasharray="3,3" />
         <line x1={PAD} y1={toY(alertThreshold).toFixed(1)} x2={W-PAD} y2={toY(alertThreshold).toFixed(1)} stroke="#00806033" strokeWidth="1" strokeDasharray="3,3" />
         <defs>
@@ -164,7 +164,7 @@ function SparklineChart({ data, isExpert, annotations = [], onAnnotate, alertThr
         {tooltip && <line x1={tooltip.idx > 0 ? toX(tooltip.idx) : toX(0)} y1={PAD} x2={tooltip.idx > 0 ? toX(tooltip.idx) : toX(0)} y2={H-PAD} stroke="#20222333" strokeWidth="1" strokeDasharray="2,2" />}
       </svg>
       {tooltip && isExpert && (
-        <div style={{ position: "absolute", left: `${Math.min(85, Math.max(10, (toX(tooltip.idx)/W)*100))}%`, top: "4px", transform: "translateX(-50%)", background: "#202223", color: "#fff", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", pointerEvents: "none", zIndex: 10, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", minWidth: "170px" }}>
+        <div style={{ position: "absolute", left: `${Math.min(85, Math.max(10, (toX(tooltip.idx)/W)*100))}%`, top: "4px", transform: "translateX(-50%)", background: "#202223", color: "#fff", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", zIndex: 10, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", minWidth: "170px" }}>
           <div style={{ fontWeight: "700", marginBottom: "3px", color: tooltip.margin < 10 ? "#FF8A80" : tooltip.margin < 25 ? "#FFD54F" : "#69F0AE" }}>{pct(tooltip.margin)}%</div>
           <div style={{ color: "#aaa", fontSize: "11px", marginBottom: "2px" }}>{formatDate(tooltip.date)}</div>
           {tooltip.product && <div style={{ color: "#ddd", fontSize: "11px", marginBottom: "4px", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis" }}>{tooltip.product}</div>}
