@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -85,29 +85,8 @@ const hintStyle  = { fontSize: "11px", color: "#6D7175", marginTop: "3px" };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function FieldGroup({ label, tooltip, children }) {
+function FieldGroup({ label, tooltip, direction = "right", children }) {
   const [showTip, setShowTip] = useState(false);
-  const [flipLeft, setFlipLeft] = useState(false);
-  const tipRef = useRef(null);
-
-  // After the tooltip renders, check if it overflows the viewport on the right.
-  // useLayoutEffect runs before paint so there's no visible flash.
-  useLayoutEffect(() => {
-    if (!showTip || !tipRef.current) return;
-    const rect = tipRef.current.getBoundingClientRect();
-    setFlipLeft(rect.right > window.innerWidth - 8);
-  }, [showTip]);
-
-  const handleToggle = () => {
-    if (showTip) {
-      setShowTip(false);
-      setFlipLeft(false);
-    } else {
-      setFlipLeft(false); // reset before re-opening so measurement starts from left
-      setShowTip(true);
-    }
-  };
-
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
@@ -116,14 +95,11 @@ function FieldGroup({ label, tooltip, children }) {
           <div style={{ position: "relative" }}>
             <button
               type="button"
-              onClick={handleToggle}
+              onClick={() => setShowTip(v => !v)}
               style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >?</button>
             {showTip && (
-              <div
-                ref={tipRef}
-                style={{ position: "absolute", ...(flipLeft ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}
-              >
+              <div style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
                 {tooltip}
               </div>
             )}
@@ -1254,22 +1230,22 @@ export default function Index() {
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais & déductions</div>
-                    <FieldGroup label="Frais Shopify (% du CA)" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
+                    <FieldGroup label="Frais Shopify (% du CA)" direction="left" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.shopifyFee} onChange={update("shopifyFee")} style={inputStyle} placeholder="ex : 2" />
                     </FieldGroup>
-                    <FieldGroup label="Frais Stripe (% du CA)" tooltip="Frais de traitement de paiement prélevés par Stripe. En France : 1,5% + 0,25€ par transaction (≈ 2% sur une commande de 50€). Source : stripe.com/fr/pricing">
+                    <FieldGroup label="Frais Stripe (% du CA)" direction="left" tooltip="Frais de traitement de paiement prélevés par Stripe. En France : 1,5% + 0,25€ par transaction (≈ 2% sur une commande de 50€). Source : stripe.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.stripeFee} onChange={update("stripeFee")} style={inputStyle} placeholder="ex : 2.5" />
                     </FieldGroup>
-                    <FieldGroup label="Taux de retours (%)" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
+                    <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
                       <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 5" />
                     </FieldGroup>
-                    <FieldGroup label="Budget ads (% du CA)" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
+                    <FieldGroup label="Budget ads (% du CA)" direction="left" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
                       <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 15" />
                     </FieldGroup>
-                    <FieldGroup label="Frais de retour (€)" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
+                    <FieldGroup label="Frais de retour (€)" direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                       <input type="text" inputMode="decimal" value={form.fraisRetour} onChange={update("fraisRetour")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
-                    <FieldGroup label="Coût d'emballage (€)" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                    <FieldGroup label="Coût d'emballage (€)" direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
                       <input type="text" inputMode="decimal" value={form.coutEmballage} onChange={update("coutEmballage")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
                   </div>
@@ -1327,10 +1303,10 @@ export default function Index() {
               </div>
               <div>
                 <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais à déduire</div>
-                <FieldGroup label="Frais Shopify (%)" tooltip="Basic 2% · Shopify 1% · Advanced 0,5%. Source : shopify.com/fr/pricing">
+                <FieldGroup label="Frais Shopify (%)" direction="left" tooltip="Basic 2% · Shopify 1% · Advanced 0,5%. Source : shopify.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.shopifyFee} onChange={updateSim("shopifyFee")} style={inputStyle} placeholder="2" />
                 </FieldGroup>
-                <FieldGroup label="Frais Stripe (%)" tooltip="Frais de traitement Stripe. En France : 1,5% + 0,25€ par transaction. Source : stripe.com/fr/pricing">
+                <FieldGroup label="Frais Stripe (%)" direction="left" tooltip="Frais de traitement Stripe. En France : 1,5% + 0,25€ par transaction. Source : stripe.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.stripeFee} onChange={updateSim("stripeFee")} style={inputStyle} placeholder="2.5" />
                 </FieldGroup>
                 <FieldGroup label="Taux de retours (%)">
