@@ -1867,11 +1867,16 @@ export default function Index() {
       </s-section>
 
       <s-section slot="aside" heading="Méthodologie">
+        <s-unordered-list>
+          <s-list-item><strong>Prix fournisseur</strong> — Ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
+          <s-list-item><strong>Droits de douane</strong> — Les taxes que vous devez payer quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
+          <s-list-item><strong>TVA import 20%</strong> — La TVA payée à l'importation — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
+          <s-list-item><strong>Frais de port</strong> — Le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
+          <s-list-item><strong>Commissions plateformes</strong> — Ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
+          <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
+        </s-unordered-list>
         <s-paragraph>
-          Calcul basé sur la structure de coût réelle d'un e-commerçant : coût fournisseur + droits de douane TARIC + TVA import 20% + frais de port estimés + commissions plateformes + provision retours.
-        </s-paragraph>
-        <s-paragraph>
-          <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, données Fevad 2023 pour les taux de retour sectoriels.
+          <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles basées sur les tendances marché actuelles pour les taux de retour.
         </s-paragraph>
       </s-section>
 
