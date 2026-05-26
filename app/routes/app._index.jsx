@@ -190,7 +190,7 @@ function SparklineChart({ data, isExpert, annotations = [], onAnnotate, alertThr
         {tooltip && <line x1={tooltip.idx > 0 ? toX(tooltip.idx) : toX(0)} y1={PAD} x2={tooltip.idx > 0 ? toX(tooltip.idx) : toX(0)} y2={H-PAD} stroke="#20222333" strokeWidth="1" strokeDasharray="2,2" />}
       </svg>
       {tooltip && isExpert && (
-        <div style={{ position: "absolute", left: `${Math.min(85, Math.max(10, (toX(tooltip.idx)/W)*100))}%`, top: "4px", transform: "translateX(-50%)", background: "#202223", color: "#fff", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", zIndex: 10, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", minWidth: "170px" }}>
+        <div style={{ position: "absolute", left: `${(toX(tooltip.idx)/W)*100}%`, top: "4px", transform: toX(tooltip.idx) < 150 ? "translateX(0)" : toX(tooltip.idx) > W - 150 ? "translateX(-100%)" : "translateX(-50%)", background: "#202223", color: "#fff", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", zIndex: 10, maxWidth: "200px", wordWrap: "break-word", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", minWidth: "170px" }}>
           <div style={{ fontWeight: "700", marginBottom: "3px", color: tooltip.margin < 10 ? "#FF8A80" : tooltip.margin < 25 ? "#FFD54F" : "#69F0AE" }}>{pct(tooltip.margin)}%</div>
           <div style={{ color: "#aaa", fontSize: "11px", marginBottom: "2px" }}>{formatDate(tooltip.date)}</div>
           {tooltip.product && <div style={{ color: "#ddd", fontSize: "11px", marginBottom: "4px", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis" }}>{tooltip.product}</div>}
@@ -1104,6 +1104,8 @@ export default function Index() {
           .tcc-audit-kpi    { grid-template-columns: 1fr 1fr !important; }
           .tcc-audit-row    { grid-template-columns: 2.5fr 1fr 1.2fr 1fr !important; }
           .tcc-audit-col-cost { display: none !important; }
+          .tcc-audit-params   { grid-template-columns: 1fr 1fr !important; }
+          .tcc-audit-btn      { display: block !important; width: 100% !important; }
         }
       `}</style>
 
@@ -1605,7 +1607,7 @@ export default function Index() {
                 {/* Params */}
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                  <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
                     {[
                       { key: "customs_rate", label: "Douane (taux)", placeholder: "0.12" },
                       { key: "shopify_fee",  label: "Frais Shopify", placeholder: "0.02" },
@@ -1620,7 +1622,7 @@ export default function Index() {
                       </div>
                     ))}
                   </div>
-                  <button onClick={handleRunAudit} disabled={isAuditing}
+                  <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
                     style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: isAuditing ? "default" : "pointer", fontFamily: "inherit", opacity: isAuditing ? 0.8 : 1 }}>
                     {isAuditing ? "Analyse en cours…" : "Lancer l'audit →"}
                   </button>
