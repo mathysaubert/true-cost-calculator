@@ -1822,7 +1822,7 @@ export default function Index() {
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
                   Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
                   {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{pct(results.margeNettePercent)}%</strong>
-                  {" "}(<strong style={{ color: "#D72C0D" }}>−{fmt(Math.abs(results.margeNette))}€ par vente</strong>).
+                  <span style={{ display: "block" }}>(<strong style={{ color: "#D72C0D" }}>−{fmt(Math.abs(results.margeNette))}€ par vente</strong>)</span>
                 </div>
               </>
             ) : (
@@ -1831,7 +1831,7 @@ export default function Index() {
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
                   Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
                   {" → "}Votre marge nette réelle : <strong style={{ color: marginColor }}>{pct(results.margeNettePercent)}%</strong>
-                  {" "}(<strong style={{ color: marginColor }}>{fmt(results.margeNette)}€ par vente</strong>).
+                  <span style={{ display: "block" }}>(<strong style={{ color: marginColor }}>{fmt(results.margeNette)}€ par vente</strong>)</span>
                 </div>
               </>
             )}
