@@ -361,7 +361,7 @@ function platformStatus(roas, min, max) {
   };
 }
 
-function BreakEvenROAS({ results }) {
+function BreakEvenROAS({ results, onGoToSimulation }) {
   if (!results) return null;
   const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost } = results;
   const available = prixVente - coutRendu - shopifyCost - stripeCost - retoursCost;
@@ -445,6 +445,20 @@ function BreakEvenROAS({ results }) {
           })}
         </div>
       </div>
+
+      {/* ── Conseil actionnable si ROAS difficile ── */}
+      {AD_PLATFORMS.some(({ min, max }) => platformStatus(roas, min, max).label === "Difficile") && (
+        <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F1F8F5", border: "1px solid #00806044" }}>
+          <div style={{ fontSize: "13px", color: "#202223", lineHeight: "1.7", marginBottom: "12px" }}>
+            Pour réduire votre ROAS break-even, deux leviers : <strong>baisser votre coût fournisseur</strong> ou <strong>augmenter votre prix de vente</strong>. Utilisez l'onglet Simulation pour calculer le prix minimum à appliquer.
+          </div>
+          {onGoToSimulation && (
+            <button onClick={onGoToSimulation} style={{ padding: "8px 18px", background: "#008060", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>
+              → Aller à la Simulation
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── CPA Maximum ── */}
       <div style={{ padding: "20px 24px", borderRadius: "12px", background: `linear-gradient(135deg,${cpaColor}08 0%,${cpaColor}04 100%)`, border: `1px solid ${cpaColor}33`, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
@@ -854,6 +868,8 @@ export default function Index() {
 
   // Catalog audit (Expert)
   const [auditParams, setAuditParams] = useState({ customs_rate: "0.12", shopify_fee: "0.02", stripe_fee: "0.025", returns_rate: "0.05", shipping_cost: "8" });
+  const [methOpen,   setMethOpen]   = useState(false);
+  const [douaneOpen, setDouaneOpen] = useState(false);
 
   // Sync state from server actions
   useEffect(() => {
@@ -1246,10 +1262,10 @@ export default function Index() {
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Données produit</div>
                     <FieldGroup label="Prix d'achat fournisseur (€)" tooltip="Prix hors taxes payé au fournisseur, livraison fournisseur non incluse. À retrouver sur votre facture pro-forma ou votre commande AliExpress / Alibaba.">
-                      <input type="text" inputMode="decimal" value={form.prixAchat} onChange={update("prixAchat")} style={inputStyle} placeholder="ex : 20.00" />
+                      <input type="text" inputMode="decimal" value={form.prixAchat} onChange={update("prixAchat")} style={inputStyle} placeholder="ex : 12.00" />
                     </FieldGroup>
                     <FieldGroup label="Prix de vente (€)" tooltip="Prix public de vente sur votre boutique, frais de livraison client exclus. C'est le montant que vous encaissez.">
-                      <input type="text" inputMode="decimal" value={form.prixVente} onChange={update("prixVente")} style={inputStyle} placeholder="ex : 49.99" />
+                      <input type="text" inputMode="decimal" value={form.prixVente} onChange={update("prixVente")} style={inputStyle} placeholder="ex : 34.99" />
                     </FieldGroup>
                     <FieldGroup label="Catégorie produit" tooltip="Utilisée pour estimer vos droits de douane selon la nomenclature TARIC (tarif douanier intégré de l'UE). Choisissez la catégorie la plus proche de votre produit.">
                       <select value={form.categorie} onChange={update("categorie")} style={inputStyle}>
@@ -1277,10 +1293,10 @@ export default function Index() {
                       <input type="text" inputMode="decimal" value={form.stripeFee} onChange={update("stripeFee")} style={inputStyle} placeholder="ex : 2.5" />
                     </FieldGroup>
                     <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
-                      <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 5" />
+                      <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 8" />
                     </FieldGroup>
                     <FieldGroup label="Budget ads (% du CA)" direction="left" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
-                      <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 15" />
+                      <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 20" />
                     </FieldGroup>
                     <FieldGroup label="Frais de retour (€)" direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                       <input type="text" inputMode="decimal" value={form.fraisRetour} onChange={update("fraisRetour")} style={inputStyle} placeholder="0" />
@@ -1476,7 +1492,7 @@ export default function Index() {
                       <div key={calc.id} className="tcc-hist-row" style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < filtered.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                         <div style={{ padding: "11px 12px", fontSize: "11px", color: "#6D7175" }}>{formatDate(calc.created_at)}</div>
                         <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223", fontWeight: "500" }}>
-                          {calc.product_title ?? "—"}
+                          {calc.product_title || "Calcul manuel"}
                           {annot && <div style={{ fontSize: "10px", color: "#7C3AED", marginTop: "2px" }}>● {annot.note}</div>}
                         </div>
                         <div className="tcc-hist-col-cat" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
@@ -1643,7 +1659,7 @@ export default function Index() {
                 {auditData && !isAuditing && (
                   <>
                     <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
-                      <StatCard label="Produits scannés"    value={auditData.totalScanned} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
+                      <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
                       <StatCard label="Top Performers ✅"  value={winners.length} sub="marge > 15%"  color="#008060" bg="#F1F8F5" />
                       <StatCard label="Produits à risque ⚠️" value={risky.length}  sub="marge 0–15%"  color="#B98900" bg="#FFF9EC" />
                       <StatCard label="Money Losers 🔴"    value={losers.length}  sub="marge < 0%"   color="#D72C0D" bg="#FFF4F4" />
@@ -1652,7 +1668,7 @@ export default function Index() {
                     {losers.length > 0 && (
                       <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D44", marginBottom: "16px" }}>
                         <div style={{ fontSize: "14px", fontWeight: "700", color: "#D72C0D", marginBottom: "6px" }}>
-                          🚨 ALERTE : {losers.length} produit{losers.length > 1 ? "s" : ""} vous font perdre de l'argent
+                          🚨 ALERTE : {losers.length} produit{losers.length > 1 ? "s" : ""} vous {losers.length === 1 ? "fait" : "font"} perdre de l'argent
                         </div>
                         <div style={{ fontSize: "12px", color: "#6D7175" }}>{losers.slice(0,3).map(p => p.title).join(", ")}{losers.length > 3 ? ` et ${losers.length - 3} autres…` : ""}</div>
                       </div>
@@ -1674,7 +1690,12 @@ export default function Index() {
                     )}
 
                     {/* Full table */}
-                    <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "10px" }}>{products.length} produit{products.length > 1 ? "s" : ""} avec coût fournisseur renseigné</div>
+                    <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "10px", lineHeight: "1.6" }}>
+                      Seuls les <strong>{products.length}</strong> produit{products.length > 1 ? "s" : ""} ayant un coût fournisseur renseigné dans Shopify apparaissent ci-dessous.
+                      {auditData.totalScanned - products.length > 0 && (
+                        <> Les <strong>{auditData.totalScanned - products.length}</strong> autre{auditData.totalScanned - products.length > 1 ? "s" : ""} produit{auditData.totalScanned - products.length > 1 ? "s" : ""} de votre catalogue n'ont pas de coût renseigné.</>
+                      )}
+                    </div>
                     <div style={{ border: "1px solid #E4E5E7", borderRadius: "8px", overflow: "hidden" }}>
                       <div className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                         {["Produit", "Prix vente", "Coût fournisseur", "Marge nette %", "Statut"].map((h, idx) => (
@@ -1864,7 +1885,7 @@ export default function Index() {
 
           {/* Expert: Break-Even ROAS */}
           {isExpert ? (
-            <BreakEvenROAS results={results} />
+            <BreakEvenROAS results={results} onGoToSimulation={() => setActiveTab("simulation")} />
           ) : (
             <div style={{ marginTop: "20px", padding: "14px 18px", borderRadius: "10px", background: "linear-gradient(135deg,#faf8ff,#f0ecff)", border: "1px solid #7C3AED33", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -1906,38 +1927,50 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Méthodologie">
-        <s-unordered-list>
-          <s-list-item><strong>Prix fournisseur</strong> — Ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
-          <s-list-item><strong>Droits de douane</strong> — Les taxes que vous devez payer quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
-          <s-list-item><strong>TVA import 20%</strong> — La TVA payée à l'importation — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
-          <s-list-item><strong>Frais de port</strong> — Le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
-          <s-list-item><strong>Commissions plateformes</strong> — Ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
-          <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
-        </s-unordered-list>
-        <s-paragraph>
-          <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles basées sur les tendances marché actuelles pour les taux de retour.
-        </s-paragraph>
+      <s-section slot="aside">
+        <button onClick={() => setMethOpen(v => !v)} style={{ width: "100%", background: "none", border: "none", padding: "0 0 4px 0", cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "13px", fontWeight: "600", color: "#202223" }}>Méthodologie</span>
+          <span style={{ fontSize: "11px", color: "#6D7175", display: "inline-block", transition: "transform 0.3s", transform: methOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+        </button>
+        <div style={{ maxHeight: methOpen ? "600px" : "0", overflow: "hidden", transition: "max-height 0.3s ease" }}>
+          <s-unordered-list>
+            <s-list-item><strong>Prix fournisseur</strong> — Ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
+            <s-list-item><strong>Droits de douane</strong> — Les taxes que vous devez payer quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
+            <s-list-item><strong>TVA import 20%</strong> — La TVA payée à l'importation — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
+            <s-list-item><strong>Frais de port</strong> — Le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
+            <s-list-item><strong>Commissions plateformes</strong> — Ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
+            <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
+          </s-unordered-list>
+          <s-paragraph>
+            <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles basées sur les tendances marché actuelles pour les taux de retour.
+          </s-paragraph>
+        </div>
       </s-section>
 
-      <s-section slot="aside" heading="Taux de douane">
-        <s-paragraph>
-          Chaque produit importé depuis l'étranger est soumis à une taxe douanière calculée sur sa valeur. Ce taux varie selon la catégorie du produit. Il est automatiquement intégré dans votre calcul de marge.
-        </s-paragraph>
-        <s-unordered-list>
-          <s-list-item>Vêtements & Textile : 12%</s-list-item>
-          <s-list-item>Électronique & High-tech : 5%</s-list-item>
-          <s-list-item>Cosmétique & Beauté : 10%</s-list-item>
-          <s-list-item>Accessoires & Bijoux : 7%</s-list-item>
-          <s-list-item>Sport & Fitness : 5%</s-list-item>
-          <s-list-item>Alimentation & Nutrition : 15%</s-list-item>
-          <s-list-item>Maroquinerie & Sacs : 3%</s-list-item>
-          <s-list-item>Jouets & Enfants : 0%</s-list-item>
-          <s-list-item>Mobilier & Décoration : 2.7%</s-list-item>
-          <s-list-item>Autre : 3%</s-list-item>
-        </s-unordered-list>
-        <div style={{ fontSize: "12px", color: "#6D7175", fontStyle: "italic", marginTop: "10px", lineHeight: "1.5" }}>
-          Taux moyens indicatifs. Le montant exact dépend de l'origine du produit et de sa sous-catégorie douanière.
+      <s-section slot="aside">
+        <button onClick={() => setDouaneOpen(v => !v)} style={{ width: "100%", background: "none", border: "none", padding: "0 0 4px 0", cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "13px", fontWeight: "600", color: "#202223" }}>Taux de douane</span>
+          <span style={{ fontSize: "11px", color: "#6D7175", display: "inline-block", transition: "transform 0.3s", transform: douaneOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+        </button>
+        <div style={{ maxHeight: douaneOpen ? "600px" : "0", overflow: "hidden", transition: "max-height 0.3s ease" }}>
+          <s-paragraph>
+            Chaque produit importé depuis l'étranger est soumis à une taxe douanière calculée sur sa valeur. Ce taux varie selon la catégorie du produit. Il est automatiquement intégré dans votre calcul de marge.
+          </s-paragraph>
+          <s-unordered-list>
+            <s-list-item>Vêtements & Textile : 12%</s-list-item>
+            <s-list-item>Électronique & High-tech : 5%</s-list-item>
+            <s-list-item>Cosmétique & Beauté : 10%</s-list-item>
+            <s-list-item>Accessoires & Bijoux : 7%</s-list-item>
+            <s-list-item>Sport & Fitness : 5%</s-list-item>
+            <s-list-item>Alimentation & Nutrition : 15%</s-list-item>
+            <s-list-item>Maroquinerie & Sacs : 3%</s-list-item>
+            <s-list-item>Jouets & Enfants : 0%</s-list-item>
+            <s-list-item>Mobilier & Décoration : 2.7%</s-list-item>
+            <s-list-item>Autre : 3%</s-list-item>
+          </s-unordered-list>
+          <div style={{ fontSize: "12px", color: "#6D7175", fontStyle: "italic", marginTop: "10px", lineHeight: "1.5" }}>
+            Taux moyens indicatifs. Le montant exact dépend de l'origine du produit et de sa sous-catégorie douanière.
+          </div>
         </div>
       </s-section>
 
