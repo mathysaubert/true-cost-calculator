@@ -12,8 +12,6 @@ export const loader = async ({ request }) => {
   const match = cookieHeader.match(/(?:^|;\s*)bounce_count=(\d+)/);
   const bounceCount = match ? parseInt(match[1], 10) : 0;
 
-  console.log("[auth.session-token] hit, shop:", shop, "bounces:", bounceCount);
-
   const responseHeaders = new Headers({ "Content-Type": "text/html;charset=utf-8" });
   addDocumentResponseHeaders(request, responseHeaders);
 

@@ -1,6 +1,9 @@
 import { useLoaderData } from "react-router";
 
 export const loader = async () => {
+  if (process.env.NODE_ENV === "production") {
+    throw new Response("Not Found", { status: 404 });
+  }
   const secret = process.env.SHOPIFY_API_SECRET || "";
   const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
   return {

@@ -701,7 +701,7 @@ export const action = async ({ request }) => {
   // ── Feature 5: AI recommendation ──────────────────────────────────────────
   if (body._action === "ai_recommend") {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return { error: "ANTHROPIC_API_KEY non configurée." };
+    if (!apiKey) return { error: "La recommandation IA n'est pas disponible pour le moment." };
 
     const { prixAchat, prixVente, category, country, productTitle,
             douane, tvaImport, shipping, coutRendu,
@@ -806,7 +806,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 
   if (error) {
     console.error("[Supabase] Insert error:", error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: "Erreur lors de la sauvegarde du calcul." };
   }
   return { success: true };
 };
@@ -855,7 +855,6 @@ export default function Index() {
   const [activeTab,   setActiveTab]   = useState("calculator");
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [localCount,  setLocalCount]  = useState(initialCount);
-  const prevResults = useRef(null);
 
   // History filters (Expert)
   const [historyFilter, setHistoryFilter] = useState("all");
@@ -1028,7 +1027,6 @@ export default function Index() {
       margeNette:        r.margeNette,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
-    prevResults.current = r;
   };
 
   // Feature 3: simulation
@@ -1046,7 +1044,7 @@ export default function Index() {
 
     const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads });
     if (!sim) {
-      setSimErrors(["Impossible d'atteindre cette marge avec ces paramètres (dénominateur ≤ 0)."]);
+      setSimErrors(["Cette marge cible est inatteignable avec ces paramètres — les frais cumulés dépassent 100%. Réduisez les frais ou abaissez la marge cible."]);
       setSimResult(null);
       return;
     }
@@ -1099,7 +1097,7 @@ export default function Index() {
       {isSubscribing ? "Redirection…" : label}
     </button>
   );
-  const subscribeExpertBtn = (label = "Passer au Expert — 29$/mois") => (
+  const subscribeExpertBtn = (label = "Passer au plan Expert — 29$/mois") => (
     <button onClick={handleSubscribeExpert} disabled={isSubscribing}
       style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED 0%,#5B21B6 100%)", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: isSubscribing ? "default" : "pointer", fontFamily: "inherit", opacity: isSubscribing ? 0.7 : 1, boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
       {isSubscribing ? "Redirection…" : label}
@@ -1143,10 +1141,12 @@ export default function Index() {
 
       {/* ── MAIN SECTION ─────────────────────────────────────────────────── */}
       <s-section heading={
-        activeTab === "history" ? "Historique de vos calculs" :
-        activeTab === "simulate" ? "Simulateur de prix" :
-        activeTab === "alerts" ? "Alertes de marge" :
-        "Simulateur"
+        activeTab === "calculator" ? "Calculateur de marge" :
+        activeTab === "simulate"   ? "Simulateur de prix" :
+        activeTab === "history"    ? "Historique de vos calculs" :
+        activeTab === "alerts"     ? "Alertes de marge" :
+        activeTab === "audit"      ? "Audit Catalogue" :
+        "Calculateur de marge"
       }>
 
         {/* Tab bar */}
@@ -1278,7 +1278,7 @@ export default function Index() {
                     <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché — renseignez votre coût réel si vous le connaissez.">
                       <select value={form.paysImport} onChange={update("paysImport")} style={inputStyle}>
                         {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                          <option key={pays} value={pays}>{pays} — shipping ~{cost}€</option>
+                          <option key={pays} value={pays}>{pays} — port ~{cost}€</option>
                         ))}
                       </select>
                       <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay}€</div>
@@ -1342,14 +1342,14 @@ export default function Index() {
                 <FieldGroup label="Catégorie produit">
                   <select value={simForm.categorie} onChange={updateSim("categorie")} style={inputStyle}>
                     {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                      <option key={cat} value={cat}>{cat} — douane {(rate * 100).toFixed(0)}%</option>
+                      <option key={cat} value={cat}>{cat} — douane {parseFloat((rate * 100).toFixed(1))}%</option>
                     ))}
                   </select>
                 </FieldGroup>
                 <FieldGroup label="Pays d'import">
                   <select value={simForm.paysImport} onChange={updateSim("paysImport")} style={inputStyle}>
                     {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                      <option key={pays} value={pays}>{pays} — shipping ~{cost}€</option>
+                      <option key={pays} value={pays}>{pays} — port ~{cost}€</option>
                     ))}
                   </select>
                 </FieldGroup>
@@ -1729,7 +1729,7 @@ export default function Index() {
                         <div style={{ fontSize: "13px", fontWeight: "700", color: "#D72C0D", marginBottom: "10px" }}>🚨 {losers.length} produit{losers.length > 1 ? "s" : ""} à marge négative — action immédiate requise</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
                           <div>• <strong>Vérifiez le coût fournisseur</strong> dans Shopify : une saisie incorrecte peut fausser le calcul.</div>
-                          <div>• <strong>Augmentez le prix de vente</strong> : ces produits sont actuellement vendus à perte. Utilisez l'onglet Simulateur pour calculer le prix minimum.</div>
+                          <div>• <strong>Augmentez le prix de vente</strong> : ces produits sont actuellement vendus à perte. Utilisez l'onglet Simulation pour calculer le prix minimum.</div>
                           <div>• <strong>Renégociez avec votre fournisseur</strong> ou changez de source d'approvisionnement si le prix de vente ne peut pas être augmenté.</div>
                           <div>• <strong>Envisagez de désactiver ces produits</strong> jusqu'à résolution — chaque vente aggrave vos pertes.</div>
                         </div>
@@ -1885,7 +1885,7 @@ export default function Index() {
 
           {/* Expert: Break-Even ROAS */}
           {isExpert ? (
-            <BreakEvenROAS results={results} onGoToSimulation={() => setActiveTab("simulation")} />
+            <BreakEvenROAS results={results} onGoToSimulation={() => setActiveTab("simulate")} />
           ) : (
             <div style={{ marginTop: "20px", padding: "14px 18px", borderRadius: "10px", background: "linear-gradient(135deg,#faf8ff,#f0ecff)", border: "1px solid #7C3AED33", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
