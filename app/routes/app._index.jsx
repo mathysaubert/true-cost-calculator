@@ -242,7 +242,7 @@ function AIRecommendation({ fetcher }) {
     <div style={{ marginTop: "28px", padding: "20px 24px", borderRadius: "10px", background: "linear-gradient(135deg, #f8f6ff 0%, #f0f4ff 100%)", border: "1px solid #c5b8ff" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
         <span style={{ fontSize: "18px" }}>✦</span>
-        <span style={{ fontSize: "14px", fontWeight: "700", color: "#4f3dc8" }}>Recommandation Claude</span>
+        <span style={{ fontSize: "14px", fontWeight: "700", color: "#4f3dc8" }}>Recommandation IA</span>
         {isLoading && (
           <span style={{ fontSize: "12px", color: "#8a7fd4", marginLeft: "4px" }}>Analyse en cours…</span>
         )}
@@ -746,8 +746,6 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max expliquant pourquoi la marge est à ce niveau","actions":["action concrète 1 avec chiffres","action concrète 2 avec chiffres","action concrète 3 avec chiffres"]}`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -761,7 +759,6 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
           max_tokens: 512,
           messages: [{ role: "user", content: prompt }],
         }),
-        signal: controller.signal,
       });
       if (!resp.ok) {
         const err = await resp.text();
@@ -773,11 +770,8 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
       const parsed = JSON.parse(text);
       return { analyse: parsed.analyse, actions: parsed.actions };
     } catch (e) {
-      if (e?.name === "AbortError") return { error: "La recommandation IA a pris trop de temps. Réessayez dans un instant." };
       console.error("[AI] Failed:", e?.message);
       return { error: "Impossible d'obtenir la recommandation IA." };
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
@@ -1771,8 +1765,8 @@ export default function Index() {
                       <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #B9890033" }}>
                         <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} à marge insuffisante (0–15%) — à optimiser</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-                          <div>• <strong>Marge insuffisante pour absorber les charges fixes</strong> (loyer, salaires, logistique). Ciblez au minimum 20–25% de marge nette.</div>
-                          <div>• <strong>Réduisez vos frais d'acquisition</strong> : ces produits ne peuvent pas supporter un budget publicitaire significatif.</div>
+                          <div>• <strong>Marge insuffisante pour couvrir vos frais variables et dégager un bénéfice net réel.</strong> Ciblez au minimum 20–25% de marge nette.</div>
+                          <div>• <strong>Évitez les campagnes publicitaires sur ces produits</strong> — chaque euro de pub réduit encore votre marge.</div>
                           <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur et améliorer le coût rendu.</div>
                         </div>
                       </div>
