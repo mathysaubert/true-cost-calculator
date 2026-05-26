@@ -1094,10 +1094,16 @@ export default function Index() {
     <s-page heading="Calculateur de Vraie Marge">
       <style>{`
         @media (max-width: 768px) {
-          .tcc-form-grid   { grid-template-columns: 1fr !important; }
-          .tcc-cost-grid   { grid-template-columns: 1fr !important; }
-          .tcc-margin-cards{ grid-template-columns: 1fr !important; }
+          .tcc-form-grid    { grid-template-columns: 1fr !important; }
+          .tcc-cost-grid    { grid-template-columns: 1fr !important; }
+          .tcc-margin-cards { grid-template-columns: 1fr !important; }
           .tcc-upgrade-plans{ grid-template-columns: 1fr !important; max-width: 360px !important; }
+          .tcc-history-container { overflow-x: hidden; width: 100%; }
+          .tcc-hist-row     { grid-template-columns: 1.6fr 1.8fr 1fr 1.2fr !important; }
+          .tcc-hist-col-cat, .tcc-hist-col-pays { display: none !important; }
+          .tcc-audit-kpi    { grid-template-columns: 1fr 1fr !important; }
+          .tcc-audit-row    { grid-template-columns: 2.5fr 1fr 1.2fr 1fr !important; }
+          .tcc-audit-col-cost { display: none !important; }
         }
       `}</style>
 
@@ -1403,7 +1409,7 @@ export default function Index() {
             const chartData = [...filtered].reverse();
             const categories = [...new Set(history.map(c => c.category))];
             return (
-              <div>
+              <div className="tcc-history-container">
                 {/* Expert filters */}
                 {isExpert ? (
                   <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap", alignItems: "center" }}>
@@ -1456,23 +1462,23 @@ export default function Index() {
                   {filtered.length} calcul{filtered.length > 1 ? "s" : ""}
                 </div>
                 <div style={{ border: "1px solid #E4E5E7", borderRadius: "8px", overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    {["Date", "Produit", "Catégorie", "Pays", "Prix vente", "Marge nette"].map(h => (
-                      <div key={h} style={{ padding: "10px 12px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px" }}>{h}</div>
+                  <div className="tcc-hist-row" style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
+                    {["Date", "Produit", "Catégorie", "Pays", "Prix vente", "Marge nette"].map((h, idx) => (
+                      <div key={h} className={idx === 2 ? "tcc-hist-col-cat" : idx === 3 ? "tcc-hist-col-pays" : ""} style={{ padding: "10px 12px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px" }}>{h}</div>
                     ))}
                   </div>
                   {filtered.map((calc, i) => {
                     const mc = calc.net_margin_percent < 10 ? "#D72C0D" : calc.net_margin_percent < 25 ? "#B98900" : "#008060";
                     const annot = annotations.find(a => a.calculation_id === calc.id);
                     return (
-                      <div key={calc.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < filtered.length - 1 ? "1px solid #F1F2F3" : "none" }}>
+                      <div key={calc.id} className="tcc-hist-row" style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < filtered.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                         <div style={{ padding: "11px 12px", fontSize: "11px", color: "#6D7175" }}>{formatDate(calc.created_at)}</div>
                         <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223", fontWeight: "500" }}>
                           {calc.product_title ?? "—"}
                           {annot && <div style={{ fontSize: "10px", color: "#7C3AED", marginTop: "2px" }}>● {annot.note}</div>}
                         </div>
-                        <div style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
-                        <div style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.country}</div>
+                        <div className="tcc-hist-col-cat" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
+                        <div className="tcc-hist-col-pays" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.country}</div>
                         <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223" }}>{fmt(calc.selling_price)}€</div>
                         <div style={{ padding: "11px 12px" }}>
                           <span style={{ fontSize: "13px", fontWeight: "700", color: mc }}>{pct(calc.net_margin_percent)}%</span>
@@ -1634,7 +1640,7 @@ export default function Index() {
                 {/* Summary */}
                 {auditData && !isAuditing && (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+                    <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits scannés"    value={auditData.totalScanned} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
                       <StatCard label="Top Performers ✅"  value={winners.length} sub="marge > 15%"  color="#008060" bg="#F1F8F5" />
                       <StatCard label="Produits à risque ⚠️" value={risky.length}  sub="marge 0–15%"  color="#B98900" bg="#FFF9EC" />
@@ -1668,9 +1674,9 @@ export default function Index() {
                     {/* Full table */}
                     <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "10px" }}>{products.length} produit{products.length > 1 ? "s" : ""} avec coût fournisseur renseigné</div>
                     <div style={{ border: "1px solid #E4E5E7", borderRadius: "8px", overflow: "hidden" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                        {["Produit", "Prix vente", "Coût fournisseur", "Marge nette %", "Statut"].map(h => (
-                          <div key={h} style={{ padding: "10px 12px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px" }}>{h}</div>
+                      <div className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
+                        {["Produit", "Prix vente", "Coût fournisseur", "Marge nette %", "Statut"].map((h, idx) => (
+                          <div key={h} className={idx === 2 ? "tcc-audit-col-cost" : ""} style={{ padding: "10px 12px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px" }}>{h}</div>
                         ))}
                       </div>
                       {products.map((p, i) => {
@@ -1678,10 +1684,10 @@ export default function Index() {
                         const statusBg    = p.netPct < 0 ? "#FFF4F4" : p.netPct < 15 ? "#FFF9EC" : "#F1F8F5";
                         const statusLabel = p.netPct < 0 ? "Perte" : p.netPct < 15 ? "Risque" : "OK";
                         return (
-                          <div key={p.id} style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
+                          <div key={p.id} className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                             <div style={{ padding: "10px 12px", fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
                             <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{fmt(p.price)}€</div>
-                            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{fmt(p.cost)}€</div>
+                            <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{fmt(p.cost)}€</div>
                             <div style={{ padding: "10px 12px" }}><span style={{ fontSize: "13px", fontWeight: "700", color: statusColor }}>{pct(p.netPct)}%</span></div>
                             <div style={{ padding: "10px 12px" }}><span style={{ padding: "3px 10px", borderRadius: "10px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: "700" }}>{statusLabel}</span></div>
                           </div>
