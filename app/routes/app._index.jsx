@@ -610,6 +610,13 @@ export const action = async ({ request }) => {
 
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
+    let isExpert = false;
+    try {
+      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
+      if (br.hasActivePayment) isExpert = (br.appSubscriptions ?? []).some(s => s.name === PLAN_EXPERT);
+    } catch (e) { console.error("[Billing] save_annotation:", e?.message); }
+    if (!isExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
+
     const { calculation_id, note } = body;
     if (!calculation_id || !note?.trim()) return { success: false, error: "Données invalides." };
     await supabase.from("calculation_annotations").upsert(
@@ -621,14 +628,26 @@ export const action = async ({ request }) => {
 
   // ── Run catalog audit ─────────────────────────────────────────────────────
   if (body._action === "run_audit") {
+    let isExpert = false;
+    try {
+      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
+      if (br.hasActivePayment) isExpert = (br.appSubscriptions ?? []).some(s => s.name === PLAN_EXPERT);
+    } catch (e) { console.error("[Billing] run_audit:", e?.message); }
+    if (!isExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
+
     const customsRate  = parseFloat(body.customs_rate  ?? "0.12");
     const shopifyFee   = parseFloat(body.shopify_fee   ?? "0.02");
     const stripeFee    = parseFloat(body.stripe_fee    ?? "0.025");
     const returnsRate  = parseFloat(body.returns_rate  ?? "0.05");
     const shippingCost = parseFloat(body.shipping_cost ?? "8");
 
+    const startTime = Date.now();
     let allProducts = [], cursor = null, hasNextPage = true, pages = 0;
     while (hasNextPage && pages < 10) {
+      if (Date.now() - startTime > 7000) {
+        console.error("[Audit] Time budget exceeded after", pages, "pages");
+        break;
+      }
       pages++;
       try {
         const resp = await admin.graphql(
@@ -727,6 +746,8 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max expliquant pourquoi la marge est à ce niveau","actions":["action concrète 1 avec chiffres","action concrète 2 avec chiffres","action concrète 3 avec chiffres"]}`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -740,6 +761,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
           max_tokens: 512,
           messages: [{ role: "user", content: prompt }],
         }),
+        signal: controller.signal,
       });
       if (!resp.ok) {
         const err = await resp.text();
@@ -751,8 +773,11 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
       const parsed = JSON.parse(text);
       return { analyse: parsed.analyse, actions: parsed.actions };
     } catch (e) {
+      if (e?.name === "AbortError") return { error: "La recommandation IA a pris trop de temps. Réessayez dans un instant." };
       console.error("[AI] Failed:", e?.message);
       return { error: "Impossible d'obtenir la recommandation IA." };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -1655,8 +1680,15 @@ export default function Index() {
                   </div>
                 )}
 
+                {/* Error */}
+                {auditData?.error && !isAuditing && (
+                  <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D44", marginBottom: "16px", fontSize: "13px", color: "#D72C0D" }}>
+                    {auditData.error}
+                  </div>
+                )}
+
                 {/* Summary */}
-                {auditData && !isAuditing && (
+                {auditData && !auditData.error && !isAuditing && (
                   <>
                     <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
@@ -1770,6 +1802,9 @@ export default function Index() {
             <textarea value={annotText} onChange={e => setAnnotText(e.target.value)} rows={3}
               placeholder="Ex: Changement de fournisseur, Hausse des droits de douane…"
               style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+            {annotFetcher.data?.error && (
+              <div style={{ marginTop: "10px", fontSize: "12px", color: "#D72C0D" }}>{annotFetcher.data.error}</div>
+            )}
             <div style={{ display: "flex", gap: "10px", marginTop: "16px", justifyContent: "flex-end" }}>
               <button onClick={() => setAnnotModal(null)} style={{ padding: "8px 18px", background: "none", border: "1px solid #E4E5E7", borderRadius: "6px", fontSize: "13px", cursor: "pointer", fontFamily: "inherit", color: "#6D7175" }}>Annuler</button>
               <button onClick={handleSaveAnnotation} disabled={!annotText.trim() || annotFetcher.state !== "idle"}
