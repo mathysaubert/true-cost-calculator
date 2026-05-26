@@ -1403,11 +1403,13 @@ export default function Index() {
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente minimum</div>
                     <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{simResult.prixVenteMin.toFixed(2)}€</div>
                     <div style={{ fontSize: "12px", color: "#6D7175" }}>pour {simResult.targetMargin}% de marge nette</div>
+                    <div style={{ fontSize: "12px", color: "#008060", fontWeight: "600", marginTop: "4px" }}>({(simResult.prixVenteMin * parseFloat(simResult.targetMargin) / 100).toFixed(2)}€ par vente)</div>
                   </div>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente recommandé</div>
                     <div style={{ fontSize: "32px", fontWeight: "800", color: "#202223", marginBottom: "6px" }}>{simResult.prixVenteRec.toFixed(2)}€</div>
                     <div style={{ fontSize: "12px", color: "#6D7175" }}>+10% de sécurité ({(parseFloat(simResult.targetMargin) + 4.5).toFixed(1)}% marge estimée)</div>
+                    <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100).toFixed(2)}€ par vente)</div>
                   </div>
                 </div>
                 <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
