@@ -308,12 +308,36 @@ function ExpertGate({ onUpgrade }) {
 // Formula: PV / (PV - CoutRendu - FraisShopify - FraisStripe - ProvisionRetours)
 // Ads excluded from denominator — we compute available margin BEFORE ad spend
 const AD_PLATFORMS = [
-  { name: "Meta Ads", sub: "Facebook / Instagram", min: 2.5, max: 3.5,
-    icon: "f", iconBg: "#1877F2", iconColor: "#fff" },
-  { name: "TikTok Ads", sub: "TikTok For Business", min: 1.8, max: 2.5,
-    icon: "T", iconBg: "#010101", iconColor: "#fff" },
-  { name: "Google Shopping", sub: "Performance Max", min: 3.0, max: 5.0,
-    icon: "G", iconBg: "#4285F4", iconColor: "#fff" },
+  {
+    name: "Meta Ads", sub: "Facebook / Instagram", min: 2.5, max: 3.5,
+    logoBg: "#1877F2",
+    logo: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+        <path d="M17 2h-3a5 5 0 00-5 5v3H6v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/>
+      </svg>
+    ),
+  },
+  {
+    name: "TikTok Ads", sub: "TikTok For Business", min: 1.8, max: 2.5,
+    logoBg: "#010101",
+    logo: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+        <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V9.07a8.16 8.16 0 004.77 1.52V7.14a4.85 4.85 0 01-1-.45z"/>
+      </svg>
+    ),
+  },
+  {
+    name: "Google Shopping", sub: "Performance Max", min: 3.0, max: 5.0,
+    logoBg: "#fff",
+    logo: (
+      <svg width="16" height="16" viewBox="0 0 24 24">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+    ),
+  },
 ];
 
 function platformStatus(roas, min, max) {
@@ -398,12 +422,12 @@ function BreakEvenROAS({ results }) {
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {AD_PLATFORMS.map(({ name, sub, min, max, icon, iconBg, iconColor }) => {
+          {AD_PLATFORMS.map(({ name, sub, min, max, logo, logoBg }) => {
             const s = platformStatus(roas, min, max);
             return (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "10px", background: s.bg, border: `1px solid ${s.border}` }}>
-                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: iconColor, fontSize: "14px", fontWeight: "900", flexShrink: 0, fontFamily: "system-ui,sans-serif", letterSpacing: "-0.5px" }}>
-                  {icon}
+                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: logoBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: logoBg === "#fff" ? "1px solid #E4E5E7" : "none" }}>
+                  {logo}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223", marginBottom: "1px" }}>{name}</div>
@@ -1068,6 +1092,14 @@ export default function Index() {
 
   return (
     <s-page heading="Calculateur de Vraie Marge">
+      <style>{`
+        @media (max-width: 768px) {
+          .tcc-form-grid   { grid-template-columns: 1fr !important; }
+          .tcc-cost-grid   { grid-template-columns: 1fr !important; }
+          .tcc-margin-cards{ grid-template-columns: 1fr !important; }
+          .tcc-upgrade-plans{ grid-template-columns: 1fr !important; max-width: 360px !important; }
+        }
+      `}</style>
 
       {/* ── WELCOME BANNER ───────────────────────────────────────────────── */}
       {showWelcome && (
@@ -1138,7 +1170,7 @@ export default function Index() {
                   <div style={{ fontSize: "20px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Passez au niveau supérieur</div>
                   <div style={{ fontSize: "14px", color: "#6D7175" }}>Calculs illimités, historique avancé, audit catalogue et ROAS.</div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", maxWidth: "780px", margin: "0 auto 28px" }}>
+                <div className="tcc-upgrade-plans" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", maxWidth: "780px", margin: "0 auto 28px" }}>
                   {/* Free */}
                   <div style={{ padding: "20px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "left" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Gratuit</div>
@@ -1202,7 +1234,7 @@ export default function Index() {
                   </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                <div className="tcc-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Données produit</div>
                     <FieldGroup label="Prix d'achat fournisseur (€)" tooltip="Prix hors taxes payé au fournisseur, livraison fournisseur non incluse. À retrouver sur votre facture pro-forma ou votre commande AliExpress / Alibaba.">
@@ -1277,7 +1309,7 @@ export default function Index() {
               Entrez votre prix fournisseur et votre <strong>marge nette cible</strong>. L'app calcule le prix de vente minimum à appliquer.
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+            <div className="tcc-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
               <div>
                 <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Paramètres produit</div>
                 <FieldGroup label="Prix d'achat fournisseur (€)">
@@ -1764,13 +1796,13 @@ export default function Index() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "32px" }}>
+          <div className="tcc-margin-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "32px" }}>
             <StatCard label="Marge apparente"    value={`${pct(results.margeApparente)}%`}    sub="Marge apparente calculée"        color="#6D7175"   bg="#F9FAFB" />
             <StatCard label="Marge brute"         value={`${pct(results.margeBrutePercent)}%`} sub={`${fmt(results.margeBrute)}€ / vente`} color="#202223"   bg="#F9FAFB" />
             <StatCard label="Marge nette réelle"  value={`${pct(results.margeNettePercent)}%`} sub={`${fmt(results.margeNette)}€ / vente`} color={marginColor} bg={marginBg} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+          <div className="tcc-cost-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
             <div>
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Structure du coût d'achat</div>
               {[
