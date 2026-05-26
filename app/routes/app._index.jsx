@@ -126,10 +126,10 @@ function MessageBlock({ items, color, bg, borderColor }) {
 
 function StatCard({ label, value, sub, color, bg }) {
   return (
-    <div style={{ padding: "16px 12px", borderRadius: "8px", background: bg, textAlign: "center", border: `1px solid ${color}22` }}>
-      <div style={{ fontSize: "11px", fontWeight: "500", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "6px" }}>{label}</div>
-      <div style={{ fontSize: "22px", fontWeight: "700", color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "6px" }}>{sub}</div>
+    <div style={{ padding: "16px 12px", borderRadius: "8px", background: bg, border: `1px solid ${color}22`, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+      <div style={{ fontSize: "11px", fontWeight: "500", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", minHeight: "32px", display: "flex", alignItems: "center", justifyContent: "center" }}>{label}</div>
+      <div style={{ fontSize: "22px", fontWeight: "700", color, lineHeight: 1, minHeight: "60px", display: "flex", alignItems: "center", justifyContent: "center" }}>{value}</div>
+      <div style={{ fontSize: "12px", color: "#6D7175" }}>{sub}</div>
     </div>
   );
 }
