@@ -99,7 +99,7 @@ function FieldGroup({ label, tooltip, direction = "right", children }) {
               style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >?</button>
             {showTip && (
-              <div style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
+              <div className="tcc-tooltip-box" style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
                 {tooltip}
               </div>
             )}
@@ -401,7 +401,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
           <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: "16px", marginBottom: "14px" }}>
-          <span style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{roas.toFixed(2)}x</span>
+          <span className="tcc-roas-num" style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{roas.toFixed(2)}x</span>
           <div>
             <div style={{ fontSize: "15px", fontWeight: "700", color: roasColor }}>{roasLabel}</div>
             <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "2px" }}>ROAS minimum requis</div>
@@ -1127,18 +1127,40 @@ export default function Index() {
     <s-page heading="Calculateur de Vraie Marge">
       <style>{`
         @media (max-width: 768px) {
+          /* ── Form / Calculator ── */
           .tcc-form-grid    { grid-template-columns: 1fr !important; }
           .tcc-cost-grid    { grid-template-columns: 1fr !important; }
           .tcc-margin-cards { grid-template-columns: 1fr !important; }
           .tcc-upgrade-plans{ grid-template-columns: 1fr !important; max-width: 360px !important; }
+          .tcc-result-block { box-sizing: border-box !important; width: 100% !important; overflow-wrap: break-word !important; word-break: break-word !important; }
+
+          /* ── Tooltips ── */
+          .tcc-tooltip-box  { left: 0 !important; right: auto !important; top: 22px !important; width: min(260px, calc(100vw - 40px)) !important; }
+
+          /* ── Simulation ── */
+          .tcc-sim-cards    { grid-template-columns: 1fr !important; }
+          .tcc-sim-detail   { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; }
+
+          /* ── History ── */
           .tcc-history-container { overflow-x: hidden; width: 100%; }
           .tcc-hist-row     { grid-template-columns: 1.6fr 1.8fr 1fr 1.2fr !important; }
           .tcc-hist-col-cat, .tcc-hist-col-pays { display: none !important; }
+
+          /* ── Alerts ── */
+          .tcc-alert-row    { grid-template-columns: 2fr 1fr 1fr !important; }
+          .tcc-alert-col-ecart { display: none !important; }
+          .tcc-alert-input  { flex-direction: column !important; align-items: stretch !important; }
+          .tcc-alert-input input { width: 100% !important; }
+
+          /* ── Audit ── */
           .tcc-audit-kpi    { grid-template-columns: 1fr 1fr !important; }
           .tcc-audit-row    { grid-template-columns: 2.5fr 1fr 1.2fr 1fr !important; }
           .tcc-audit-col-cost { display: none !important; }
           .tcc-audit-params   { grid-template-columns: 1fr 1fr !important; }
           .tcc-audit-btn      { display: block !important; width: 100% !important; }
+
+          /* ── ROAS ── */
+          .tcc-roas-num     { font-size: 38px !important; letter-spacing: -1px !important; }
         }
       `}</style>
 
@@ -1398,7 +1420,7 @@ export default function Index() {
 
             {simResult && (
               <div style={{ marginTop: "28px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
+                <div className="tcc-sim-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F1F8F5", border: "2px solid #008060", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente minimum</div>
                     <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{simResult.prixVenteMin.toFixed(2)}€</div>
@@ -1412,7 +1434,7 @@ export default function Index() {
                     <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100).toFixed(2)}€ par vente)</div>
                   </div>
                 </div>
-                <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
+                <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
                   Coût rendu (achat + douane + TVA import + port) = <strong>{simResult.coutRendu.toFixed(2)}€</strong><br />
                   Taux de frais variables (Shopify + Stripe + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
@@ -1546,7 +1568,7 @@ export default function Index() {
 
             <div style={{ maxWidth: "420px", marginBottom: "28px" }}>
               <FieldGroup label="Seuil de rentabilité cible (%)">
-                <div style={{ display: "flex", gap: "10px" }}>
+                <div className="tcc-alert-input" style={{ display: "flex", gap: "10px" }}>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1581,17 +1603,17 @@ export default function Index() {
                   ⚠️ {violations.length} produit{violations.length > 1 ? "s" : ""} en dessous du seuil ({initialThreshold}%)
                 </div>
                 <div style={{ border: "1px solid #D72C0D22", borderRadius: "8px", overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: "#FFF4F4", borderBottom: "1px solid #F1D0D0" }}>
-                    {["Produit", "Catégorie", "Marge nette", "Écart"].map(h => (
-                      <div key={h} style={{ padding: "10px 14px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px" }}>{h}</div>
+                  <div className="tcc-alert-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: "#FFF4F4", borderBottom: "1px solid #F1D0D0" }}>
+                    {["Produit", "Catégorie", "Marge nette", "Écart"].map((h, idx) => (
+                      <div key={h} className={idx === 3 ? "tcc-alert-col-ecart" : ""} style={{ padding: "10px 14px", fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px" }}>{h}</div>
                     ))}
                   </div>
                   {violations.map((v, i) => (
-                    <div key={v.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: i % 2 === 0 ? "#fff" : "#FFF8F8", borderBottom: i < violations.length - 1 ? "1px solid #F1F2F3" : "none" }}>
+                    <div key={v.id} className="tcc-alert-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: i % 2 === 0 ? "#fff" : "#FFF8F8", borderBottom: i < violations.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                       <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "500", color: "#202223" }}>{v.product_title ?? v.category}</div>
                       <div style={{ padding: "11px 14px", fontSize: "12px", color: "#6D7175" }}>{v.category}</div>
                       <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "700", color: "#D72C0D" }}>{pct(v.net_margin_percent)}%</div>
-                      <div style={{ padding: "11px 14px", fontSize: "12px", color: "#D72C0D" }}>−{pct(initialThreshold - v.net_margin_percent)} pts</div>
+                      <div className="tcc-alert-col-ecart" style={{ padding: "11px 14px", fontSize: "12px", color: "#D72C0D" }}>−{pct(initialThreshold - v.net_margin_percent)} pts</div>
                     </div>
                   ))}
                 </div>
@@ -1817,7 +1839,7 @@ export default function Index() {
         <s-section heading="Résultats — Votre vraie marge">
           <MessageBlock items={warnings} color="#B98900" bg="#FFF9EC" borderColor="#B98900" />
 
-          <div style={{ padding: "20px 24px", borderRadius: "8px", background: marginBg, borderLeft: `5px solid ${marginColor}`, marginBottom: "28px" }}>
+          <div className="tcc-result-block" style={{ padding: "20px 24px", borderRadius: "8px", background: marginBg, borderLeft: `5px solid ${marginColor}`, marginBottom: "28px" }}>
             {results.margeNettePercent < 0 ? (
               <>
                 <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Perte nette — vous perdez de l'argent à chaque vente.</div>
