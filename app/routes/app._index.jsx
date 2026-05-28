@@ -88,6 +88,7 @@ const hintStyle  = { fontSize: "11px", color: "#6D7175", marginTop: "3px" };
 function FieldGroup({ label, tooltip, direction = "right", children }) {
   const [tipPos, setTipPos] = useState(null);
   const btnRef = useRef(null);
+  const tipRef = useRef(null);
 
   const openTip = () => {
     if (!btnRef.current) return;
@@ -101,6 +102,22 @@ function FieldGroup({ label, tooltip, direction = "right", children }) {
   };
 
   const closeTip = () => setTipPos(null);
+
+  // Close on any tap/click outside button or tooltip
+  useEffect(() => {
+    if (!tipPos) return;
+    const handler = (e) => {
+      if (btnRef.current?.contains(e.target)) return;
+      if (tipRef.current?.contains(e.target)) return;
+      closeTip();
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [tipPos]);
 
   return (
     <div style={{ marginBottom: "16px" }}>
@@ -116,7 +133,7 @@ function FieldGroup({ label, tooltip, direction = "right", children }) {
             >?</button>
             {tipPos && (
               <div
-                onClick={closeTip}
+                ref={tipRef}
                 style={{ position: "fixed", top: tipPos.top, left: tipPos.left, width: "260px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 9999, lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}
               >
                 {tooltip}
