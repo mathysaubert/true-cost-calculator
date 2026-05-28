@@ -99,7 +99,7 @@ function FieldGroup({ label, tooltip, direction = "right", children }) {
               style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >?</button>
             {showTip && (
-              <div className="tcc-tooltip-box" style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
+              <div style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
                 {tooltip}
               </div>
             )}
@@ -1133,9 +1133,6 @@ export default function Index() {
           .tcc-margin-cards { grid-template-columns: 1fr !important; }
           .tcc-upgrade-plans{ grid-template-columns: 1fr !important; max-width: 360px !important; }
           .tcc-result-block { box-sizing: border-box !important; width: 100% !important; overflow-wrap: break-word !important; word-break: break-word !important; }
-
-          /* ── Tooltips ── */
-          .tcc-tooltip-box  { left: 0 !important; right: auto !important; top: 22px !important; width: min(260px, calc(100vw - 40px)) !important; }
 
           /* ── Simulation ── */
           .tcc-sim-cards    { grid-template-columns: 1fr !important; }
