@@ -86,20 +86,39 @@ const hintStyle  = { fontSize: "11px", color: "#6D7175", marginTop: "3px" };
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function FieldGroup({ label, tooltip, direction = "right", children }) {
-  const [showTip, setShowTip] = useState(false);
+  const [tipPos, setTipPos] = useState(null);
+  const btnRef = useRef(null);
+
+  const openTip = () => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const W = 260;
+    const margin = 8;
+    let left = rect.left;
+    if (left + W > window.innerWidth - margin) left = window.innerWidth - W - margin;
+    if (left < margin) left = margin;
+    setTipPos({ top: rect.bottom + 8, left });
+  };
+
+  const closeTip = () => setTipPos(null);
+
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
         <label style={{ ...labelStyle, marginBottom: 0 }}>{label}</label>
         {tooltip && (
-          <div style={{ position: "relative" }}>
+          <div>
             <button
+              ref={btnRef}
               type="button"
-              onClick={() => setShowTip(v => !v)}
-              style={{ width: "16px", height: "16px", borderRadius: "50%", background: showTip ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: showTip ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              onClick={() => tipPos ? closeTip() : openTip()}
+              style={{ width: "16px", height: "16px", borderRadius: "50%", background: tipPos ? "#008060" : "#E4E5E7", border: "none", cursor: "pointer", fontSize: "10px", fontWeight: "700", color: tipPos ? "#fff" : "#6D7175", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >?</button>
-            {showTip && (
-              <div style={{ position: "absolute", ...(direction === "left" ? { right: "22px" } : { left: "22px" }), top: "-8px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 50, width: "260px", lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
+            {tipPos && (
+              <div
+                onClick={closeTip}
+                style={{ position: "fixed", top: tipPos.top, left: tipPos.left, width: "260px", background: "#202223", color: "#fff", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", zIndex: 9999, lineHeight: "1.6", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}
+              >
                 {tooltip}
               </div>
             )}
