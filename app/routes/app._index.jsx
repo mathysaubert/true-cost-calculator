@@ -479,7 +479,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
             </div>
           </div>
           <div style={{ textAlign: "center", flexShrink: 0, paddingTop: "4px" }}>
-            <div className="tcc-cpa-num" style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{fmt(available)}€</div>
+            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{fmt(available)}€</div>
             <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "5px", fontWeight: "500" }}>par acquisition</div>
           </div>
         </div>
@@ -1159,16 +1159,8 @@ export default function Index() {
           .tcc-audit-params   { grid-template-columns: 1fr 1fr !important; }
           .tcc-audit-btn      { display: block !important; width: 100% !important; }
 
-          /* ── ROAS / CPA ── */
+          /* ── ROAS ── */
           .tcc-roas-num     { font-size: 38px !important; letter-spacing: -1px !important; }
-          .tcc-cpa-num      { font-size: 34px !important; letter-spacing: -1px !important; }
-
-          /* ── Modal ── */
-          .tcc-modal-box    { width: min(400px, calc(100vw - 32px)) !important; box-sizing: border-box !important; }
-
-          /* ── Tab bar ── */
-          .tcc-tabbar       { overflow-x: auto !important; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
-          .tcc-tabbar button { padding: 8px 10px !important; font-size: 12px !important; white-space: nowrap !important; flex-shrink: 0 !important; }
         }
       `}</style>
 
@@ -1199,7 +1191,7 @@ export default function Index() {
       }>
 
         {/* Tab bar */}
-        <div className="tcc-tabbar" style={{ display: "flex", gap: "0", marginBottom: "24px", borderBottom: "2px solid #E4E5E7", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0", marginBottom: "24px", borderBottom: "2px solid #E4E5E7", flexWrap: "wrap" }}>
           {[
             { id: "calculator", label: "Calculateur", badge: null },
             { id: "simulate",   label: "Simulation",  badge: null },
@@ -1823,7 +1815,7 @@ export default function Index() {
       {/* Annotation modal */}
       {annotModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div className="tcc-modal-box" style={{ background: "#fff", borderRadius: "12px", padding: "28px", width: "400px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+          <div style={{ background: "#fff", borderRadius: "12px", padding: "28px", width: "400px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
             <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "16px" }}>Annoter ce point de données</div>
             <textarea value={annotText} onChange={e => setAnnotText(e.target.value)} rows={3}
               placeholder="Ex: Changement de fournisseur, Hausse des droits de douane…"
