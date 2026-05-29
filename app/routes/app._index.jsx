@@ -1194,6 +1194,9 @@ export default function Index() {
 
           /* ── ROAS ── */
           .tcc-roas-num     { font-size: 38px !important; letter-spacing: -1px !important; }
+
+          /* ── Prevent iOS auto-zoom on input focus ── */
+          input, select, textarea { font-size: 16px !important; }
         }
       `}</style>
 
