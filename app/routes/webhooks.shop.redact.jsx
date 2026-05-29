@@ -1,16 +1,16 @@
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
-import db from "../db.server";
 
+// Mandatory Shopify RGPD webhook: delete all shop data 48 hours after uninstall.
+// Fired by Shopify as a second-pass guarantee after app/uninstalled.
 export const action = async ({ request }) => {
-  const { shop, session } = await authenticate.webhook(request);
+  const { payload } = await authenticate.webhook(request);
 
-  // Delete Shopify session tokens from Prisma
-  if (session) {
-    await db.session.deleteMany({ where: { shop } });
-  }
+  const shop = payload?.shop_domain;
+  if (!shop) return new Response(null, { status: 200 });
 
-  // Delete all shop data from Supabase (RGPD / data isolation)
+  console.info("[RGPD] shop/redact", { shop });
+
   await Promise.allSettled([
     supabase.from("calculation_annotations").delete().eq("shop_domain", shop),
     supabase.from("calculations").delete().eq("shop_domain", shop),
@@ -19,5 +19,5 @@ export const action = async ({ request }) => {
     supabase.from("rate_limits").delete().eq("shop_domain", shop),
   ]);
 
-  return new Response();
+  return new Response(null, { status: 200 });
 };

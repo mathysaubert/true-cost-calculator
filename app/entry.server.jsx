@@ -14,6 +14,10 @@ export default async function handleRequest(
   reactRouterContext,
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
+  // Security headers — X-Frame-Options intentionally omitted (embedded Shopify app)
+  responseHeaders.set("X-Content-Type-Options", "nosniff");
+  responseHeaders.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  responseHeaders.set("X-DNS-Prefetch-Control", "off");
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? "") ? "onAllReady" : "onShellReady";
 

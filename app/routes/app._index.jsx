@@ -614,6 +614,28 @@ export const loader = async ({ request }) => {
   return { isPro, isExpert, monthlyCount, history, products, alertThreshold, violations, showWelcome, annotations };
 };
 
+async function checkRateLimit(shop, action, maxPerDay) {
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    const { data } = await supabase.from("rate_limits")
+      .select("count")
+      .eq("shop_domain", shop)
+      .eq("action", action)
+      .eq("day", day)
+      .maybeSingle();
+    const current = data?.count ?? 0;
+    if (current >= maxPerDay) return false;
+    await supabase.from("rate_limits").upsert(
+      { shop_domain: shop, action, day, count: current + 1, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain,action,day" }
+    );
+  } catch (e) {
+    // Fail open if rate_limits table doesn't exist yet
+    console.error("[RateLimit] error:", e?.message);
+  }
+  return true;
+}
+
 export const action = async ({ request }) => {
   const { session, billing, admin } = await authenticate.admin(request);
 
@@ -655,6 +677,16 @@ export const action = async ({ request }) => {
 
     const { calculation_id, note } = body;
     if (!calculation_id || !note?.trim()) return { success: false, error: "Données invalides." };
+    if (note.trim().length > 500) return { success: false, error: "Note trop longue (500 caractères max)." };
+
+    // Verify the calculation belongs to this shop (prevent cross-shop data access)
+    const { data: calc } = await supabase.from("calculations")
+      .select("id")
+      .eq("id", calculation_id)
+      .eq("shop_domain", session.shop)
+      .maybeSingle();
+    if (!calc) return { success: false, error: "Calcul introuvable." };
+
     await supabase.from("calculation_annotations").upsert(
       { shop_domain: session.shop, calculation_id, note: note.trim() },
       { onConflict: "shop_domain,calculation_id" }
@@ -671,11 +703,15 @@ export const action = async ({ request }) => {
     } catch (e) { console.error("[Billing] run_audit:", e?.message); }
     if (!isExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
 
-    const customsRate  = parseFloat(body.customs_rate  ?? "0.12");
-    const shopifyFee   = parseFloat(body.shopify_fee   ?? "0.02");
-    const stripeFee    = parseFloat(body.stripe_fee    ?? "0.025");
-    const returnsRate  = parseFloat(body.returns_rate  ?? "0.05");
-    const shippingCost = parseFloat(body.shipping_cost ?? "8");
+    const auditAllowed = await checkRateLimit(session.shop, "run_audit", 10);
+    if (!auditAllowed) return { success: false, error: "Limite atteinte : 10 audits par jour." };
+
+    const clampRate = (v, def) => { const n = parseFloat(v ?? def); return Number.isFinite(n) && n >= 0 && n <= 1 ? n : parseFloat(def); };
+    const customsRate  = clampRate(body.customs_rate,  "0.12");
+    const shopifyFee   = clampRate(body.shopify_fee,   "0.02");
+    const stripeFee    = clampRate(body.stripe_fee,    "0.025");
+    const returnsRate  = clampRate(body.returns_rate,  "0.05");
+    const shippingCost = (() => { const n = parseFloat(body.shipping_cost ?? "8"); return Number.isFinite(n) && n >= 0 && n <= 9999 ? n : 8; })();
 
     const startTime = Date.now();
     let allProducts = [], cursor = null, hasNextPage = true, pages = 0;
@@ -755,6 +791,16 @@ export const action = async ({ request }) => {
 
   // ── Feature 5: AI recommendation ──────────────────────────────────────────
   if (body._action === "ai_recommend") {
+    let isPaidUser = false;
+    try {
+      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
+      isPaidUser = br.hasActivePayment;
+    } catch (e) { console.error("[Billing] ai_recommend:", e?.message); }
+    if (!isPaidUser) return { error: "Fonctionnalité réservée aux plans Pro et Expert." };
+
+    const aiAllowed = await checkRateLimit(session.shop, "ai_recommend", 50);
+    if (!aiAllowed) return { error: "Limite atteinte : 50 recommandations IA par jour." };
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return { error: "La recommandation IA n'est pas disponible pour le moment." };
 
@@ -812,6 +858,33 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
   }
 
   // ── Save calculation ───────────────────────────────────────────────────────
+  // Server-side numeric validation — reject malformed or out-of-range values
+  const purchasePrice = parseFloat(body.purchase_price);
+  const sellingPrice  = parseFloat(body.selling_price);
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0 || purchasePrice > 999999) {
+    return { success: false, error: "Prix d'achat invalide." };
+  }
+  if (!Number.isFinite(sellingPrice) || sellingPrice <= 0 || sellingPrice > 999999) {
+    return { success: false, error: "Prix de vente invalide." };
+  }
+  const shopifyFeeV   = parseFloat(body.shopify_fee);
+  const stripeFeeV    = parseFloat(body.stripe_fee);
+  const returnsRateV  = parseFloat(body.returns_rate);
+  const adsRateV      = parseFloat(body.ads_rate);
+  const customsRateV  = parseFloat(body.customs_rate);
+  const shippingCostV = parseFloat(body.shipping_cost);
+  if ([shopifyFeeV, stripeFeeV, returnsRateV, adsRateV, customsRateV].some(
+    v => !Number.isFinite(v) || v < 0 || v > 100
+  )) {
+    return { success: false, error: "Taux invalide (0–100)." };
+  }
+  if (!Number.isFinite(shippingCostV) || shippingCostV < 0 || shippingCostV > 9999) {
+    return { success: false, error: "Frais de port invalides." };
+  }
+  if (body.product_title && String(body.product_title).length > 255) {
+    return { success: false, error: "Titre produit trop long." };
+  }
+
   let hasActivePayment = false;
   try {
     const result = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
@@ -839,24 +912,29 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
     return { success: true, monthlyCount: count + 1 };
   }
 
+  const netMarginPct = parseFloat(body.net_margin_percent);
+  const netMarginEur = parseFloat(body.net_margin_euros);
+  const coutRendu    = parseFloat(body.cout_rendu);
+  const margeBrute   = parseFloat(body.marge_brute_percent);
+
   const { error } = await supabase.from("calculations").insert({
     shop_domain:         session.shop,
-    product_id:          body.product_id ?? null,
-    product_title:       body.product_title ?? null,
-    purchase_price:      body.purchase_price,
-    selling_price:       body.selling_price,
-    category:            body.category,
-    country:             body.country,
-    net_margin_percent:  body.net_margin_percent,
-    net_margin_euros:    body.net_margin_euros,
-    shopify_fee:         body.shopify_fee,
-    stripe_fee:          body.stripe_fee,
-    returns_rate:        body.returns_rate,
-    ads_rate:            body.ads_rate,
-    shipping_cost:       body.shipping_cost,
-    customs_rate:        body.customs_rate,
-    cout_rendu:          body.cout_rendu,
-    marge_brute_percent: body.marge_brute_percent,
+    product_id:          body.product_id ? String(body.product_id).slice(0, 255) : null,
+    product_title:       body.product_title ? String(body.product_title).slice(0, 255) : null,
+    purchase_price:      purchasePrice,
+    selling_price:       sellingPrice,
+    category:            body.category ? String(body.category).slice(0, 100) : null,
+    country:             body.country ? String(body.country).slice(0, 100) : null,
+    net_margin_percent:  Number.isFinite(netMarginPct) ? netMarginPct : null,
+    net_margin_euros:    Number.isFinite(netMarginEur) ? netMarginEur : null,
+    shopify_fee:         shopifyFeeV,
+    stripe_fee:          stripeFeeV,
+    returns_rate:        returnsRateV,
+    ads_rate:            adsRateV,
+    shipping_cost:       shippingCostV,
+    customs_rate:        customsRateV,
+    cout_rendu:          Number.isFinite(coutRendu) ? coutRendu : null,
+    marge_brute_percent: Number.isFinite(margeBrute) ? margeBrute : null,
   });
 
   if (error) {
