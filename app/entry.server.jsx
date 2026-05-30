@@ -1,10 +1,12 @@
+// instrument.server.mjs must be the very first import so Sentry hooks Node.js internals
+import "../instrument.server.mjs";
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
+import * as Sentry from "@sentry/node";
 import { addDocumentResponseHeaders } from "./shopify.server";
-import { Sentry } from "./sentry.server";
 
 export const streamTimeout = 5000;
 
@@ -50,8 +52,6 @@ export default async function handleRequest(
       },
     );
 
-    // Automatically timeout the React renderer after 6 seconds, which ensures
-    // React has enough time to flush down the rejected boundary contents
     setTimeout(abort, streamTimeout + 1000);
   });
 }

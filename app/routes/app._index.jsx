@@ -3,6 +3,7 @@ import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } fr
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { supabase } from "../supabase.server";
+import { captureException } from "../sentry.server";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -974,6 +975,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 
   if (error) {
     console.error("[Supabase] Insert error:", error.message);
+    captureException(new Error(`[Supabase] Insert failed: ${error.message}`));
     return { success: false, error: "Erreur lors de la sauvegarde du calcul." };
   }
   return { success: true };
