@@ -18,9 +18,9 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>True Cost Calculator</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          Calculez votre vraie marge nette en intégrant douanes, TVA import, frais Shopify, Stripe et publicité. Arrêtez de perdre de l'argent sur des produits que vous croyez rentables.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">

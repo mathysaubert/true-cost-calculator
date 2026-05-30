@@ -1,5 +1,4 @@
 import { authenticate } from "../shopify.server";
-import { supabase } from "../supabase.server";
 
 // Mandatory Shopify RGPD webhook: delete customer data within 30 days.
 // This app stores no PII linked to individual customers — data is indexed
@@ -13,7 +12,5 @@ export const action = async ({ request }) => {
 
   // No customer-level PII stored — calculations are shop-scoped only.
   // No rows to delete, but Shopify requires a 200 response within 5 s.
-  void supabase; // import kept for future use
-
   return new Response(null, { status: 200 });
 };

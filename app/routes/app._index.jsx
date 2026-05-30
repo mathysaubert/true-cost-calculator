@@ -8,6 +8,10 @@ import { supabase } from "../supabase.server";
 
 const FREE_LIMIT = 3;
 const DEFAULT_ALERT_THRESHOLD = 25;
+const TVA_IMPORT = 0.20;
+const HISTORY_LIMIT_EXPERT = 200;
+const HISTORY_LIMIT_PRO = 50;
+const HISTORY_LIMIT_FREE = 0;
 
 const CUSTOMS_RATES = {
   Textile: 0.12, Électronique: 0.05, Cosmétique: 0.10,
@@ -52,6 +56,15 @@ function validateOptionalAmount(raw, label, errors) {
   return n;
 }
 
+function sanitizeForPrompt(str) {
+  if (!str) return "";
+  return String(str)
+    .slice(0, 100)
+    .replace(/[\r\n\t]/g, " ")
+    // eslint-disable-next-line no-useless-escape
+    .replace(/[<>{}\[\]|\\^~`]/g, "");
+}
+
 function formatDate(iso) {
   return new Date(iso).toLocaleDateString("fr-FR", {
     day: "2-digit", month: "short", year: "numeric",
@@ -65,7 +78,7 @@ function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct,
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
   const douane      = prixAchat * customsRate;
-  const tvaImport   = (prixAchat + douane) * 0.20;
+  const tvaImport   = (prixAchat + douane) * TVA_IMPORT;
   const coutRendu   = prixAchat + douane + tvaImport + shipping;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
   const denominator = 1 - totalFeeRate - targetMarginPct / 100;
@@ -529,12 +542,12 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
 export const loader = async ({ request }) => {
   const { session, billing, admin } = await authenticate.admin(request);
 
-  // Run billing check and product fetch concurrently
-  const [billingResult, productsResult] = await Promise.allSettled([
-    billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true }),
+  // Run billing check and first product page concurrently
+  const [billingResult, productsResp1] = await Promise.allSettled([
+    billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: process.env.NODE_ENV !== "production" }),
     admin.graphql(`
-      query {
-        products(first: 100, sortKey: TITLE) {
+      query ProductsPage1 {
+        products(first: 250, sortKey: TITLE) {
           edges {
             node {
               id
@@ -544,6 +557,7 @@ export const loader = async ({ request }) => {
               }
             }
           }
+          pageInfo { hasNextPage endCursor }
         }
       }
     `),
@@ -557,19 +571,46 @@ export const loader = async ({ request }) => {
   }
 
   let products = [];
-  if (productsResult.status === "fulfilled") {
+  let productsCapped = false;
+  if (productsResp1.status === "fulfilled") {
     try {
-      const json = await productsResult.value.json();
-      products = (json.data?.products?.edges ?? []).map(({ node }) => ({
-        id: node.id,
-        title: node.title,
-        price: parseFloat(node.variants.edges[0]?.node.price ?? "0"),
-      }));
+      const json1 = await productsResp1.value.json();
+      const page1 = json1.data?.products;
+      if (page1) {
+        products = page1.edges.map(({ node }) => ({
+          id: node.id,
+          title: node.title,
+          price: parseFloat(node.variants.edges[0]?.node.price ?? "0"),
+        }));
+        if (page1.pageInfo.hasNextPage) {
+          try {
+            const resp2 = await admin.graphql(
+              `query ProductsPage2($cursor: String) {
+                products(first: 250, after: $cursor, sortKey: TITLE) {
+                  edges { node { id title variants(first: 1) { edges { node { price } } } } }
+                  pageInfo { hasNextPage }
+                }
+              }`,
+              { variables: { cursor: page1.pageInfo.endCursor } }
+            );
+            const json2 = await resp2.json();
+            const page2 = json2.data?.products;
+            if (page2) {
+              for (const { node } of page2.edges) {
+                products.push({ id: node.id, title: node.title, price: parseFloat(node.variants.edges[0]?.node.price ?? "0") });
+              }
+              productsCapped = page2.pageInfo.hasNextPage;
+            }
+          } catch (e) {
+            console.error("[Products] Page 2 failed:", e?.message);
+          }
+        }
+      }
     } catch (e) {
       console.error("[Products] GraphQL parse failed:", e?.message);
     }
   } else {
-    console.error("[Products] GraphQL failed:", productsResult.reason?.message);
+    console.error("[Products] GraphQL failed:", productsResp1.reason?.message);
   }
 
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -584,7 +625,7 @@ export const loader = async ({ request }) => {
       .select("id, product_id, product_title, category, country, purchase_price, selling_price, net_margin_percent, net_margin_euros, created_at")
       .eq("shop_domain", session.shop)
       .order("created_at", { ascending: false })
-      .limit(isExpert ? 200 : isPro ? 50 : 0),
+      .limit(isExpert ? HISTORY_LIMIT_EXPERT : isPro ? HISTORY_LIMIT_PRO : HISTORY_LIMIT_FREE),
     supabase.from("margin_alerts").select("threshold").eq("shop_domain", session.shop).maybeSingle(),
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
@@ -611,7 +652,7 @@ export const loader = async ({ request }) => {
 
   const showWelcome = new URL(request.url).searchParams.get("subscribed") === "true";
 
-  return { isPro, isExpert, monthlyCount, history, products, alertThreshold, violations, showWelcome, annotations };
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -646,11 +687,13 @@ export const action = async ({ request }) => {
     return { success: false, error: "Corps de requête invalide." };
   }
 
+  const isTestMode = process.env.NODE_ENV !== "production";
+
   // ── Subscribe Pro ─────────────────────────────────────────────────────────
   if (body._action === "subscribe") {
     await billing.request({
       plan: PLAN_PRO,
-      isTest: true,
+      isTest: isTestMode,
       returnUrl: `${process.env.SHOPIFY_APP_URL}/app?subscribed=true`,
     });
     return null;
@@ -660,20 +703,26 @@ export const action = async ({ request }) => {
   if (body._action === "subscribe_expert") {
     await billing.request({
       plan: PLAN_EXPERT,
-      isTest: true,
+      isTest: isTestMode,
       returnUrl: `${process.env.SHOPIFY_APP_URL}/app?subscribed=true`,
     });
     return null;
   }
 
+  // Single billing check reused across all branches that need it
+  let billingIsPro = false, billingIsExpert = false;
+  try {
+    const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: isTestMode });
+    if (br.hasActivePayment) {
+      const subs = br.appSubscriptions ?? [];
+      billingIsExpert = subs.some(s => s.name === PLAN_EXPERT);
+      billingIsPro = billingIsExpert || subs.some(s => s.name === PLAN_PRO);
+    }
+  } catch (e) { console.error("[Billing] action check:", e?.message); }
+
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
-    let isExpert = false;
-    try {
-      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
-      if (br.hasActivePayment) isExpert = (br.appSubscriptions ?? []).some(s => s.name === PLAN_EXPERT);
-    } catch (e) { console.error("[Billing] save_annotation:", e?.message); }
-    if (!isExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
+    if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
 
     const { calculation_id, note } = body;
     if (!calculation_id || !note?.trim()) return { success: false, error: "Données invalides." };
@@ -696,12 +745,7 @@ export const action = async ({ request }) => {
 
   // ── Run catalog audit ─────────────────────────────────────────────────────
   if (body._action === "run_audit") {
-    let isExpert = false;
-    try {
-      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
-      if (br.hasActivePayment) isExpert = (br.appSubscriptions ?? []).some(s => s.name === PLAN_EXPERT);
-    } catch (e) { console.error("[Billing] run_audit:", e?.message); }
-    if (!isExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
+    if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
 
     const auditAllowed = await checkRateLimit(session.shop, "run_audit", 10);
     if (!auditAllowed) return { success: false, error: "Limite atteinte : 10 audits par jour." };
@@ -741,7 +785,7 @@ export const action = async ({ request }) => {
         const json = await resp.json();
         const page = json.data?.products;
         if (!page) break;
-        allProducts = [...allProducts, ...page.edges.map(e => e.node)];
+        allProducts.push(...page.edges.map(e => e.node));
         hasNextPage = page.pageInfo.hasNextPage;
         cursor = page.pageInfo.endCursor;
       } catch (e) {
@@ -757,7 +801,7 @@ export const action = async ({ request }) => {
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
         const douane   = cost * customsRate;
-        const tva      = (cost + douane) * 0.20;
+        const tva      = (cost + douane) * TVA_IMPORT;
         const coutRendu = cost + douane + tva + shippingCost;
         const shopify  = price * shopifyFee;
         const stripe   = price * stripeFee;
@@ -791,12 +835,7 @@ export const action = async ({ request }) => {
 
   // ── Feature 5: AI recommendation ──────────────────────────────────────────
   if (body._action === "ai_recommend") {
-    let isPaidUser = false;
-    try {
-      const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
-      isPaidUser = br.hasActivePayment;
-    } catch (e) { console.error("[Billing] ai_recommend:", e?.message); }
-    if (!isPaidUser) return { error: "Fonctionnalité réservée aux plans Pro et Expert." };
+    if (!billingIsPro) return { error: "Fonctionnalité réservée aux plans Pro et Expert." };
 
     const aiAllowed = await checkRateLimit(session.shop, "ai_recommend", 50);
     if (!aiAllowed) return { error: "Limite atteinte : 50 recommandations IA par jour." };
@@ -810,11 +849,15 @@ export const action = async ({ request }) => {
             shopifyFee, stripeFee, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette } = body;
 
+    const safeTitle    = sanitizeForPrompt(productTitle) || "Non spécifié";
+    const safeCategory = sanitizeForPrompt(category);
+    const safeCountry  = sanitizeForPrompt(country);
+
     const prompt = `Tu es un expert en e-commerce et rentabilité.
 
 Voici les données d'un calcul de marge pour un marchand Shopify :
-- Produit : ${productTitle ?? "Non spécifié"}
-- Catégorie : ${category} | Pays d'import : ${country}
+- Produit : ${safeTitle}
+- Catégorie : ${safeCategory} | Pays d'import : ${safeCountry}
 - Prix fournisseur : ${fmt(prixAchat)}€ | Prix de vente : ${fmt(prixVente)}€
 - Droits de douane : ${fmt(douane)}€ (taux ${(customsRate * 100).toFixed(0)}%)
 - TVA à l'import : ${fmt(tvaImport)}€ | Frais de port : ${fmt(shipping)}€
@@ -885,17 +928,9 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
     return { success: false, error: "Titre produit trop long." };
   }
 
-  let hasActivePayment = false;
-  try {
-    const result = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: true });
-    hasActivePayment = result.hasActivePayment;
-  } catch (e) {
-    console.error("[Billing] action check failed:", e?.message);
-  }
-
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  if (!hasActivePayment) {
+  if (!billingIsPro) {
     const { data: usage } = await supabase.from("usage")
       .select("calculation_count")
       .eq("shop_domain", session.shop)
@@ -947,7 +982,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations } = useLoaderData();
 
   const saveFetcher  = useFetcher();
   const aiFetcher    = useFetcher();
@@ -970,11 +1005,17 @@ export default function Index() {
     fraisRetour: "0", coutEmballage: "0",
   });
 
-  // Feature 3: simulation form
-  const [simForm, setSimForm] = useState({
-    prixAchat: "20", categorie: "Textile", paysImport: "Chine",
-    targetMargin: "35",
-    shopifyFee: "2", stripeFee: "2.5", retours: "5", ads: "15",
+  // Feature 3: simulation form — persisted in localStorage
+  const SIM_STORAGE_KEY = "tcc_simForm";
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", stripeFee: "2.5", retours: "5", ads: "15" };
+  const [simForm, setSimForm] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SIM_STORAGE_KEY) ?? "null");
+        if (saved && typeof saved === "object") return { ...defaultSimForm, ...saved };
+      } catch {}
+    }
+    return defaultSimForm;
   });
   const [simResult, setSimResult] = useState(null);
   const [simErrors, setSimErrors] = useState([]);
@@ -1000,6 +1041,7 @@ export default function Index() {
 
   // Catalog audit (Expert)
   const [auditParams, setAuditParams] = useState({ customs_rate: "0.12", shopify_fee: "0.02", stripe_fee: "0.025", returns_rate: "0.05", shipping_cost: "8" });
+  const [auditElapsed, setAuditElapsed] = useState(0);
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
 
@@ -1016,6 +1058,20 @@ export default function Index() {
       setAlertThreshold(String(alertFetcher.data.newThreshold));
     }
   }, [alertFetcher.data]);
+
+  // Persist simulation form to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try { localStorage.setItem(SIM_STORAGE_KEY, JSON.stringify(simForm)); } catch {}
+    }
+  }, [simForm]);
+
+  // Audit elapsed timer — increments every second while auditing for honest progress display
+  useEffect(() => {
+    if (auditFetcher.state === "idle") { setAuditElapsed(0); return; }
+    const interval = setInterval(() => setAuditElapsed(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [auditFetcher.state]);
 
   // Sync annotations after save
   useEffect(() => {
@@ -1078,7 +1134,7 @@ export default function Index() {
     const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
     const douane         = prixAchat * customsRate;
-    const tvaImport      = (prixAchat + douane) * 0.20;
+    const tvaImport      = (prixAchat + douane) * TVA_IMPORT;
     const coutRendu      = prixAchat + douane + tvaImport + shipping;
     const shopifyCost    = prixVente * (shopifyFeeVal / 100);
     const stripeCost     = prixVente * (stripeFeeVal  / 100);
@@ -1408,6 +1464,11 @@ export default function Index() {
                     {form.selectedProductTitle && (
                       <div style={{ fontSize: "12px", color: "#008060", marginTop: "6px" }}>
                         ✓ {form.selectedProductTitle} sélectionné · prix de vente rempli automatiquement
+                      </div>
+                    )}
+                    {productsCapped && (
+                      <div style={{ fontSize: "11px", color: "#B98900", marginTop: "6px" }}>
+                        Votre catalogue dépasse 500 produits — seuls les 500 premiers sont affichés ici.
                       </div>
                     )}
                   </div>
@@ -1804,11 +1865,15 @@ export default function Index() {
                 {/* Progress */}
                 {isAuditing && (
                   <div style={{ marginBottom: "20px" }}>
-                    <div style={{ fontSize: "13px", color: "#7C3AED", marginBottom: "8px", fontWeight: "500" }}>Récupération des produits via Shopify API…</div>
-                    <div style={{ height: "6px", borderRadius: "3px", background: "#E4E5E7", overflow: "hidden" }}>
-                      <div style={{ height: "100%", background: "linear-gradient(90deg,#7C3AED,#5B21B6)", borderRadius: "3px", animation: "auditBar 1.5s ease-in-out infinite" }} />
+                    <div style={{ fontSize: "13px", color: "#7C3AED", marginBottom: "8px", fontWeight: "500" }}>
+                      Récupération des produits via Shopify API… {auditElapsed}s
                     </div>
-                    <style>{`@keyframes auditBar{0%{width:10%;margin-left:0}50%{width:50%;margin-left:25%}100%{width:10%;margin-left:90%}}`}</style>
+                    <div style={{ height: "6px", borderRadius: "3px", background: "#E4E5E7", overflow: "hidden" }}>
+                      <div style={{ height: "100%", background: "linear-gradient(90deg,#7C3AED,#5B21B6)", borderRadius: "3px", width: `${Math.min(95, (auditElapsed / 10) * 100)}%`, transition: "width 1s linear" }} />
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>
+                      Peut prendre jusqu'à 10 secondes selon la taille de votre catalogue.
+                    </div>
                   </div>
                 )}
 
@@ -1931,11 +1996,14 @@ export default function Index() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "#fff", borderRadius: "12px", padding: "28px", width: "400px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
             <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "16px" }}>Annoter ce point de données</div>
-            <textarea value={annotText} onChange={e => setAnnotText(e.target.value)} rows={3}
+            <textarea value={annotText} onChange={e => setAnnotText(e.target.value.slice(0, 500))} rows={3}
               placeholder="Ex: Changement de fournisseur, Hausse des droits de douane…"
               style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+            <div style={{ fontSize: "11px", textAlign: "right", marginTop: "3px", color: annotText.length > 450 ? "#D72C0D" : "#6D7175" }}>
+              {annotText.length}/500
+            </div>
             {annotFetcher.data?.error && (
-              <div style={{ marginTop: "10px", fontSize: "12px", color: "#D72C0D" }}>{annotFetcher.data.error}</div>
+              <div style={{ marginTop: "6px", fontSize: "12px", color: "#D72C0D" }}>{annotFetcher.data.error}</div>
             )}
             <div style={{ display: "flex", gap: "10px", marginTop: "16px", justifyContent: "flex-end" }}>
               <button onClick={() => setAnnotModal(null)} style={{ padding: "8px 18px", background: "none", border: "1px solid #E4E5E7", borderRadius: "6px", fontSize: "13px", cursor: "pointer", fontFamily: "inherit", color: "#6D7175" }}>Annuler</button>

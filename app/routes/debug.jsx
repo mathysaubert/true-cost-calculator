@@ -36,7 +36,7 @@ export default function Debug() {
       <body style={{ fontFamily: "monospace", padding: "2rem", background: "#f9f9f9" }}>
         <h2>Environment Variables Status</h2>
         <p style={{ color: "#666", fontSize: "0.9rem" }}>
-          Secrets are partially masked. This page is public — remove in production.
+          Secrets are partially masked. Unavailable in production.
         </p>
         <pre
           style={{
