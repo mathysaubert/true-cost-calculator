@@ -14,6 +14,13 @@ const HISTORY_LIMIT_EXPERT = 200;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
 
+const PAYMENT_PROCESSORS = [
+  { id: "Stripe",                    fee: "2.5", hint: "1,5% + 0,25€/transaction" },
+  { id: "Shopify Payments Basic",    fee: "2",   hint: "Plan Basic — 2%" },
+  { id: "Shopify Payments Shopify",  fee: "1",   hint: "Plan Shopify — 1%" },
+  { id: "Shopify Payments Advanced", fee: "0.5", hint: "Plan Advanced — 0,5%" },
+];
+
 const CUSTOMS_RATES = {
   Textile: 0.12, Électronique: 0.05, Cosmétique: 0.10,
   Accessoires: 0.07, Sport: 0.05, Alimentation: 0.15,
@@ -847,12 +854,13 @@ export const action = async ({ request }) => {
     const { prixAchat, prixVente, category, country, productTitle,
             douane, tvaImport, shipping, coutRendu,
             shopifyCost, stripeCost, retoursCost, adsCost,
-            shopifyFee, stripeFee, retours, ads,
+            shopifyFee, stripeFee, paymentProcessor, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette } = body;
 
-    const safeTitle    = sanitizeForPrompt(productTitle) || "Non spécifié";
-    const safeCategory = sanitizeForPrompt(category);
-    const safeCountry  = sanitizeForPrompt(country);
+    const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
+    const safeCategory  = sanitizeForPrompt(category);
+    const safeCountry   = sanitizeForPrompt(country);
+    const safeProcessor = sanitizeForPrompt(paymentProcessor) || "Stripe";
 
     const prompt = `Tu es un expert en e-commerce et rentabilité.
 
@@ -864,7 +872,7 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 - TVA à l'import : ${fmt(tvaImport)}€ | Frais de port : ${fmt(shipping)}€
 - Coût rendu total : ${fmt(coutRendu)}€
 - Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€
-- Frais Stripe : ${stripeFee}% → ${fmt(stripeCost)}€
+- ${safeProcessor} : ${stripeFee}% → ${fmt(stripeCost)}€
 - Provision retours : ${retours}% → ${fmt(retoursCost)}€
 - Budget publicité : ${ads}% → ${fmt(adsCost)}€
 - Marge brute : ${pct(margeBrutePercent)}% | Marge nette réelle : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
@@ -1003,13 +1011,14 @@ export default function Index() {
     selectedProductId: "", selectedProductTitle: "",
     prixAchat: "20", prixVente: "49.99",
     categorie: "Textile", paysImport: "Chine",
-    shopifyFee: "2", stripeFee: "2.5", retours: "5", ads: "15",
+    shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5",
+    retours: "5", ads: "15",
     fraisRetour: "0", coutEmballage: "0",
   });
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", stripeFee: "2.5", retours: "5", ads: "15" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5", retours: "5", ads: "15" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1210,6 +1219,7 @@ export default function Index() {
       adsCost:          r.adsCost,
       shopifyFee:       r.shopifyFee,
       stripeFee:        r.stripeFee,
+      paymentProcessor: form.paymentProcessor,
       retours:          r.retours,
       ads:              r.ads,
       customsRate:      r.customsRate,
@@ -1240,7 +1250,7 @@ export default function Index() {
       return;
     }
     setSimErrors([]);
-    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, retours, ads, prixVenteRec: sim.prixVenteMin * 1.10 });
+    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, retours, ads, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
   }, [simForm]);
 
   // Alert threshold save
@@ -1507,8 +1517,22 @@ export default function Index() {
                     <FieldGroup label="Frais Shopify (% du CA)" direction="left" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.shopifyFee} onChange={update("shopifyFee")} style={inputStyle} placeholder="ex : 2" />
                     </FieldGroup>
-                    <FieldGroup label="Frais Stripe (% du CA)" direction="left" tooltip="Frais de traitement de paiement prélevés par Stripe. En France : 1,5% + 0,25€ par transaction (≈ 2% sur une commande de 50€). Source : stripe.com/fr/pricing">
-                      <input type="text" inputMode="decimal" value={form.stripeFee} onChange={update("stripeFee")} style={inputStyle} placeholder="ex : 2.5" />
+                    <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe : 1,5% + 0,25€/transaction (≈ 2,5% sur 50€) · Shopify Payments Basic : 2% · Shopify : 1% · Advanced : 0,5%">
+                      <select
+                        value={form.paymentProcessor}
+                        onChange={e => {
+                          const p = PAYMENT_PROCESSORS.find(x => x.id === e.target.value);
+                          if (p) {
+                            setForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: p.fee }));
+                            setResults(null); setErrors([]); setWarnings([]); setShowUpgrade(false);
+                          }
+                        }}
+                        style={inputStyle}
+                      >
+                        {PAYMENT_PROCESSORS.map(p => (
+                          <option key={p.id} value={p.id}>{p.id} — {p.hint}</option>
+                        ))}
+                      </select>
                     </FieldGroup>
                     <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
                       <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 8" />
@@ -1580,8 +1604,19 @@ export default function Index() {
                 <FieldGroup label="Frais Shopify (%)" direction="left" tooltip="Basic 2% · Shopify 1% · Advanced 0,5%. Source : shopify.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.shopifyFee} onChange={updateSim("shopifyFee")} style={inputStyle} placeholder="2" />
                 </FieldGroup>
-                <FieldGroup label="Frais Stripe (%)" direction="left" tooltip="Frais de traitement Stripe. En France : 1,5% + 0,25€ par transaction. Source : stripe.com/fr/pricing">
-                  <input type="text" inputMode="decimal" value={simForm.stripeFee} onChange={updateSim("stripeFee")} style={inputStyle} placeholder="2.5" />
+                <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe : 1,5% + 0,25€/transaction (≈ 2,5% sur 50€) · Shopify Payments Basic : 2% · Shopify : 1% · Advanced : 0,5%">
+                  <select
+                    value={simForm.paymentProcessor}
+                    onChange={e => {
+                      const p = PAYMENT_PROCESSORS.find(x => x.id === e.target.value);
+                      if (p) setSimForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: p.fee }));
+                    }}
+                    style={inputStyle}
+                  >
+                    {PAYMENT_PROCESSORS.map(p => (
+                      <option key={p.id} value={p.id}>{p.id} — {p.hint}</option>
+                    ))}
+                  </select>
                 </FieldGroup>
                 <FieldGroup label="Taux de retours (%)">
                   <input type="text" inputMode="decimal" value={simForm.retours} onChange={updateSim("retours")} style={inputStyle} placeholder="5" />
@@ -1614,7 +1649,7 @@ export default function Index() {
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
                   Coût rendu (achat + douane + TVA import + port) = <strong>{simResult.coutRendu.toFixed(2)}€</strong><br />
-                  Taux de frais variables (Shopify + Stripe + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
+                  Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
                   Formule : {simResult.coutRendu.toFixed(2)} ÷ (1 − {(simResult.totalFeeRate * 100).toFixed(1)}% − {simResult.targetMargin}%) = {simResult.prixVenteMin.toFixed(2)}€
                 </div>
               </div>
@@ -2099,7 +2134,7 @@ export default function Index() {
               </div>
               {[
                 { label: `— Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
-                { label: `— Frais Stripe (${form.stripeFee}%)`,   value: results.stripeCost },
+                { label: `— ${form.paymentProcessor} (${form.stripeFee}%)`, value: results.stripeCost },
                 { label: `— Provision retours (${form.retours}%)`, value: results.retoursCost },
                 { label: `— Budget ads (${form.ads}%)`,           value: results.adsCost },
                 ...(results.fraisRetour > 0 ? [{ label: "— Frais de retour", value: results.fraisRetour }] : []),
