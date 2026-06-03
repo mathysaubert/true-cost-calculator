@@ -7,7 +7,7 @@ import { captureException } from "../sentry.server";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FREE_LIMIT = 3;
+const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
 const TVA_IMPORT = 0.20;
 const HISTORY_LIMIT_EXPERT = 200;
