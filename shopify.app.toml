@@ -20,6 +20,10 @@ api_version = "2026-07"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "https://true-cost-calculator-silk.vercel.app/webhooks/compliance"
+
 [auth]
 redirect_urls = [ "https://true-cost-calculator-silk.vercel.app/api/auth" ]
 
