@@ -699,10 +699,13 @@ export const action = async ({ request }) => {
 
   // ── Subscribe Pro ─────────────────────────────────────────────────────────
   if (body._action === "subscribe") {
+    // returnUrl must stay inside the Shopify Admin context so authenticate.admin()
+    // can resolve the session on return. Using the Vercel URL directly causes a
+    // redirect to /auth/login (manual shop input) because there is no App Bridge token.
     await billing.request({
       plan: PLAN_PRO,
       isTest: isTestMode,
-      returnUrl: `${process.env.SHOPIFY_APP_URL}/app?subscribed=true`,
+      returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
     });
     return null;
   }
@@ -712,7 +715,7 @@ export const action = async ({ request }) => {
     await billing.request({
       plan: PLAN_EXPERT,
       isTest: isTestMode,
-      returnUrl: `${process.env.SHOPIFY_APP_URL}/app?subscribed=true`,
+      returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
     });
     return null;
   }
@@ -1348,7 +1351,7 @@ export default function Index() {
 
       {/* ── WELCOME BANNER ───────────────────────────────────────────────── */}
       {showWelcome && (
-        <s-section heading="Bienvenue dans True Cost Calculator Pro !">
+        <s-section heading={`Bienvenue dans True Cost Calculator ${isExpert ? "Expert" : "Pro"} !`}>
           <div style={{ padding: "16px 20px", borderRadius: "8px", background: "#F1F8F5", border: "1px solid #008060", fontSize: "14px", color: "#202223", lineHeight: "1.6" }}>
             Calculs illimités activés. Vos simulations sont sauvegardées automatiquement dans l'onglet <strong>Historique</strong>.
           </div>
