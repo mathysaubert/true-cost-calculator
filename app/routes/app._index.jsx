@@ -548,11 +548,19 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
 // ── Server exports ────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }) => {
-  const { session, billing, admin } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
 
-  // Run billing check and first product page concurrently
-  const [billingResult, productsResp1] = await Promise.allSettled([
-    billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: process.env.NODE_ENV !== "production" }),
+  // Query active subscriptions and first product page concurrently.
+  // Direct GraphQL avoids billing.check()'s isTest filter, which silently
+  // excludes dev-store subscriptions when NODE_ENV=production on Vercel.
+  const [subResp, productsResp1] = await Promise.allSettled([
+    admin.graphql(`
+      query ActiveSubscriptions {
+        currentAppInstallation {
+          activeSubscriptions { id name status }
+        }
+      }
+    `),
     admin.graphql(`
       query ProductsPage1 {
         products(first: 250, sortKey: TITLE) {
@@ -572,11 +580,24 @@ export const loader = async ({ request }) => {
   ]);
 
   let isPro = false, isExpert = false;
-  if (billingResult.status === "fulfilled" && billingResult.value.hasActivePayment) {
-    const subs = billingResult.value.appSubscriptions ?? [];
-    isExpert = subs.some(s => s.name === PLAN_EXPERT);
-    isPro = isExpert || subs.some(s => s.name === PLAN_PRO);
+  if (subResp.status === "fulfilled") {
+    try {
+      const subJson = await subResp.value.json();
+      const subs = subJson.data?.currentAppInstallation?.activeSubscriptions ?? [];
+      isExpert = subs.some(s => s.name === PLAN_EXPERT && s.status === "ACTIVE");
+      isPro = isExpert || subs.some(s => s.name === PLAN_PRO && s.status === "ACTIVE");
+    } catch (e) {
+      console.error("[Billing] subscription parse failed:", e?.message);
+    }
+  } else {
+    console.error("[Billing] subscription query failed:", subResp.reason?.message);
   }
+
+  // Persist detected plan to Supabase — audit trail and fast read path.
+  supabase.from("shop_plans").upsert(
+    { shop_domain: session.shop, plan: isExpert ? "expert" : isPro ? "pro" : "free", updated_at: new Date().toISOString() },
+    { onConflict: "shop_domain" }
+  ).then(() => {}).catch(e => console.error("[Plans] upsert failed:", e?.message));
 
   let products = [];
   let productsCapped = false;
@@ -720,15 +741,20 @@ export const action = async ({ request }) => {
     return null;
   }
 
-  // Single billing check reused across all branches that need it
+  // Plan check for action handlers — direct GraphQL, same rationale as loader.
   let billingIsPro = false, billingIsExpert = false;
   try {
-    const br = await billing.check({ plans: [PLAN_PRO, PLAN_EXPERT], isTest: isTestMode });
-    if (br.hasActivePayment) {
-      const subs = br.appSubscriptions ?? [];
-      billingIsExpert = subs.some(s => s.name === PLAN_EXPERT);
-      billingIsPro = billingIsExpert || subs.some(s => s.name === PLAN_PRO);
-    }
+    const subResp = await admin.graphql(`
+      query ActiveSubscriptions {
+        currentAppInstallation {
+          activeSubscriptions { id name status }
+        }
+      }
+    `);
+    const subJson = await subResp.json();
+    const subs = subJson.data?.currentAppInstallation?.activeSubscriptions ?? [];
+    billingIsExpert = subs.some(s => s.name === PLAN_EXPERT && s.status === "ACTIVE");
+    billingIsPro = billingIsExpert || subs.some(s => s.name === PLAN_PRO && s.status === "ACTIVE");
   } catch (e) { console.error("[Billing] action check:", e?.message); }
 
   // ── Save annotation ────────────────────────────────────────────────────────
