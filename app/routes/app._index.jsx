@@ -82,16 +82,18 @@ function formatDate(iso) {
 
 // Feature 3: solve for selling price given a target net margin
 function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads } = fees;
+  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0 } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
   const douane      = prixAchat * customsRate;
   const tvaImport   = (prixAchat + douane) * TVA_IMPORT;
   const coutRendu   = prixAchat + douane + tvaImport + shipping;
+  const fraisFixes  = fraisRetour + coutEmballage;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
   const denominator = 1 - totalFeeRate - targetMarginPct / 100;
   if (denominator <= 0) return null;
-  return { prixVenteMin: coutRendu / denominator, coutRendu, totalFeeRate, customsRate, shipping };
+  // P × (1 − totalFeeRate − targetMargin%) = coutRendu + fraisFixes → P = (coutRendu + fraisFixes) / denominator
+  return { prixVenteMin: (coutRendu + fraisFixes) / denominator, coutRendu, fraisFixes, totalFeeRate, customsRate, shipping };
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -1047,7 +1049,7 @@ export default function Index() {
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5", retours: "5", ads: "15" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1264,22 +1266,24 @@ export default function Index() {
     const errs = [];
     const prixAchat    = validatePrice(simForm.prixAchat, "Prix d'achat", errs);
     const targetMargin = validatePercentage(simForm.targetMargin, "Marge cible", errs);
-    const shopifyFee   = validatePercentage(simForm.shopifyFee,   "Frais Shopify", errs);
-    const stripeFee    = validatePercentage(simForm.stripeFee,    "Frais Stripe",  errs);
-    const retours      = validatePercentage(simForm.retours,      "Retours",       errs);
-    const ads          = validatePercentage(simForm.ads,          "Ads",           errs);
+    const shopifyFee    = validatePercentage(simForm.shopifyFee,          "Frais Shopify",     errs);
+    const stripeFee     = validatePercentage(simForm.stripeFee,           "Frais Stripe",      errs);
+    const retours       = validatePercentage(simForm.retours,             "Retours",           errs);
+    const ads           = validatePercentage(simForm.ads,                 "Ads",               errs);
+    const fraisRetour   = validateOptionalAmount(simForm.fraisRetour   ?? "0", "Frais de retour",   errs);
+    const coutEmballage = validateOptionalAmount(simForm.coutEmballage ?? "0", "Coût d'emballage",  errs);
 
     if (errs.length > 0) { setSimErrors(errs); setSimResult(null); return; }
     if (targetMargin >= 100) { setSimErrors(["La marge cible doit être < 100%."]); return; }
 
-    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads });
+    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage });
     if (!sim) {
       setSimErrors(["Cette marge cible est inatteignable avec ces paramètres — les frais cumulés dépassent 100%. Réduisez les frais ou abaissez la marge cible."]);
       setSimResult(null);
       return;
     }
     setSimErrors([]);
-    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, retours, ads, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
+    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
   }, [simForm]);
 
   // Alert threshold save
@@ -1653,6 +1657,12 @@ export default function Index() {
                 <FieldGroup label="Budget ads (%)">
                   <input type="text" inputMode="decimal" value={simForm.ads} onChange={updateSim("ads")} style={inputStyle} placeholder="15" />
                 </FieldGroup>
+                <FieldGroup label="Frais de retour (€)" direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
+                  <input type="text" inputMode="decimal" value={simForm.fraisRetour ?? "0"} onChange={updateSim("fraisRetour")} style={inputStyle} placeholder="0" />
+                </FieldGroup>
+                <FieldGroup label="Coût d'emballage (€)" direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                  <input type="text" inputMode="decimal" value={simForm.coutEmballage ?? "0"} onChange={updateSim("coutEmballage")} style={inputStyle} placeholder="0" />
+                </FieldGroup>
               </div>
             </div>
 
@@ -1678,8 +1688,9 @@ export default function Index() {
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
                   Coût rendu (achat + douane + TVA import + port) = <strong>{simResult.coutRendu.toFixed(2)}€</strong><br />
+                  {simResult.fraisFixes > 0 && <>Frais fixes (retour + emballage) = <strong>{simResult.fraisFixes.toFixed(2)}€</strong><br /></>}
                   Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
-                  Formule : {simResult.coutRendu.toFixed(2)} ÷ (1 − {(simResult.totalFeeRate * 100).toFixed(1)}% − {simResult.targetMargin}%) = {simResult.prixVenteMin.toFixed(2)}€
+                  Formule : ({simResult.coutRendu.toFixed(2)}{simResult.fraisFixes > 0 ? ` + ${simResult.fraisFixes.toFixed(2)}` : ""}) ÷ (1 − {(simResult.totalFeeRate * 100).toFixed(1)}% − {simResult.targetMargin}%) = {simResult.prixVenteMin.toFixed(2)}€
                 </div>
               </div>
             )}
