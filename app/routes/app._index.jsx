@@ -9,7 +9,6 @@ import { captureException } from "../sentry.server";
 
 const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
-const TVA_IMPORT = 0.20;
 const HISTORY_LIMIT_EXPERT = 200;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
@@ -80,14 +79,42 @@ function formatDate(iso) {
   });
 }
 
+// TVA applicable à l'import selon la catégorie produit.
+// Toutes les catégories actuelles sont soumises au taux normal (20 %).
+// Ajouter ici les taux réduits (5,5 %, 10 %) si de nouvelles catégories
+// éligibles sont créées ultérieurement. Le fallback 0,20 couvre toute
+// catégorie non reconnue.
+const VAT_RATES = {
+  Textile: 0.20, Électronique: 0.20, Cosmétique: 0.20,
+  Accessoires: 0.20, Sport: 0.20, Alimentation: 0.20,
+  Maroquinerie: 0.20, Jouets: 0.20, Mobilier: 0.20, Autre: 0.20,
+};
+function getVatRate(category) {
+  return VAT_RATES[category] ?? 0.20;
+}
+
+// Calcul CIF conforme au droit douanier européen.
+// valeur_en_douane = fournisseur + port (base CIF)
+// droits = valeur_en_douane × taux_TARIC
+// base_TVA = valeur_en_douane + droits
+// TVA_import = base_TVA × taux_TVA
+// landed_cost = fournisseur + port + droits + TVA_import
+function computeLandedCost(prixAchat, shipping, customsRate, vatRate) {
+  const valeurEnDouane = prixAchat + shipping;
+  const droitsDouane   = valeurEnDouane * customsRate;
+  const baseTVA        = valeurEnDouane + droitsDouane;
+  const tvaImport      = baseTVA * vatRate;
+  const coutRendu      = prixAchat + shipping + droitsDouane + tvaImport;
+  return { valeurEnDouane, droitsDouane, baseTVA, tvaImport, coutRendu };
+}
+
 // Feature 3: solve for selling price given a target net margin
 function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
   const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0 } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
+  const vatRate     = getVatRate(categorie);
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const douane      = prixAchat * customsRate;
-  const tvaImport   = (prixAchat + douane) * TVA_IMPORT;
-  const coutRendu   = prixAchat + douane + tvaImport + shipping;
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
   const fraisFixes  = fraisRetour + coutEmballage;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
   const denominator = 1 - totalFeeRate - targetMarginPct / 100;
@@ -839,9 +866,8 @@ export const action = async ({ request }) => {
         const price = parseFloat(variant?.price ?? "0");
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
-        const douane   = cost * customsRate;
-        const tva      = (cost + douane) * TVA_IMPORT;
-        const coutRendu = cost + douane + tva + shippingCost;
+        const { droitsDouane: douane, tvaImport: tva, coutRendu } =
+          computeLandedCost(cost, shippingCost, customsRate, getVatRate(null));
         const shopify  = price * shopifyFee;
         const stripe   = price * stripeFee;
         const returns  = price * returnsRate;
@@ -1174,10 +1200,9 @@ export default function Index() {
     if (totalPct > 100) warns.push(`Frais cumulés (${totalPct.toFixed(1)}%) dépassent 100% du CA.`);
 
     const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
+    const vatRate        = getVatRate(form.categorie);
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
-    const douane         = prixAchat * customsRate;
-    const tvaImport      = (prixAchat + douane) * TVA_IMPORT;
-    const coutRendu      = prixAchat + douane + tvaImport + shipping;
+    const { droitsDouane: douane, tvaImport, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
     const shopifyCost    = prixVente * (shopifyFeeVal / 100);
     const stripeCost     = prixVente * (stripeFeeVal  / 100);
     const retoursCost    = prixVente * (retoursVal    / 100);
@@ -1199,7 +1224,7 @@ export default function Index() {
       shopifyCost, stripeCost, retoursCost, adsCost, totalFraisVente,
       fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes,
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
-      margeApparente, customsRate,
+      margeApparente, customsRate, vatRate,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal,
       retours: retoursVal, ads: adsVal,
     };
@@ -2149,7 +2174,7 @@ export default function Index() {
               {[
                 { label: "Prix fournisseur",                      value: `${fmt(results.prixAchat)}€`,  color: "#202223" },
                 { label: `+ Droits de douane (${(results.customsRate*100).toFixed(0)}%)`, value: `+${fmt(results.douane)}€`, color: "#6D7175" },
-                { label: "+ TVA à l'import (20%)",                value: `+${fmt(results.tvaImport)}€`, color: "#6D7175" },
+                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)}%)`, value: `+${fmt(results.tvaImport)}€`, color: "#6D7175" },
                 { label: `+ Frais de port (${form.paysImport})`,  value: `+${fmt(results.shipping)}€`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
