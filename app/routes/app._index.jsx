@@ -14,10 +14,11 @@ const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
 
 const PAYMENT_PROCESSORS = [
-  { id: "Stripe",                    fee: "2.5", hint: "1,5% + 0,25€/transaction" },
-  { id: "Shopify Payments Basic",    fee: "2",   hint: "Plan Basic — 2%" },
-  { id: "Shopify Payments Shopify",  fee: "1",   hint: "Plan Shopify — 1%" },
-  { id: "Shopify Payments Advanced", fee: "0.5", hint: "Plan Advanced — 0,5%" },
+  { id: "Stripe EU",               rate: 1.5,  fixedFee: 0.25, hint: "Cartes EU — 1,5% + 0,25€/transaction" },
+  { id: "Stripe non-EU",           rate: 2.5,  fixedFee: 0.25, hint: "Cartes non-EU — 2,5% + 0,25€/transaction" },
+  { id: "Shopify Payments Basic",  rate: 2.0,  fixedFee: 0.25, hint: "Plan Basic — 2% + 0,25€/transaction" },
+  { id: "Shopify Payments Avancé", rate: 1.0,  fixedFee: 0.25, hint: "Plan Avancé — 1% + 0,25€/transaction" },
+  { id: "Shopify Payments Plus",   rate: 0.5,  fixedFee: 0.25, hint: "Plan Plus — 0,5% + 0,25€/transaction" },
 ];
 
 const CUSTOMS_RATES = {
@@ -110,12 +111,13 @@ function computeLandedCost(prixAchat, shipping, customsRate, vatRate) {
 
 // Feature 3: solve for selling price given a target net margin
 function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0 } = fees;
+  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0 } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate     = getVatRate(categorie);
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
   const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
-  const fraisFixes  = fraisRetour + coutEmballage;
+  // fraisFixes includes the processor fixed fee (per-transaction fixed cost)
+  const fraisFixes  = fraisRetour + coutEmballage + processorFixedFee;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
   const denominator = 1 - totalFeeRate - targetMarginPct / 100;
   if (denominator <= 0) return null;
@@ -917,7 +919,7 @@ export const action = async ({ request }) => {
             shopifyCost, stripeCost, retoursCost, adsCost,
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette,
-            coutEmballage, fraisRetour } = body;
+            coutEmballage, fraisRetour, processorFixedFee } = body;
 
     const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
     const safeCategory  = sanitizeForPrompt(category);
@@ -934,7 +936,7 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 - TVA à l'import : ${fmt(tvaImport)}€ | Frais de port : ${fmt(shipping)}€
 - Coût rendu total : ${fmt(coutRendu)}€
 - Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€
-- ${safeProcessor} : ${stripeFee}% → ${fmt(stripeCost)}€
+- ${safeProcessor} : ${stripeFee}% + ${fmt(processorFixedFee)}€/transaction → ${fmt(stripeCost)}€
 - Provision retours : ${retours}% → ${fmt(retoursCost)}€
 - Coût d'emballage : ${fmt(coutEmballage)}€/commande | Frais de retour : ${fmt(fraisRetour)}€/retour
 - Budget publicité : ${ads}% → ${fmt(adsCost)}€
@@ -1076,14 +1078,14 @@ export default function Index() {
     selectedProductId: "", selectedProductTitle: "",
     prixAchat: "20", prixVente: "49.99",
     categorie: "Textile", paysImport: "Chine",
-    shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5",
+    shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25",
     retours: "5", ads: "15",
     fraisRetour: "0", coutEmballage: "0",
   });
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe", stripeFee: "2.5", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1193,12 +1195,13 @@ export default function Index() {
     const errs = [], warns = [];
     const prixAchat     = validatePrice(form.prixAchat,    "Le prix d'achat", errs);
     const prixVente     = validatePrice(form.prixVente,    "Le prix de vente", errs);
-    const shopifyFeeVal = validatePercentage(form.shopifyFee, "Frais Shopify", errs);
-    const stripeFeeVal  = validatePercentage(form.stripeFee,  "Frais Stripe",  errs);
-    const retoursVal    = validatePercentage(form.retours,    "Taux de retours", errs);
-    const adsVal        = validatePercentage(form.ads,        "Budget ads",    errs);
-    const fraisRetourVal   = validateOptionalAmount(form.fraisRetour,   "Frais de retour",  errs);
-    const coutEmballageVal = validateOptionalAmount(form.coutEmballage, "Coût d'emballage", errs);
+    const shopifyFeeVal       = validatePercentage(form.shopifyFee,          "Frais Shopify",        errs);
+    const stripeFeeVal        = validatePercentage(form.stripeFee,           "Frais Stripe",         errs);
+    const retoursVal          = validatePercentage(form.retours,             "Taux de retours",      errs);
+    const adsVal              = validatePercentage(form.ads,                 "Budget ads",           errs);
+    const fraisRetourVal      = validateOptionalAmount(form.fraisRetour,         "Frais de retour",  errs);
+    const coutEmballageVal    = validateOptionalAmount(form.coutEmballage,       "Coût d'emballage", errs);
+    const processorFixedFeeVal = validateOptionalAmount(form.processorFixedFee ?? "0.25", "Frais fixes processeur", errs);
 
     if (errs.length > 0) { setErrors(errs); setWarnings([]); setResults(null); return null; }
 
@@ -1212,7 +1215,7 @@ export default function Index() {
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
     const { droitsDouane: douane, tvaImport, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
     const shopifyCost    = prixVente * (shopifyFeeVal / 100);
-    const stripeCost     = prixVente * (stripeFeeVal  / 100);
+    const stripeCost     = (prixVente * (stripeFeeVal / 100)) + processorFixedFeeVal;
     const retoursCost    = prixVente * (retoursVal    / 100);
     const adsCost        = prixVente * (adsVal        / 100);
     const totalFraisVente    = shopifyCost + stripeCost + retoursCost + adsCost;
@@ -1233,7 +1236,7 @@ export default function Index() {
       fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes,
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
       margeApparente, customsRate, vatRate,
-      shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal,
+      shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
       retours: retoursVal, ads: adsVal,
     };
     setErrors([]); setWarnings(warns); setResults(r);
@@ -1290,8 +1293,9 @@ export default function Index() {
       margeBrutePercent: r.margeBrutePercent,
       margeNettePercent: r.margeNettePercent,
       margeNette:        r.margeNette,
-      coutEmballage:     r.coutEmballage,
-      fraisRetour:       r.fraisRetour,
+      coutEmballage:      r.coutEmballage,
+      fraisRetour:        r.fraisRetour,
+      processorFixedFee:  r.processorFixedFee,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
@@ -1301,24 +1305,25 @@ export default function Index() {
     const errs = [];
     const prixAchat    = validatePrice(simForm.prixAchat, "Prix d'achat", errs);
     const targetMargin = validatePercentage(simForm.targetMargin, "Marge cible", errs);
-    const shopifyFee    = validatePercentage(simForm.shopifyFee,          "Frais Shopify",     errs);
-    const stripeFee     = validatePercentage(simForm.stripeFee,           "Frais Stripe",      errs);
-    const retours       = validatePercentage(simForm.retours,             "Retours",           errs);
-    const ads           = validatePercentage(simForm.ads,                 "Ads",               errs);
-    const fraisRetour   = validateOptionalAmount(simForm.fraisRetour   ?? "0", "Frais de retour",   errs);
-    const coutEmballage = validateOptionalAmount(simForm.coutEmballage ?? "0", "Coût d'emballage",  errs);
+    const shopifyFee        = validatePercentage(simForm.shopifyFee,          "Frais Shopify",        errs);
+    const stripeFee         = validatePercentage(simForm.stripeFee,           "Frais Stripe",         errs);
+    const retours           = validatePercentage(simForm.retours,             "Retours",              errs);
+    const ads               = validatePercentage(simForm.ads,                 "Ads",                  errs);
+    const fraisRetour       = validateOptionalAmount(simForm.fraisRetour   ?? "0",    "Frais de retour",        errs);
+    const coutEmballage     = validateOptionalAmount(simForm.coutEmballage ?? "0",    "Coût d'emballage",       errs);
+    const processorFixedFee = validateOptionalAmount(simForm.processorFixedFee ?? "0.25", "Frais fixes processeur", errs);
 
     if (errs.length > 0) { setSimErrors(errs); setSimResult(null); return; }
     if (targetMargin >= 100) { setSimErrors(["La marge cible doit être < 100%."]); return; }
 
-    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage });
+    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee });
     if (!sim) {
       setSimErrors(["Cette marge cible est inatteignable avec ces paramètres — les frais cumulés dépassent 100%. Réduisez les frais ou abaissez la marge cible."]);
       setSimResult(null);
       return;
     }
     setSimErrors([]);
-    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
+    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
   }, [simForm]);
 
   // Alert threshold save
@@ -1585,13 +1590,13 @@ export default function Index() {
                     <FieldGroup label="Frais Shopify (% du CA)" direction="left" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.shopifyFee} onChange={update("shopifyFee")} style={inputStyle} placeholder="ex : 2" />
                     </FieldGroup>
-                    <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe : 1,5% + 0,25€/transaction (≈ 2,5% sur 50€) · Shopify Payments Basic : 2% · Shopify : 1% · Advanced : 0,5%">
+                    <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe EU : 1,5% + 0,25€ · Stripe non-EU : 2,5% + 0,25€ · Shopify Payments Basic : 2% + 0,25€ · Avancé : 1% + 0,25€ · Plus : 0,5% + 0,25€">
                       <select
                         value={form.paymentProcessor}
                         onChange={e => {
                           const p = PAYMENT_PROCESSORS.find(x => x.id === e.target.value);
                           if (p) {
-                            setForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: p.fee }));
+                            setForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: String(p.rate), processorFixedFee: String(p.fixedFee) }));
                             setResults(null); setErrors([]); setWarnings([]); setShowUpgrade(false);
                           }
                         }}
@@ -1672,12 +1677,12 @@ export default function Index() {
                 <FieldGroup label="Frais Shopify (%)" direction="left" tooltip="Basic 2% · Shopify 1% · Advanced 0,5%. Source : shopify.com/fr/pricing">
                   <input type="text" inputMode="decimal" value={simForm.shopifyFee} onChange={updateSim("shopifyFee")} style={inputStyle} placeholder="2" />
                 </FieldGroup>
-                <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe : 1,5% + 0,25€/transaction (≈ 2,5% sur 50€) · Shopify Payments Basic : 2% · Shopify : 1% · Advanced : 0,5%">
+                <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe EU : 1,5% + 0,25€ · Stripe non-EU : 2,5% + 0,25€ · Shopify Payments Basic : 2% + 0,25€ · Avancé : 1% + 0,25€ · Plus : 0,5% + 0,25€">
                   <select
                     value={simForm.paymentProcessor}
                     onChange={e => {
                       const p = PAYMENT_PROCESSORS.find(x => x.id === e.target.value);
-                      if (p) setSimForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: p.fee }));
+                      if (p) setSimForm(prev => ({ ...prev, paymentProcessor: p.id, stripeFee: String(p.rate), processorFixedFee: String(p.fixedFee) }));
                     }}
                     style={inputStyle}
                   >
@@ -2209,7 +2214,7 @@ export default function Index() {
               </div>
               {[
                 { label: `— Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
-                { label: `— ${form.paymentProcessor} (${form.stripeFee}%)`, value: results.stripeCost },
+                { label: `— ${form.paymentProcessor} (${form.stripeFee}% + ${form.processorFixedFee ?? "0.25"}€)`, value: results.stripeCost },
                 { label: `— Provision retours (${form.retours}%)`, value: results.retoursCost },
                 { label: `— Budget ads (${form.ads}%)`,           value: results.adsCost },
                 ...(results.fraisRetour > 0 ? [{ label: "— Frais de retour", value: results.fraisRetour }] : []),
