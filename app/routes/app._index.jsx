@@ -962,6 +962,7 @@ export const action = async ({ request }) => {
             shopifyCost, stripeCost, retoursCost, adsCost,
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette,
+            margeApparente,
             coutEmballage, fraisRetour, processorFixedFee, vatRegime } = body;
 
     const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
@@ -971,28 +972,32 @@ export const action = async ({ request }) => {
 
     const prompt = `Tu es un expert en e-commerce et rentabilité.
 
-Voici les données d'un calcul de marge pour un marchand Shopify :
-- Produit : ${safeTitle}
-- Catégorie : ${safeCategory} | Pays d'import : ${safeCountry}
+DÉFINITIONS CANONIQUES — tu DOIS employer ces termes avec ces définitions exactes, sans exception :
+• Marge apparente = (Prix vente − Prix fournisseur) / Prix vente — n'inclut aucun frais
+• Marge brute = (Prix vente − Coût rendu total) / Prix vente — exclut Shopify, Stripe, emballage, retours, ads
+• Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente — après Shopify, Stripe, emballage, retours, ads
+Ces définitions sont celles du dashboard. N'inverse jamais "brute" et "nette".
+
+Voici les données du calcul :
+- Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
 - Prix fournisseur : ${fmt(prixAchat)}€ | Prix de vente : ${fmt(prixVente)}€
 - Droits de douane : ${fmt(douane)}€${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré — de minimis ≤ 150€)" : ` (taux ${(customsRate * 100).toFixed(0)}% sur CIF)`}
-- TVA à l'import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable — n'affecte pas la marge)" : " (coût sec)"}  | Frais de port : ${fmt(shipping)}€
-- Coût rendu total (net) : ${fmt(coutRendu)}€
-- Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€
-- ${safeProcessor} : ${stripeFee}% + ${fmt(processorFixedFee)}€/transaction → ${fmt(stripeCost)}€
-- Provision retours : ${retours}% → ${fmt(retoursCost)}€
-- Coût d'emballage : ${fmt(coutEmballage)}€/commande | Frais de retour : ${fmt(fraisRetour)}€/retour
-- Budget publicité : ${ads}% → ${fmt(adsCost)}€
-- Marge brute : ${pct(margeBrutePercent)}% | Marge nette réelle : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
+- TVA à l'import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable — neutralisée)" : " (coût sec)"} | Port : ${fmt(shipping)}€
+- Coût rendu (net) : ${fmt(coutRendu)}€
+- Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€ | ${safeProcessor} : ${stripeFee}%+${fmt(processorFixedFee)}€ → ${fmt(stripeCost)}€
+- Provision retours : ${retours}% → ${fmt(retoursCost)}€ | Ads : ${ads}% → ${fmt(adsCost)}€
+- Emballage : ${fmt(coutEmballage)}€/commande | Frais retour logistique : ${fmt(fraisRetour)}€
+- Marge apparente : ${pct(margeApparente)}% | Marge brute : ${pct(margeBrutePercent)}% (${fmt(parseFloat(prixVente) - parseFloat(coutRendu))}€) | Marge nette : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
 
 RÈGLES D'AUDIT OBLIGATOIRES :
-1. Emballage disproportionné : si le coût d'emballage dépasse 3,00€/commande OU représente > 10% du prix de vente, inclure une action concrète pour réduire ce poste.
-2. De minimis douanière : si le prix fournisseur est ≤ 150€, les droits de douane sont légalement nuls (UE). Ne recommande JAMAIS d'optimiser un coût de douane qui est déjà à zéro.
-3. TVA récupérable : si le régime est "Assujetti", la TVA import (${fmt(tvaImport)}€) est récupérable — ne la traite JAMAIS comme une charge définitive dans tes recommandations. Toute suggestion de réduction du prix fournisseur doit cascader : une baisse du fournisseur réduit la base CIF, donc les droits de douane (si > 150€), donc la base TVA, donc le coût rendu — mentionne cet effet de levier si pertinent.
+1. Emballage : si emballage > 3,00€ OU > 10% du prix de vente, une action DOIT cibler ce poste avec le ratio exact (ex: "${fmt(coutEmballage)}€ représente ${((parseFloat(coutEmballage)/parseFloat(prixVente))*100).toFixed(1)}% du prix de vente, soit ${(parseFloat(coutEmballage)/3).toFixed(1)}× le seuil de 3€").
+2. De minimis : fournisseur ≤ 150€ → droits de douane = 0 légalement. Ne suggère JAMAIS de réduire un coût douanier déjà nul.
+3. Cascade fournisseur : si tu suggères de renégocier le fournisseur, calcule le gain réel selon le régime actif. Régime assujetti + fournisseur ≤ 150€ : gain net = exactement la différence de prix fournisseur (douane=0, TVA neutralisée). Régime assujetti + fournisseur > 150€ : gain = Δfournisseur + Δdouane (pas de cascade TVA). Régime franchise : gain = Δfournisseur + Δdouane + ΔTV A. Cite le gain en €.
+4. Précision numérique STRICTE : tout multiple, ratio ou % cité dans ton texte doit être le quotient réel arrondi à 1 décimale. "X représente Y× Z" → Y = X/Z arrondi. Interdiction d'écrire "près de 2×" si le vrai quotient est 1,7×.
 
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"analyse":"2 phrases max expliquant pourquoi la marge est à ce niveau","actions":["action concrète 1 avec chiffres","action concrète 2 avec chiffres","action concrète 3 avec chiffres"]}`;
+{"analyse":"2 phrases max sur pourquoi la marge est à ce niveau en citant les 2 postes de coût dominants avec leurs montants","actions":["action concrète 1 avec chiffres exacts","action concrète 2 avec chiffres exacts","action concrète 3 avec chiffres exacts"]}`;
 
     try {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1347,6 +1352,7 @@ export default function Index() {
       fraisRetour:        r.fraisRetour,
       processorFixedFee:  r.processorFixedFee,
       vatRegime:          r.vatRegime,
+      margeApparente:     r.margeApparente,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
