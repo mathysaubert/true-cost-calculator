@@ -449,13 +449,17 @@ function platformStatus(roas, min, max) {
 
 function BreakEvenROAS({ results, onGoToSimulation }) {
   if (!results) return null;
-  const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost } = results;
-  const available = prixVente - coutRendu - shopifyCost - stripeCost - retoursCost;
+  const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost, fraisFixes = 0 } = results;
+  // CPA_MAX = PV - landed_cost - frais plateformes - TOUS les coûts fixes
+  const available = prixVente - coutRendu - shopifyCost - stripeCost - retoursCost - fraisFixes;
 
   if (available <= 0) return (
-    <div style={{ marginTop: "20px", padding: "14px 18px", borderRadius: "10px", background: "#FFF4F4", border: "1px solid #D72C0D44", display: "flex", gap: "10px", alignItems: "center" }}>
-      <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
-      <span style={{ fontSize: "13px", color: "#D72C0D" }}>Break-Even ROAS incalculable : marge disponible avant pub nulle ou négative.</span>
+    <div style={{ marginTop: "20px", padding: "16px 20px", borderRadius: "10px", background: "#FFF4F4", border: "2px solid #D72C0D", display: "flex", gap: "12px", alignItems: "flex-start" }}>
+      <span style={{ fontSize: "20px", flexShrink: 0 }}>🚫</span>
+      <div>
+        <div style={{ fontSize: "14px", fontWeight: "700", color: "#D72C0D", marginBottom: "4px" }}>Calcul impossible : Produit vendu à perte</div>
+        <div style={{ fontSize: "13px", color: "#D72C0D" }}>Augmentez le prix ou réduisez les coûts fixes avant de dépenser en publicité.</div>
+      </div>
     </div>
   );
 
@@ -912,7 +916,8 @@ export const action = async ({ request }) => {
             douane, tvaImport, shipping, coutRendu,
             shopifyCost, stripeCost, retoursCost, adsCost,
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
-            customsRate, margeBrutePercent, margeNettePercent, margeNette } = body;
+            customsRate, margeBrutePercent, margeNettePercent, margeNette,
+            coutEmballage, fraisRetour } = body;
 
     const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
     const safeCategory  = sanitizeForPrompt(category);
@@ -931,8 +936,11 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 - Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€
 - ${safeProcessor} : ${stripeFee}% → ${fmt(stripeCost)}€
 - Provision retours : ${retours}% → ${fmt(retoursCost)}€
+- Coût d'emballage : ${fmt(coutEmballage)}€/commande | Frais de retour : ${fmt(fraisRetour)}€/retour
 - Budget publicité : ${ads}% → ${fmt(adsCost)}€
 - Marge brute : ${pct(margeBrutePercent)}% | Marge nette réelle : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
+
+RÈGLE D'AUDIT OBLIGATOIRE : Tu dois traquer et alerter l'utilisateur de manière proactive si le coût d'emballage saisi est manifestement disproportionné par rapport aux standards e-commerce. La règle de déclenchement de l'alerte est la suivante : si le coût d'emballage dépasse 3,00 € par commande OU représente plus de 10 % du prix de vente (selon le seuil le plus bas atteint en premier), tu dois lui suggérer de revoir ce poste de dépense. Si cette règle se déclenche, l'une de tes 3 actions concrètes DOIT concerner ce point.
 
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max expliquant pourquoi la marge est à ce niveau","actions":["action concrète 1 avec chiffres","action concrète 2 avec chiffres","action concrète 3 avec chiffres"]}`;
@@ -1282,6 +1290,8 @@ export default function Index() {
       margeBrutePercent: r.margeBrutePercent,
       margeNettePercent: r.margeNettePercent,
       margeNette:        r.margeNette,
+      coutEmballage:     r.coutEmballage,
+      fraisRetour:       r.fraisRetour,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
