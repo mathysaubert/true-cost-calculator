@@ -449,6 +449,19 @@ function platformStatus(roas, min, max) {
   };
 }
 
+// ROAS viability tiers based on real ad platform benchmarks.
+// Returns non-null message only for the inviable (>10x) case — the existing
+// paliers (Viable / Difficile) below 10x are handled separately and unchanged.
+function getRoasViability(roas) {
+  if (roas > 10) return {
+    color: "#B98900", bg: "#FFF9EC", border: "#B98900",
+    message: "ROAS requis irréaliste : aucune plateforme publicitaire ne permet d'atteindre ce seuil de manière durable. Votre seul levier de croissance est l'acquisition organique (SEO, réseaux sociaux, bouche-à-oreille).",
+  };
+  if (roas > 5)  return { color: "#D72C0D", bg: "#FFF4F4", border: "#D72C0D", message: null };
+  if (roas > 3)  return { color: "#B98900", bg: "#FFF9EC", border: "#B98900", message: null };
+  return           { color: "#008060", bg: "#F1F8F5", border: "#008060", message: null };
+}
+
 function BreakEvenROAS({ results, onGoToSimulation }) {
   if (!results) return null;
   const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost, fraisFixes = 0 } = results;
@@ -503,6 +516,12 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
         <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
           Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{roas.toFixed(2)}€ de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
         </div>
+        {(() => { const v = getRoasViability(roas); return v.message ? (
+          <div style={{ marginTop: "14px", padding: "12px 16px", borderRadius: "8px", background: v.bg, border: `1px solid ${v.border}`, display: "flex", gap: "10px", alignItems: "flex-start" }}>
+            <span style={{ fontSize: "16px", flexShrink: 0 }}>⚠️</span>
+            <span style={{ fontSize: "13px", color: v.color, lineHeight: "1.6" }}>{v.message}</span>
+          </div>
+        ) : null; })()}
       </div>
 
       {/* ── Viabilité par plateforme ── */}
