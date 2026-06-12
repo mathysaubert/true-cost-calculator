@@ -10,6 +10,10 @@ import { captureException } from "../sentry.server";
 const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
 const HISTORY_LIMIT_EXPERT = 200;
+// EU de minimis threshold for customs duties (Règlement UE n° 952/2013).
+// Goods whose intrinsic value (supplier price, excl. shipping) ≤ this amount
+// are exempt from customs duties. VAT at import remains due regardless.
+const DE_MINIMIS_DUTY_THRESHOLD = 150;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
 
@@ -94,28 +98,34 @@ function getVatRate(category) {
   return VAT_RATES[category] ?? 0.20;
 }
 
+// Returns 0 when supplierPrice ≤ DE_MINIMIS_DUTY_THRESHOLD (EU customs exemption).
+// The threshold applies to intrinsic value (supplier price only), NOT CIF.
+function getCustomsDuty({ supplierPrice, shippingCost, dutyRate }) {
+  if (supplierPrice <= DE_MINIMIS_DUTY_THRESHOLD) return 0;
+  return (supplierPrice + shippingCost) * dutyRate;
+}
+
 // Calcul CIF conforme au droit douanier européen.
-// valeur_en_douane = fournisseur + port (base CIF)
-// droits = valeur_en_douane × taux_TARIC
-// base_TVA = valeur_en_douane + droits
-// TVA_import = base_TVA × taux_TVA
-// landed_cost = fournisseur + port + droits + TVA_import
-function computeLandedCost(prixAchat, shipping, customsRate, vatRate) {
+// vatRegime "assujetti" → TVA import récupérable, exclue du coût net.
+// vatRegime "franchise" → TVA import coût sec, incluse dans le coût rendu.
+function computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime = "assujetti") {
   const valeurEnDouane = prixAchat + shipping;
-  const droitsDouane   = valeurEnDouane * customsRate;
+  const droitsDouane   = getCustomsDuty({ supplierPrice: prixAchat, shippingCost: shipping, dutyRate: customsRate });
   const baseTVA        = valeurEnDouane + droitsDouane;
   const tvaImport      = baseTVA * vatRate;
-  const coutRendu      = prixAchat + shipping + droitsDouane + tvaImport;
-  return { valeurEnDouane, droitsDouane, baseTVA, tvaImport, coutRendu };
+  // Assujetti: TVA récupérable → neutralisée (impact net = 0).
+  const tvaNetCost     = vatRegime === "franchise" ? tvaImport : 0;
+  const coutRendu      = prixAchat + shipping + droitsDouane + tvaNetCost;
+  return { valeurEnDouane, droitsDouane, baseTVA, tvaImport, tvaNetCost, coutRendu };
 }
 
 // Feature 3: solve for selling price given a target net margin
 function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0 } = fees;
+  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti" } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate     = getVatRate(categorie);
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
   // fraisFixes includes the processor fixed fee (per-transaction fixed cost)
   const fraisFixes  = fraisRetour + coutEmballage + processorFixedFee;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
@@ -698,8 +708,8 @@ export const loader = async ({ request }) => {
 
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  // Fetch usage, history, and alert threshold concurrently
-  const [countResult, historyResult, alertResult, annotationsResult] = await Promise.allSettled([
+  // Fetch usage, history, alert threshold, and vat_regime concurrently
+  const [countResult, historyResult, alertResult, annotationsResult, planResult] = await Promise.allSettled([
     !isPro
       ? supabase.from("usage").select("calculation_count").eq("shop_domain", session.shop).eq("month", currentMonth).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -713,6 +723,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
+    supabase.from("shop_plans").select("vat_regime").eq("shop_domain", session.shop).maybeSingle(),
   ]);
 
   const monthlyCount = countResult.status === "fulfilled"
@@ -734,8 +745,11 @@ export const loader = async ({ request }) => {
     ? (annotationsResult.value.data ?? []) : [];
 
   const showWelcome = new URL(request.url).searchParams.get("subscribed") === "true";
+  const vatRegime = planResult.status === "fulfilled"
+    ? (planResult.value.data?.vat_regime ?? "assujetti")
+    : "assujetti";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations };
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -810,6 +824,16 @@ export const action = async ({ request }) => {
     billingIsExpert = subs.some(s => s.name === PLAN_EXPERT && s.status === "ACTIVE");
     billingIsPro = billingIsExpert || subs.some(s => s.name === PLAN_PRO && s.status === "ACTIVE");
   } catch (e) { console.error("[Billing] action check:", e?.message); }
+
+  // ── Set VAT regime ────────────────────────────────────────────────────────
+  if (body._action === "set_vat_regime") {
+    const regime = body.vat_regime === "franchise" ? "franchise" : "assujetti";
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, vat_regime: regime, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain" }
+    );
+    return { success: true };
+  }
 
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
@@ -892,7 +916,7 @@ export const action = async ({ request }) => {
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
         const { droitsDouane: douane, tvaImport: tva, coutRendu } =
-          computeLandedCost(cost, shippingCost, customsRate, getVatRate(null));
+          computeLandedCost(cost, shippingCost, customsRate, getVatRate(null), "assujetti");
         const shopify  = price * shopifyFee;
         const stripe   = price * stripeFee;
         const returns  = price * returnsRate;
@@ -938,7 +962,7 @@ export const action = async ({ request }) => {
             shopifyCost, stripeCost, retoursCost, adsCost,
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette,
-            coutEmballage, fraisRetour, processorFixedFee } = body;
+            coutEmballage, fraisRetour, processorFixedFee, vatRegime } = body;
 
     const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
     const safeCategory  = sanitizeForPrompt(category);
@@ -950,10 +974,11 @@ export const action = async ({ request }) => {
 Voici les données d'un calcul de marge pour un marchand Shopify :
 - Produit : ${safeTitle}
 - Catégorie : ${safeCategory} | Pays d'import : ${safeCountry}
+- Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
 - Prix fournisseur : ${fmt(prixAchat)}€ | Prix de vente : ${fmt(prixVente)}€
-- Droits de douane : ${fmt(douane)}€ (taux ${(customsRate * 100).toFixed(0)}%)
-- TVA à l'import : ${fmt(tvaImport)}€ | Frais de port : ${fmt(shipping)}€
-- Coût rendu total : ${fmt(coutRendu)}€
+- Droits de douane : ${fmt(douane)}€${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré — de minimis ≤ 150€)" : ` (taux ${(customsRate * 100).toFixed(0)}% sur CIF)`}
+- TVA à l'import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable — n'affecte pas la marge)" : " (coût sec)"}  | Frais de port : ${fmt(shipping)}€
+- Coût rendu total (net) : ${fmt(coutRendu)}€
 - Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€
 - ${safeProcessor} : ${stripeFee}% + ${fmt(processorFixedFee)}€/transaction → ${fmt(stripeCost)}€
 - Provision retours : ${retours}% → ${fmt(retoursCost)}€
@@ -961,7 +986,10 @@ Voici les données d'un calcul de marge pour un marchand Shopify :
 - Budget publicité : ${ads}% → ${fmt(adsCost)}€
 - Marge brute : ${pct(margeBrutePercent)}% | Marge nette réelle : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
 
-RÈGLE D'AUDIT OBLIGATOIRE : Tu dois traquer et alerter l'utilisateur de manière proactive si le coût d'emballage saisi est manifestement disproportionné par rapport aux standards e-commerce. La règle de déclenchement de l'alerte est la suivante : si le coût d'emballage dépasse 3,00 € par commande OU représente plus de 10 % du prix de vente (selon le seuil le plus bas atteint en premier), tu dois lui suggérer de revoir ce poste de dépense. Si cette règle se déclenche, l'une de tes 3 actions concrètes DOIT concerner ce point.
+RÈGLES D'AUDIT OBLIGATOIRES :
+1. Emballage disproportionné : si le coût d'emballage dépasse 3,00€/commande OU représente > 10% du prix de vente, inclure une action concrète pour réduire ce poste.
+2. De minimis douanière : si le prix fournisseur est ≤ 150€, les droits de douane sont légalement nuls (UE). Ne recommande JAMAIS d'optimiser un coût de douane qui est déjà à zéro.
+3. TVA récupérable : si le régime est "Assujetti", la TVA import (${fmt(tvaImport)}€) est récupérable — ne la traite JAMAIS comme une charge définitive dans tes recommandations. Toute suggestion de réduction du prix fournisseur doit cascader : une baisse du fournisseur réduit la base CIF, donc les droits de douane (si > 150€), donc la base TVA, donc le coût rendu — mentionne cet effet de levier si pertinent.
 
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max expliquant pourquoi la marge est à ce niveau","actions":["action concrète 1 avec chiffres","action concrète 2 avec chiffres","action concrète 3 avec chiffres"]}`;
@@ -1078,13 +1106,14 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime } = useLoaderData();
 
-  const saveFetcher  = useFetcher();
-  const aiFetcher    = useFetcher();
-  const alertFetcher = useFetcher();
-  const auditFetcher = useFetcher();
-  const annotFetcher = useFetcher();
+  const saveFetcher    = useFetcher();
+  const aiFetcher      = useFetcher();
+  const alertFetcher   = useFetcher();
+  const auditFetcher   = useFetcher();
+  const annotFetcher   = useFetcher();
+  const regimeFetcher  = useFetcher();
 
   // Billing uses useSubmit (full-page navigation) so App Bridge can intercept
   // the redirect thrown by billing.request() and open Shopify billing in the
@@ -1100,11 +1129,12 @@ export default function Index() {
     shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25",
     retours: "5", ads: "15",
     fraisRetour: "0", coutEmballage: "0",
+    vatRegime: initialVatRegime ?? "assujetti",
   });
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0", vatRegime: initialVatRegime ?? "assujetti" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1232,7 +1262,7 @@ export default function Index() {
     const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
     const vatRate        = getVatRate(form.categorie);
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
-    const { droitsDouane: douane, tvaImport, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate);
+    const { droitsDouane: douane, tvaImport, tvaNetCost, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, form.vatRegime ?? "assujetti");
     const shopifyCost    = prixVente * (shopifyFeeVal / 100);
     const stripeCost     = (prixVente * (stripeFeeVal / 100)) + processorFixedFeeVal;
     const retoursCost    = prixVente * (retoursVal    / 100);
@@ -1255,6 +1285,7 @@ export default function Index() {
       fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes,
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
       margeApparente, customsRate, vatRate,
+      vatRegime: form.vatRegime ?? "assujetti", tvaNetCost,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
       retours: retoursVal, ads: adsVal,
     };
@@ -1315,6 +1346,7 @@ export default function Index() {
       coutEmballage:      r.coutEmballage,
       fraisRetour:        r.fraisRetour,
       processorFixedFee:  r.processorFixedFee,
+      vatRegime:          r.vatRegime,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
@@ -1335,7 +1367,7 @@ export default function Index() {
     if (errs.length > 0) { setSimErrors(errs); setSimResult(null); return; }
     if (targetMargin >= 100) { setSimErrors(["La marge cible doit être < 100%."]); return; }
 
-    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee });
+    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime: simForm.vatRegime ?? "assujetti" });
     if (!sim) {
       setSimErrors(["Cette marge cible est inatteignable avec ces paramètres — les frais cumulés dépassent 100%. Réduisez les frais ou abaissez la marge cible."]);
       setSimResult(null);
@@ -1603,6 +1635,21 @@ export default function Index() {
                       </select>
                       <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay}€</div>
                     </FieldGroup>
+                    <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti (régime réel) : la TVA à l'import est déductible — elle n'est PAS un coût. Franchise en base / micro-entreprise : la TVA import est un coût sec définitif.">
+                      <select
+                        value={form.vatRegime ?? "assujetti"}
+                        onChange={e => {
+                          const regime = e.target.value;
+                          setForm(prev => ({ ...prev, vatRegime: regime }));
+                          setResults(null); setErrors([]); setWarnings([]);
+                          regimeFetcher.submit({ _action: "set_vat_regime", vat_regime: regime }, { method: "POST", encType: "application/json" });
+                        }}
+                        style={inputStyle}
+                      >
+                        <option value="assujetti">Assujetti à la TVA (régime réel)</option>
+                        <option value="franchise">Franchise en base / non assujetti</option>
+                      </select>
+                    </FieldGroup>
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais & déductions</div>
@@ -1685,6 +1732,16 @@ export default function Index() {
                     {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
                       <option key={pays} value={pays}>{pays} — port ~{cost}€</option>
                     ))}
+                  </select>
+                </FieldGroup>
+                <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti : TVA import récupérable (neutralisée). Franchise : TVA import = coût sec.">
+                  <select
+                    value={simForm.vatRegime ?? "assujetti"}
+                    onChange={e => setSimForm(prev => ({ ...prev, vatRegime: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="assujetti">Assujetti à la TVA (régime réel)</option>
+                    <option value="franchise">Franchise en base / non assujetti</option>
                   </select>
                 </FieldGroup>
                 <FieldGroup label="Marge nette cible (%)" tooltip="La marge nette que vous souhaitez atteindre après tous les frais (Shopify, Stripe, retours, ads inclus).">
@@ -2207,8 +2264,8 @@ export default function Index() {
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Structure du coût d'achat</div>
               {[
                 { label: "Prix fournisseur",                      value: `${fmt(results.prixAchat)}€`,  color: "#202223" },
-                { label: `+ Droits de douane (${(results.customsRate*100).toFixed(0)}%)`, value: `+${fmt(results.douane)}€`, color: "#6D7175" },
-                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)}%)`, value: `+${fmt(results.tvaImport)}€`, color: "#6D7175" },
+                { label: results.douane === 0 ? `+ Droits de douane (de minimis ≤ 150€)` : `+ Droits de douane (${(results.customsRate*100).toFixed(0)}% sur CIF)`, value: `+${fmt(results.douane)}€`, color: "#6D7175" },
+                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)}%)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${fmt(results.tvaImport)}€`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
                 { label: `+ Frais de port (${form.paysImport})`,  value: `+${fmt(results.shipping)}€`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
