@@ -1894,7 +1894,12 @@ export default function Index() {
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
                   Coût rendu (achat + douane + TVA import + port) = <strong>{simResult.coutRendu.toFixed(2)}€</strong><br />
-                  {simResult.fraisFixes > 0 && <>Frais fixes (retour + emballage) = <strong>{simResult.fraisFixes.toFixed(2)}€</strong><br /></>}
+                  {simResult.fraisFixes > 0 && (() => {
+                    const parts = [];
+                    if ((simResult.fraisRetour ?? 0) + (simResult.coutEmballage ?? 0) > 0) parts.push("retour + emballage");
+                    if ((simResult.processorFixedFee ?? 0) > 0) parts.push(`frais fixe ${simResult.paymentProcessor ?? "processeur"}`);
+                    return <>Frais fixes ({parts.join(" + ") || "divers"}) = <strong>{simResult.fraisFixes.toFixed(2)}€</strong><br /></>;
+                  })()}
                   Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
                   Formule : ({simResult.coutRendu.toFixed(2)}{simResult.fraisFixes > 0 ? ` + ${simResult.fraisFixes.toFixed(2)}` : ""}) ÷ (1 − {(simResult.totalFeeRate * 100).toFixed(1)}% − {simResult.targetMargin}%) = {simResult.prixVenteMin.toFixed(2)}€
                 </div>
