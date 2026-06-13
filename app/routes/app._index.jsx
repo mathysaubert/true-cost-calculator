@@ -34,7 +34,7 @@ const SHIPPING_ESTIMATES = { Chine: 8, Inde: 6, Turquie: 4, UE: 2, Autre: 5 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const normalizeDecimal = (raw) => String(raw ?? "").trim().replace(/,/g, ".");
+const normalizeDecimal = (raw) => String(raw ?? "").replace(/\s/g, "").replace(/,/g, ".");
 const safeNum = (n) => (Number.isFinite(n) ? n : 0);
 const fmt = (n) => safeNum(n).toFixed(2);
 const pct = (n) => safeNum(n).toFixed(1);
@@ -46,6 +46,7 @@ function validatePrice(raw, label, errors) {
   const n = parseFloat(s);
   if (!Number.isFinite(n) || n < 0) { errors.push(`${label} : valeur invalide.`); return null; }
   if (n === 0) { errors.push(`${label} ne peut pas être 0.`); return null; }
+  if (n > 999999) { errors.push(`${label} : valeur trop élevée (max 999 999€).`); return null; }
   return n;
 }
 
