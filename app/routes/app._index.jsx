@@ -135,6 +135,68 @@ function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct,
   return { prixVenteMin: (coutRendu + fraisFixes) / denominator, coutRendu, fraisFixes, totalFeeRate, customsRate, shipping };
 }
 
+// Core margin computation — same arithmetic as the dashboard's calculate callback.
+// Single source of truth: any divergence here vs the dashboard is a bug.
+function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime) {
+  const customsRate  = CUSTOMS_RATES[categorie] ?? 0.03;
+  const vatRate      = getVatRate(categorie);
+  const shipping     = SHIPPING_ESTIMATES[paysImport] ?? 5;
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
+  const shopifyCost  = prixVente * (shopifyFee / 100);
+  const stripeCost   = (prixVente * (stripeFee / 100)) + processorFixedFee;
+  const retoursCost  = prixVente * (retours / 100);
+  const adsCost      = prixVente * (ads / 100);
+  const fraisFixes   = fraisRetour + coutEmballage;
+  const margeNette   = (prixVente - coutRendu) - shopifyCost - stripeCost - retoursCost - adsCost - fraisFixes;
+  const margeNettePercent = prixVente > 0 ? (margeNette / prixVente) * 100 : 0;
+  return { margeNette, margeNettePercent, coutRendu, rentable: margeNette > 0 };
+}
+
+// Generates pre-calculated scenarios for the AI.
+// All output numbers are computed by the same engine as the dashboard —
+// the AI receives finished figures and must never recalculate them.
+function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime }) {
+  const run = (o = {}) => {
+    const p = { prixAchat, prixVente, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, ...o };
+    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime);
+  };
+
+  const current = run();
+  const list = [];
+
+  if (coutEmballage > 1.50) {
+    list.push({ id: "emb_150", levier: `Emballage réduit à 1,50€ (−${fmt(coutEmballage - 1.50)}€/vente)`, ...run({ coutEmballage: 1.50 }) });
+  }
+  if (coutEmballage > 3.00) {
+    list.push({ id: "emb_300", levier: `Emballage réduit au seuil 3,00€ (−${fmt(coutEmballage - 3.00)}€/vente)`, ...run({ coutEmballage: 3.00 }) });
+  }
+  const pa80 = parseFloat((prixAchat * 0.80).toFixed(2));
+  list.push({ id: "fourn_80", levier: `Fournisseur renégocié −20% → ${fmt(pa80)}€`, ...run({ prixAchat: pa80 }) });
+  const pa70 = parseFloat((prixAchat * 0.70).toFixed(2));
+  list.push({ id: "fourn_70", levier: `Fournisseur renégocié −30% → ${fmt(pa70)}€`, ...run({ prixAchat: pa70 }) });
+  const pv125 = parseFloat((prixVente * 1.25).toFixed(2));
+  list.push({ id: "pv_125", levier: `Prix de vente +25% → ${fmt(pv125)}€`, ...run({ prixVente: pv125 }) });
+  const pv150 = parseFloat((prixVente * 1.50).toFixed(2));
+  list.push({ id: "pv_150", levier: `Prix de vente +50% → ${fmt(pv150)}€`, ...run({ prixVente: pv150 }) });
+  if (ads > 0) {
+    list.push({ id: "ads_0", levier: `Budget ads suspendu (${pct(ads)}% → 0%)`, ...run({ ads: 0 }) });
+  }
+  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime });
+  if (seuilSim && seuilSim.prixVenteMin > 0) {
+    list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00€)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
+  }
+  if (coutEmballage > 1.50) {
+    list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50€ + prix +25% (${fmt(pv125)}€)`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
+  }
+  if (current.margeNette < 0 && coutEmballage > 1.50) {
+    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime });
+    if (seuilCombo && seuilCombo.prixVenteMin > 0) {
+      list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50€ + prix minimum → ${fmt(seuilCombo.prixVenteMin)}€`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
+    }
+  }
+  return { current, scenarios: list };
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const inputStyle = {
@@ -970,34 +1032,56 @@ export const action = async ({ request }) => {
     const safeCountry   = sanitizeForPrompt(country);
     const safeProcessor = sanitizeForPrompt(paymentProcessor) || "Stripe";
 
+    // Pre-compute scenarios with the deterministic engine — AI receives finished
+    // figures and must never recalculate anything.
+    const { current: scenCurrent, scenarios: scenList } = computeScenarios({
+      prixAchat:         parseFloat(prixAchat)         || 0,
+      prixVente:         parseFloat(prixVente)          || 0,
+      categorie:         category  || "Autre",
+      paysImport:        country   || "Autre",
+      shopifyFee:        parseFloat(shopifyFee)         || 0,
+      stripeFee:         parseFloat(stripeFee)          || 0,
+      processorFixedFee: parseFloat(processorFixedFee)  || 0,
+      retours:           parseFloat(retours)            || 0,
+      ads:               parseFloat(ads)                || 0,
+      fraisRetour:       parseFloat(fraisRetour)        || 0,
+      coutEmballage:     parseFloat(coutEmballage)      || 0,
+      vatRegime:         vatRegime || "assujetti",
+    });
+
+    const scenariosBlock = scenList.map((s, i) =>
+      s.prixCible !== undefined
+        ? `S${i+1}. ${s.levier}\n   → Marge nette : 0,00€ / 0,0% | Rentable : NON | Prix cible : ${fmt(s.prixCible)}€`
+        : `S${i+1}. ${s.levier}\n   → Marge nette : ${fmt(s.margeNette)}€ / ${pct(s.margeNettePercent)}% | Rentable : ${s.rentable ? 'OUI' : 'NON'}`
+    ).join('\n\n');
+
     const prompt = `Tu es un expert en e-commerce et rentabilité.
 
-DÉFINITIONS CANONIQUES — tu DOIS employer ces termes avec ces définitions exactes, sans exception :
-• Marge apparente = (Prix vente − Prix fournisseur) / Prix vente — n'inclut aucun frais
+DÉFINITIONS CANONIQUES (emploie-les strictement) :
+• Marge apparente = (Prix vente − Prix fournisseur) / Prix vente
 • Marge brute = (Prix vente − Coût rendu total) / Prix vente — exclut Shopify, Stripe, emballage, retours, ads
-• Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente — après Shopify, Stripe, emballage, retours, ads
-Ces définitions sont celles du dashboard. N'inverse jamais "brute" et "nette".
+• Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente
 
-Voici les données du calcul :
+DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
 - Prix fournisseur : ${fmt(prixAchat)}€ | Prix de vente : ${fmt(prixVente)}€
-- Droits de douane : ${fmt(douane)}€${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré — de minimis ≤ 150€)" : ` (taux ${(customsRate * 100).toFixed(0)}% sur CIF)`}
-- TVA à l'import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable — neutralisée)" : " (coût sec)"} | Port : ${fmt(shipping)}€
-- Coût rendu (net) : ${fmt(coutRendu)}€
-- Frais Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€ | ${safeProcessor} : ${stripeFee}%+${fmt(processorFixedFee)}€ → ${fmt(stripeCost)}€
-- Provision retours : ${retours}% → ${fmt(retoursCost)}€ | Ads : ${ads}% → ${fmt(adsCost)}€
-- Emballage : ${fmt(coutEmballage)}€/commande | Frais retour logistique : ${fmt(fraisRetour)}€
+- Douane : ${fmt(douane)}€${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré de minimis)" : ""} | TVA import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${fmt(shipping)}€ | Coût rendu net : ${fmt(coutRendu)}€
+- ${safeProcessor} : ${stripeFee}%+${fmt(processorFixedFee)}€ → ${fmt(stripeCost)}€ | Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€ | Retours : ${retours}% → ${fmt(retoursCost)}€ | Ads : ${ads}% → ${fmt(adsCost)}€
+- Emballage : ${fmt(coutEmballage)}€ | Frais retour : ${fmt(fraisRetour)}€
 - Marge apparente : ${pct(margeApparente)}% | Marge brute : ${pct(margeBrutePercent)}% (${fmt(parseFloat(prixVente) - parseFloat(coutRendu))}€) | Marge nette : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
 
-RÈGLES D'AUDIT OBLIGATOIRES :
-1. Emballage : si emballage > 3,00€ OU > 10% du prix de vente, une action DOIT cibler ce poste avec le ratio exact (ex: "${fmt(coutEmballage)}€ représente ${((parseFloat(coutEmballage)/parseFloat(prixVente))*100).toFixed(1)}% du prix de vente, soit ${(parseFloat(coutEmballage)/3).toFixed(1)}× le seuil de 3€").
-2. De minimis : fournisseur ≤ 150€ → droits de douane = 0 légalement. Ne suggère JAMAIS de réduire un coût douanier déjà nul.
-3. Cascade fournisseur : si tu suggères de renégocier le fournisseur, calcule le gain réel selon le régime actif. Régime assujetti + fournisseur ≤ 150€ : gain net = exactement la différence de prix fournisseur (douane=0, TVA neutralisée). Régime assujetti + fournisseur > 150€ : gain = Δfournisseur + Δdouane (pas de cascade TVA). Régime franchise : gain = Δfournisseur + Δdouane + ΔTV A. Cite le gain en €.
-4. Précision numérique STRICTE : tout multiple, ratio ou % cité dans ton texte doit être le quotient réel arrondi à 1 décimale. "X représente Y× Z" → Y = X/Z arrondi. Interdiction d'écrire "près de 2×" si le vrai quotient est 1,7×.
+ÉTAT ACTUEL : Marge nette = ${fmt(scenCurrent.margeNette)}€ / ${pct(scenCurrent.margeNettePercent)}% | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
+
+SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
+${scenariosBlock}
+
+INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (€, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même.
+
+Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette résultante décroissante. Pour chaque action, cite sa marge nette exacte et précise Rentable=OUI/NON. Si marge actuelle ≤ 0 et qu'aucun scénario seul ne la rend positive, recommande la combinaison listée.
 
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"analyse":"2 phrases max sur pourquoi la marge est à ce niveau en citant les 2 postes de coût dominants avec leurs montants","actions":["action concrète 1 avec chiffres exacts","action concrète 2 avec chiffres exacts","action concrète 3 avec chiffres exacts"]}`;
+{"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X€ (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
 
     try {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
