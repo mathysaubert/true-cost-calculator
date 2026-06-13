@@ -173,32 +173,107 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X€ (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
 }
 
-// ── Extract all numbers from a string ─────────────────────────────────────────
-function extractNumbers(text) {
-  return [...text.matchAll(/[-\d]+[,.]?\d*/g)].map(m => m[0].replace(',', '.'));
+// ── Build the full reference set of legitimate values for a given input set ───
+// Includes: all inputs, every state-actuel line item, common derived sums,
+// and every scenario figure. A number from the AI text is legitimate iff it
+// is within ±TOLERANCE of at least one value in this set.
+const TOLERANCE = 0.10; // covers € rounding (±0.01) and % display (±0.1pp)
+
+function buildRefSet(inputs) {
+  const {
+    prixAchat, prixVente, categorie, paysImport,
+    shopifyFee, stripeFee, processorFixedFee,
+    retours, ads, fraisRetour, coutEmballage, vatRegime,
+  } = inputs;
+
+  const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
+  const vatRate     = getVatRate(categorie);
+  const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
+  const { droitsDouane, tvaImport, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
+  const shopifyCost     = prixVente * (shopifyFee / 100);
+  const stripeCost      = (prixVente * (stripeFee / 100)) + processorFixedFee;
+  const retoursCost     = prixVente * (retours / 100);
+  const adsCost         = prixVente * (ads / 100);
+  const totalFraisVente = shopifyCost + stripeCost + retoursCost + adsCost;
+  const fraisFixes      = fraisRetour + coutEmballage;
+  const margeBrute      = prixVente - coutRendu;
+  const margeBrutePercent = (margeBrute / prixVente) * 100;
+  const { current, scenarios } = computeScenarios(inputs);
+  const margeApparente  = ((prixVente - prixAchat) / prixVente) * 100;
+  // "total des charges" = tout ce qui est déduit du prix de vente
+  const totalCharges    = prixVente - current.margeNette;
+
+  const refs = new Set();
+  const add  = v => { if (Number.isFinite(v)) refs.add(v); };
+
+  // Raw inputs (rates and amounts)
+  [prixAchat, prixVente, coutEmballage, fraisRetour, shipping,
+   shopifyFee, stripeFee, processorFixedFee, retours, ads,
+   customsRate * 100].forEach(add);
+
+  // État actuel — every line item the AI might cite
+  [droitsDouane, tvaImport, coutRendu,
+   shopifyCost, stripeCost, retoursCost, adsCost,
+   totalFraisVente, fraisFixes,
+   margeBrute, margeBrutePercent,
+   current.margeNette, current.margeNettePercent, current.coutRendu,
+   margeApparente, totalCharges].forEach(add);
+
+  // Derived partial sums the AI legitimately uses in narrative
+  [adsCost + retoursCost,                            // ex. "ads + retours = 80€"
+   shopifyCost + stripeCost,                         // platform fees total
+   totalFraisVente + fraisFixes,                     // all variable costs
+   coutRendu + totalFraisVente,                      // before fixed costs
+   coutRendu + fraisFixes,                           // fixed-cost total
+   prixVente - coutRendu,                            // margeBrute (redundant but explicit)
+  ].forEach(add);
+
+  // All scenario figures
+  for (const s of scenarios) {
+    [s.margeNette, s.margeNettePercent, s.coutRendu].forEach(add);
+    if (s.prixCible !== undefined) add(s.prixCible);
+    // Improvement delta vs current (AI might say "gain de X€")
+    if (Number.isFinite(s.margeNette))
+      add(s.margeNette - current.margeNette);
+  }
+
+  return refs;
 }
 
-// ── Reconcile AI output against pre-computed scenarios ────────────────────────
-function reconcile(aiText, inputs) {
-  const { scenarios } = computeScenarios(inputs);
-  const allPrecomputed = new Set();
-  for (const s of scenarios) {
-    allPrecomputed.add(fmt(s.margeNette));
-    allPrecomputed.add(pct(s.margeNettePercent));
-    if (s.prixCible !== undefined) allPrecomputed.add(fmt(s.prixCible));
+function isLegitimate(f, refs) {
+  for (const r of refs) {
+    if (Math.abs(f - r) <= TOLERANCE) return true;
   }
-  // Also include input data
-  const { prixAchat, prixVente, coutEmballage, fraisRetour } = inputs;
-  allPrecomputed.add(fmt(prixAchat)); allPrecomputed.add(fmt(prixVente));
-  allPrecomputed.add(fmt(coutEmballage)); allPrecomputed.add(fmt(fraisRetour));
+  return false;
+}
 
-  const nums = extractNumbers(aiText);
+// ── Reconcile AI output against the full reference set ────────────────────────
+// A divergence is a number cited by the AI that is not within ±TOLERANCE of
+// any value in the reference set (inputs + state actuel + scenarios + sums).
+// For each divergence, the surrounding context is shown.
+function reconcile(aiText, inputs) {
+  const refs = buildRefSet(inputs);
   const divergences = [];
-  for (const n of nums) {
-    const f = parseFloat(n);
-    if (!Number.isFinite(f) || Math.abs(f) < 0.5) continue; // skip trivial numbers
-    if (!allPrecomputed.has(fmt(f)) && !allPrecomputed.has(pct(f))) {
-      divergences.push(n);
+  const seenVals = new Set();
+
+  // Extract numbers; lookbehind prevents matching "1" in "S1" or "V2"
+  const regex = /(?<![a-zA-Z])(-?\d+(?:[.,]\d+)?)/g;
+  let m;
+  while ((m = regex.exec(aiText)) !== null) {
+    const raw = m[1];
+    const f   = parseFloat(raw.replace(',', '.'));
+    if (!Number.isFinite(f) || Math.abs(f) < 0.5) continue;
+
+    const key = f.toFixed(3);
+    if (seenVals.has(key)) continue;
+
+    if (!isLegitimate(f, refs)) {
+      seenVals.add(key);
+      const pos   = m.index;
+      const start = Math.max(0, pos - 65);
+      const end   = Math.min(aiText.length, pos + 65);
+      const ctx   = aiText.slice(start, end).replace(/\n/g, ' ').trim();
+      divergences.push({ value: raw, context: `"...${ctx}..."` });
     }
   }
   return { divergences };
@@ -283,8 +358,11 @@ for (const tc of TEST_CASES) {
     if (divergences.length === 0) {
       console.log('  ✓ Tous les chiffres IA correspondent aux données pré-calculées.');
     } else {
-      console.log(`  ✗ DIVERGENCES détectées — chiffres dans le texte IA absents des scénarios :`);
-      console.log('   ', divergences.join(', '));
+      console.log(`  ✗ DIVERGENCES détectées (${divergences.length}) — chiffres absents des données moteur :`);
+      for (const d of divergences) {
+        console.log(`    • Valeur : ${d.value}`);
+        console.log(`      Contexte : ${d.context}`);
+      }
     }
   } catch (e) {
     console.log(`  ERREUR API : ${e.message}`);
