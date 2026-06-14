@@ -949,6 +949,11 @@ export const action = async ({ request }) => {
     const processor    = PAYMENT_PROCESSORS.find(p => p.id === body.payment_processor) ?? PAYMENT_PROCESSORS[0];
     const processorRate     = processor.rate / 100;
     const processorFixedFee = processor.fixedFee;
+    // qty_per_shipment: units per inbound supplier shipment — splits total shipping cost per unit.
+    // parseInt → NaN on empty/invalid string → || 1 gives safe fallback.
+    // Math.max(1, ...) prevents division by zero even if someone passes "0".
+    const qty = Math.max(1, parseInt(body.qty_per_shipment, 10) || 1);
+    const shippingPerUnit = shippingCost / qty;
 
     const startTime = Date.now();
     let allProducts = [], cursor = null, hasNextPage = true, pages = 0;
@@ -1016,7 +1021,7 @@ export const action = async ({ request }) => {
         const isDefaultCategory = !resolvedCategory;
         const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
         const vatRate      = getVatRate(mappedCategory);
-        const { coutRendu } = computeLandedCost(cost, shippingCost, customsRate, vatRate, vatRegime);
+        const { coutRendu } = computeLandedCost(cost, shippingPerUnit, customsRate, vatRate, vatRegime);
         const shopify  = price * shopifyFee;
         const stripe   = (price * processorRate) + processorFixedFee;
         const returns  = price * returnsRate;
@@ -1313,7 +1318,7 @@ export default function Index() {
   const [annotText, setAnnotText]     = useState("");
 
   // Catalog audit (Expert)
-  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti" });
+  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1" });
   const [auditElapsed, setAuditElapsed] = useState(0);
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
@@ -2190,7 +2195,7 @@ export default function Index() {
                 {/* Params */}
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
-                  <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                  <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "16px" }}>
                     <div>
                       <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Frais Shopify (taux)</div>
                       <input type="text" value={auditParams.shopify_fee} onChange={e => setAuditParams(p => ({ ...p, shopify_fee: e.target.value }))}
@@ -2203,21 +2208,31 @@ export default function Index() {
                       </select>
                     </div>
                     <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Retours (taux)</div>
-                      <input type="text" value={auditParams.returns_rate} onChange={e => setAuditParams(p => ({ ...p, returns_rate: e.target.value }))}
-                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.05" />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Port estimé (€)</div>
-                      <input type="text" value={auditParams.shipping_cost} onChange={e => setAuditParams(p => ({ ...p, shipping_cost: e.target.value }))}
-                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="8" />
-                    </div>
-                    <div>
                       <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Régime TVA</div>
                       <select value={auditParams.vat_regime} onChange={e => setAuditParams(p => ({ ...p, vat_regime: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
                         <option value="assujetti">Assujetti</option>
                         <option value="franchise">Franchise</option>
                       </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Retours (taux)</div>
+                      <input type="text" value={auditParams.returns_rate} onChange={e => setAuditParams(p => ({ ...p, returns_rate: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.05" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Port fournisseur estimé (€)</div>
+                      <input type="text" value={auditParams.shipping_cost} onChange={e => setAuditParams(p => ({ ...p, shipping_cost: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="8" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Unités / envoi fournisseur</div>
+                      <input type="text" value={auditParams.qty_per_shipment} onChange={e => setAuditParams(p => ({ ...p, qty_per_shipment: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="1" />
+                      {(!auditParams.qty_per_shipment || auditParams.qty_per_shipment === "1") && (
+                        <div style={{ fontSize: "10px", color: "#B98900", marginTop: "3px", lineHeight: "1.4" }}>
+                          ⚠ Hypothèse : 1 article expédié seul (dropshipping). Entrez votre quantité de réassort réelle (ex. 50, 100).
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
