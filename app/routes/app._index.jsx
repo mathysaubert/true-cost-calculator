@@ -942,11 +942,13 @@ export const action = async ({ request }) => {
     if (!auditAllowed) return { success: false, error: "Limite atteinte : 10 audits par jour." };
 
     const clampRate = (v, def) => { const n = parseFloat(v ?? def); return Number.isFinite(n) && n >= 0 && n <= 1 ? n : parseFloat(def); };
-    const customsRate  = clampRate(body.customs_rate,  "0.12");
     const shopifyFee   = clampRate(body.shopify_fee,   "0.02");
-    const stripeFee    = clampRate(body.stripe_fee,    "0.025");
     const returnsRate  = clampRate(body.returns_rate,  "0.05");
     const shippingCost = (() => { const n = parseFloat(body.shipping_cost ?? "8"); return Number.isFinite(n) && n >= 0 && n <= 9999 ? n : 8; })();
+    const vatRegime    = ["assujetti", "franchise"].includes(body.vat_regime) ? body.vat_regime : "assujetti";
+    const processor    = PAYMENT_PROCESSORS.find(p => p.id === body.payment_processor) ?? PAYMENT_PROCESSORS[0];
+    const processorRate     = processor.rate / 100;
+    const processorFixedFee = processor.fixedFee;
 
     const startTime = Date.now();
     let allProducts = [], cursor = null, hasNextPage = true, pages = 0;
@@ -962,7 +964,7 @@ export const action = async ({ request }) => {
             products(first: 50, after: $cursor, query: "status:active") {
               edges {
                 node {
-                  id title
+                  id title productType
                   variants(first: 1) {
                     edges { node { price inventoryItem { unitCost { amount } } } }
                   }
@@ -985,20 +987,42 @@ export const action = async ({ request }) => {
       }
     }
 
+    // Maps Shopify productType (free-form text) to an app category for customs/VAT lookup.
+    // Case-insensitive keyword matching; returns null when no match → caller falls back to "Autre".
+    const shopifyTypeToCategory = (productType) => {
+      if (!productType) return null;
+      const t = productType.toLowerCase().trim();
+      if (/textile|shirt|t-shirt|tee|vêtement|clothing|robe|pantalon|chemise|jean|lingerie|mode|fashion/.test(t)) return "Textile";
+      if (/electro|électro|tech|phone|ordinateur|computer|gadget|audio|video|gaming|camera/.test(t)) return "Électronique";
+      if (/cosmeti|cosmét|beauty|beauté|skincare|soin|parfum|makeup|maquillage/.test(t)) return "Cosmétique";
+      if (/sport|fitness|gym|yoga|outdoor|running|cycling/.test(t)) return "Sport";
+      if (/aliment|food|nutrition|supplement|snack|boisson|drink|épicerie/.test(t)) return "Alimentation";
+      if (/maroquin|leather|wallet|portefeuille|bagage|luggage/.test(t)) return "Maroquinerie";
+      if (/jouet|toy|enfant|kid|bébé|baby/.test(t)) return "Jouets";
+      if (/mobil|furniture|meuble|déco|deco|maison|jardin|garden/.test(t)) return "Mobilier";
+      if (/livre|book|roman|magazine/.test(t)) return "Livres";
+      if (/accessoir|accessory|bijou|jewelry|jewel|montre|watch/.test(t)) return "Accessoires";
+      return null;
+    };
+
     const products = allProducts
       .map(node => {
         const variant = node.variants.edges[0]?.node;
         const price = parseFloat(variant?.price ?? "0");
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
-        const { droitsDouane: douane, tvaImport: tva, coutRendu } =
-          computeLandedCost(cost, shippingCost, customsRate, getVatRate("Autre"), "assujetti");
+        const resolvedCategory  = shopifyTypeToCategory(node.productType);
+        const mappedCategory    = resolvedCategory ?? "Autre";
+        const isDefaultCategory = !resolvedCategory;
+        const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
+        const vatRate      = getVatRate(mappedCategory);
+        const { coutRendu } = computeLandedCost(cost, shippingCost, customsRate, vatRate, vatRegime);
         const shopify  = price * shopifyFee;
-        const stripe   = price * stripeFee;
+        const stripe   = (price * processorRate) + processorFixedFee;
         const returns  = price * returnsRate;
         const netMargin = price - coutRendu - shopify - stripe - returns;
         const netPct    = (netMargin / price) * 100;
-        return { id: node.id, title: node.title, price, cost, coutRendu, netMargin, netPct };
+        return { id: node.id, title: node.title, price, cost, coutRendu, netMargin, netPct, mappedCategory, isDefaultCategory, productType: node.productType ?? "" };
       })
       .filter(Boolean)
       .sort((a, b) => b.netPct - a.netPct);
@@ -1289,7 +1313,7 @@ export default function Index() {
   const [annotText, setAnnotText]     = useState("");
 
   // Catalog audit (Expert)
-  const [auditParams, setAuditParams] = useState({ customs_rate: "0.12", shopify_fee: "0.02", stripe_fee: "0.025", returns_rate: "0.05", shipping_cost: "8" });
+  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti" });
   const [auditElapsed, setAuditElapsed] = useState(0);
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
@@ -2167,19 +2191,34 @@ export default function Index() {
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
                   <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
-                    {[
-                      { key: "customs_rate", label: "Douane (taux)", placeholder: "0.12" },
-                      { key: "shopify_fee",  label: "Frais Shopify", placeholder: "0.02" },
-                      { key: "stripe_fee",   label: "Frais Stripe",  placeholder: "0.025" },
-                      { key: "returns_rate", label: "Retours",        placeholder: "0.05" },
-                      { key: "shipping_cost",label: "Port (€)",       placeholder: "8" },
-                    ].map(({ key, label, placeholder }) => (
-                      <div key={key}>
-                        <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>{label}</div>
-                        <input type="text" value={auditParams[key]} onChange={e => setAuditParams(p => ({ ...p, [key]: e.target.value }))}
-                          style={{ ...inputStyle, fontSize: "13px" }} placeholder={placeholder} />
-                      </div>
-                    ))}
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Frais Shopify (taux)</div>
+                      <input type="text" value={auditParams.shopify_fee} onChange={e => setAuditParams(p => ({ ...p, shopify_fee: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.02" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Processeur paiement</div>
+                      <select value={auditParams.payment_processor} onChange={e => setAuditParams(p => ({ ...p, payment_processor: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
+                        {PAYMENT_PROCESSORS.map(proc => <option key={proc.id} value={proc.id}>{proc.id}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Retours (taux)</div>
+                      <input type="text" value={auditParams.returns_rate} onChange={e => setAuditParams(p => ({ ...p, returns_rate: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.05" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Port estimé (€)</div>
+                      <input type="text" value={auditParams.shipping_cost} onChange={e => setAuditParams(p => ({ ...p, shipping_cost: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="8" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Régime TVA</div>
+                      <select value={auditParams.vat_regime} onChange={e => setAuditParams(p => ({ ...p, vat_regime: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
+                        <option value="assujetti">Assujetti</option>
+                        <option value="franchise">Franchise</option>
+                      </select>
+                    </div>
                   </div>
                   <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
                     style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: isAuditing ? "default" : "pointer", fontFamily: "inherit", opacity: isAuditing ? 0.8 : 1 }}>
@@ -2262,7 +2301,12 @@ export default function Index() {
                         const statusLabel = p.netPct < 0 ? "Perte" : p.netPct < 15 ? "Risque" : "OK";
                         return (
                           <div key={p.id} className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
-                            <div style={{ padding: "10px 12px", fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
+                            <div style={{ padding: "10px 12px", overflow: "hidden" }}>
+                              <div style={{ fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
+                              <div style={{ fontSize: "11px", color: p.isDefaultCategory ? "#B98900" : "#8A8F98", marginTop: "2px" }}>
+                                {p.mappedCategory}{p.isDefaultCategory ? " — estimation" : ""}
+                              </div>
+                            </div>
                             <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.price)}</div>
                             <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.cost)}</div>
                             <div style={{ padding: "10px 12px" }}><span style={{ fontSize: "13px", fontWeight: "700", color: statusColor }}>{formatPct(p.netPct)} %</span></div>
