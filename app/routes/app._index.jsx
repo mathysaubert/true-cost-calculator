@@ -427,8 +427,14 @@ function AIRecommendation({ fetcher }) {
         </div>
       )}
 
+      {data?.aiUnavailable && (
+        <div style={{ fontSize: "13px", color: "#7c6fb0", lineHeight: "1.6" }}>
+          Les recommandations personnalisées sont temporairement indisponibles. Votre calcul de marge ci-dessus reste exact.
+        </div>
+      )}
+
       {data?.error && (
-        <div style={{ fontSize: "13px", color: "#D72C0D" }}>{data.error}</div>
+        <div style={{ fontSize: "13px", color: "#7c6fb0", lineHeight: "1.6" }}>{data.error}</div>
       )}
 
       {data?.analyse && (
@@ -1024,7 +1030,7 @@ export const action = async ({ request }) => {
     if (!aiAllowed) return { error: "Limite atteinte : 50 recommandations IA par jour." };
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return { error: "La recommandation IA n'est pas disponible pour le moment." };
+    if (!apiKey) return { aiUnavailable: true };
 
     const { prixAchat, prixVente, category, country, productTitle,
             douane, tvaImport, shipping, coutRendu,
@@ -1090,32 +1096,51 @@ Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette ré
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 {"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X€ (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 18000);
+
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 512,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 512,
+            messages: [{ role: "user", content: prompt }],
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
       if (!resp.ok) {
-        const err = await resp.text();
-        console.error("[AI] Anthropic error:", err);
-        return { error: "Erreur API Claude." };
+        const errText = await resp.text().catch(() => "");
+        // Credit exhaustion (402) must be tracked — owner needs to know before it silently breaks for all users
+        if (resp.status === 402 || errText.toLowerCase().includes("credit") || errText.toLowerCase().includes("billing")) {
+          captureException(new Error(`[AI] Crédits Anthropic épuisés — HTTP ${resp.status}: ${errText.slice(0, 300)}`));
+        } else {
+          console.error("[AI] Anthropic error:", resp.status, errText.slice(0, 200));
+        }
+        return { aiUnavailable: true };
       }
       const aiData = await resp.json();
       const text = aiData.content?.[0]?.text ?? "";
       const parsed = JSON.parse(text);
       return { analyse: parsed.analyse, actions: parsed.actions };
     } catch (e) {
-      console.error("[AI] Failed:", e?.message);
-      return { error: "Impossible d'obtenir la recommandation IA." };
+      if (e?.name === "AbortError") {
+        console.error("[AI] Timeout — pas de réponse Anthropic après 18s");
+      } else {
+        console.error("[AI] Failed:", e?.message);
+      }
+      return { aiUnavailable: true };
     }
   }
 

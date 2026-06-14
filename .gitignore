@@ -35,3 +35,5 @@ database.sqlite
 .react-router/
 .vercel
 supabase/.temp/
+
+.env*.local
