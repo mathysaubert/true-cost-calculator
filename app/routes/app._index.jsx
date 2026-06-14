@@ -39,6 +39,12 @@ const safeNum = (n) => (Number.isFinite(n) ? n : 0);
 const fmt = (n) => safeNum(n).toFixed(2);
 const pct = (n) => safeNum(n).toFixed(1);
 
+// FR display helpers — all user-visible numbers go through these.
+// Calculations and server serialisation still use fmt/pct/toFixed.
+const formatEur = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeNum(n));
+const formatPct = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(safeNum(n));
+const formatNum = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeNum(n));
+
 function validatePrice(raw, label, errors) {
   const s = normalizeDecimal(raw);
   if (s === "") { errors.push(`${label} est requis.`); return null; }
@@ -166,33 +172,33 @@ function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopify
   const list = [];
 
   if (coutEmballage > 1.50) {
-    list.push({ id: "emb_150", levier: `Emballage réduit à 1,50€ (−${fmt(coutEmballage - 1.50)}€/vente)`, ...run({ coutEmballage: 1.50 }) });
+    list.push({ id: "emb_150", levier: `Emballage réduit à 1,50 € (−${formatEur(coutEmballage - 1.50)}/vente)`, ...run({ coutEmballage: 1.50 }) });
   }
   if (coutEmballage > 3.00) {
-    list.push({ id: "emb_300", levier: `Emballage réduit au seuil 3,00€ (−${fmt(coutEmballage - 3.00)}€/vente)`, ...run({ coutEmballage: 3.00 }) });
+    list.push({ id: "emb_300", levier: `Emballage réduit au seuil 3,00 € (−${formatEur(coutEmballage - 3.00)}/vente)`, ...run({ coutEmballage: 3.00 }) });
   }
   const pa80 = parseFloat((prixAchat * 0.80).toFixed(2));
-  list.push({ id: "fourn_80", levier: `Fournisseur renégocié −20% → ${fmt(pa80)}€`, ...run({ prixAchat: pa80 }) });
+  list.push({ id: "fourn_80", levier: `Fournisseur renégocié −20 % → ${formatEur(pa80)}`, ...run({ prixAchat: pa80 }) });
   const pa70 = parseFloat((prixAchat * 0.70).toFixed(2));
-  list.push({ id: "fourn_70", levier: `Fournisseur renégocié −30% → ${fmt(pa70)}€`, ...run({ prixAchat: pa70 }) });
+  list.push({ id: "fourn_70", levier: `Fournisseur renégocié −30 % → ${formatEur(pa70)}`, ...run({ prixAchat: pa70 }) });
   const pv125 = parseFloat((prixVente * 1.25).toFixed(2));
-  list.push({ id: "pv_125", levier: `Prix de vente +25% → ${fmt(pv125)}€`, ...run({ prixVente: pv125 }) });
+  list.push({ id: "pv_125", levier: `Prix de vente +25 % → ${formatEur(pv125)}`, ...run({ prixVente: pv125 }) });
   const pv150 = parseFloat((prixVente * 1.50).toFixed(2));
-  list.push({ id: "pv_150", levier: `Prix de vente +50% → ${fmt(pv150)}€`, ...run({ prixVente: pv150 }) });
+  list.push({ id: "pv_150", levier: `Prix de vente +50 % → ${formatEur(pv150)}`, ...run({ prixVente: pv150 }) });
   if (ads > 0) {
-    list.push({ id: "ads_0", levier: `Budget ads suspendu (${pct(ads)}% → 0%)`, ...run({ ads: 0 }) });
+    list.push({ id: "ads_0", levier: `Budget ads suspendu (${formatPct(ads)} % → 0 %)`, ...run({ ads: 0 }) });
   }
   const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime });
   if (seuilSim && seuilSim.prixVenteMin > 0) {
-    list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00€)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
+    list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00 €)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
   }
   if (coutEmballage > 1.50) {
-    list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50€ + prix +25% (${fmt(pv125)}€)`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
+    list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50 € + prix +25 % (${formatEur(pv125)})`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
   }
   if (current.margeNette < 0 && coutEmballage > 1.50) {
     const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime });
     if (seuilCombo && seuilCombo.prixVenteMin > 0) {
-      list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50€ + prix minimum → ${fmt(seuilCombo.prixVenteMin)}€`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
+      list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50 € + prix minimum → ${formatEur(seuilCombo.prixVenteMin)}`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
     }
   }
   return { current, scenarios: list };
@@ -352,11 +358,11 @@ function SparklineChart({ data, isExpert, annotations = [], onAnnotate, alertThr
       </svg>
       {tooltip && isExpert && (
         <div style={{ position: "absolute", left: `${(toX(tooltip.idx)/W)*100}%`, top: "4px", transform: toX(tooltip.idx) < 150 ? "translateX(0)" : toX(tooltip.idx) > W - 150 ? "translateX(-100%)" : "translateX(-50%)", background: "#202223", color: "#fff", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", zIndex: 10, maxWidth: "200px", wordWrap: "break-word", boxShadow: "0 4px 12px rgba(0,0,0,0.25)", minWidth: "170px" }}>
-          <div style={{ fontWeight: "700", marginBottom: "3px", color: tooltip.margin < 10 ? "#FF8A80" : tooltip.margin < 25 ? "#FFD54F" : "#69F0AE" }}>{pct(tooltip.margin)}%</div>
+          <div style={{ fontWeight: "700", marginBottom: "3px", color: tooltip.margin < 10 ? "#FF8A80" : tooltip.margin < 25 ? "#FFD54F" : "#69F0AE" }}>{formatPct(tooltip.margin)} %</div>
           <div style={{ color: "#aaa", fontSize: "11px", marginBottom: "2px" }}>{formatDate(tooltip.date)}</div>
           {tooltip.product && <div style={{ color: "#ddd", fontSize: "11px", marginBottom: "4px", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis" }}>{tooltip.product}</div>}
           <div style={{ color: tooltip.diff >= 0 ? "#69F0AE" : "#FF8A80", fontSize: "11px" }}>
-            {tooltip.diff >= 0 ? "+" : ""}{pct(tooltip.diff)} pts vs seuil
+            {tooltip.diff >= 0 ? "+" : ""}{formatPct(tooltip.diff)} pts vs seuil
           </div>
           {onAnnotate && (
             <button onClick={() => onAnnotate(tooltip.calcId)} style={{ marginTop: "7px", width: "100%", padding: "4px 0", background: "#7C3AED", color: "#fff", border: "none", borderRadius: "4px", fontSize: "11px", cursor: "pointer", fontFamily: "inherit" }}>
@@ -382,7 +388,7 @@ function AlertBanner({ violations, threshold }) {
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
           {violations.slice(0, 3).map((v, i) => (
             <div key={i}>
-              <strong>{v.product_title ?? v.category}</strong> — marge actuelle : <strong style={{ color: "#D72C0D" }}>{pct(v.net_margin_percent)}%</strong>
+              <strong>{v.product_title ?? v.category}</strong> — marge actuelle : <strong style={{ color: "#D72C0D" }}>{formatPct(v.net_margin_percent)} %</strong>
             </div>
           ))}
           {violations.length > 3 && <div>et {violations.length - 3} autre{violations.length - 3 > 1 ? "s" : ""}…</div>}
@@ -579,7 +585,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
           <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: "16px", marginBottom: "14px" }}>
-          <span className="tcc-roas-num" style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{roas.toFixed(2)}x</span>
+          <span className="tcc-roas-num" style={{ fontSize: "56px", fontWeight: "800", color: roasColor, lineHeight: 1, letterSpacing: "-2px" }}>{formatNum(roas)}x</span>
           <div>
             <div style={{ fontSize: "15px", fontWeight: "700", color: roasColor }}>{roasLabel}</div>
             <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "2px" }}>ROAS minimum requis</div>
@@ -587,7 +593,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
         </div>
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6", marginBottom: "14px", fontStyle: "italic" }}>"{roasPhrase}"</div>
         <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-          Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{roas.toFixed(2)}€ de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
+          Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{formatNum(roas)} € de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
         </div>
         {(() => { const v = getRoasViability(roas); return v.message ? (
           <div style={{ marginTop: "14px", padding: "12px 16px", borderRadius: "8px", background: v.bg, border: `1px solid ${v.border}`, display: "flex", gap: "10px", alignItems: "flex-start" }}>
@@ -663,7 +669,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
             </div>
           </div>
           <div style={{ textAlign: "center", flexShrink: 0, paddingTop: "4px" }}>
-            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{fmt(available)}€</div>
+            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{formatEur(available)}</div>
             <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "5px", fontWeight: "500" }}>par acquisition</div>
           </div>
         </div>
@@ -1052,8 +1058,8 @@ export const action = async ({ request }) => {
 
     const scenariosBlock = scenList.map((s, i) =>
       s.prixCible !== undefined
-        ? `S${i+1}. ${s.levier}\n   → Marge nette : 0,00€ / 0,0% | Rentable : NON | Prix cible : ${fmt(s.prixCible)}€`
-        : `S${i+1}. ${s.levier}\n   → Marge nette : ${fmt(s.margeNette)}€ / ${pct(s.margeNettePercent)}% | Rentable : ${s.rentable ? 'OUI' : 'NON'}`
+        ? `S${i+1}. ${s.levier}\n   → Marge nette : 0,00 € / 0,0 % | Rentable : NON | Prix cible : ${formatEur(s.prixCible)}`
+        : `S${i+1}. ${s.levier}\n   → Marge nette : ${formatEur(s.margeNette)} / ${formatPct(s.margeNettePercent)} % | Rentable : ${s.rentable ? 'OUI' : 'NON'}`
     ).join('\n\n');
 
     const prompt = `Tu es un expert en e-commerce et rentabilité.
@@ -1066,13 +1072,13 @@ DÉFINITIONS CANONIQUES (emploie-les strictement) :
 DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
-- Prix fournisseur : ${fmt(prixAchat)}€ | Prix de vente : ${fmt(prixVente)}€
-- Douane : ${fmt(douane)}€${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré de minimis)" : ""} | TVA import : ${fmt(tvaImport)}€${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${fmt(shipping)}€ | Coût rendu net : ${fmt(coutRendu)}€
-- ${safeProcessor} : ${stripeFee}%+${fmt(processorFixedFee)}€ → ${fmt(stripeCost)}€ | Shopify : ${shopifyFee}% → ${fmt(shopifyCost)}€ | Retours : ${retours}% → ${fmt(retoursCost)}€ | Ads : ${ads}% → ${fmt(adsCost)}€
-- Emballage : ${fmt(coutEmballage)}€ | Frais retour : ${fmt(fraisRetour)}€
-- Marge apparente : ${pct(margeApparente)}% | Marge brute : ${pct(margeBrutePercent)}% (${fmt(parseFloat(prixVente) - parseFloat(coutRendu))}€) | Marge nette : ${pct(margeNettePercent)}% (${fmt(margeNette)}€/vente)
+- Prix fournisseur : ${formatEur(prixAchat)} | Prix de vente : ${formatEur(prixVente)}
+- Douane : ${formatEur(douane)}${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré de minimis)" : ""} | TVA import : ${formatEur(tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(shipping)} | Coût rendu net : ${formatEur(coutRendu)}
+- ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(shopifyCost)} | Retours : ${retours} % → ${formatEur(retoursCost)} | Ads : ${ads} % → ${formatEur(adsCost)}
+- Emballage : ${formatEur(coutEmballage)} | Frais retour : ${formatEur(fraisRetour)}
+- Marge apparente : ${formatPct(margeApparente)} % | Marge brute : ${formatPct(margeBrutePercent)} % (${formatEur(parseFloat(prixVente) - parseFloat(coutRendu))}) | Marge nette : ${formatPct(margeNettePercent)} % (${formatEur(margeNette)}/vente)
 
-ÉTAT ACTUEL : Marge nette = ${fmt(scenCurrent.margeNette)}€ / ${pct(scenCurrent.margeNettePercent)}% | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
+ÉTAT ACTUEL : Marge nette = ${formatEur(scenCurrent.margeNette)} / ${formatPct(scenCurrent.margeNettePercent)} % | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
 
 SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
 ${scenariosBlock}
@@ -1347,7 +1353,7 @@ export default function Index() {
     if (prixAchat > prixVente) warns.push("Attention : vous vendez moins cher que vous achetez.");
     else if (prixAchat === prixVente) warns.push("Prix achat = prix vente : marge 0% avant frais.");
     const totalPct = shopifyFeeVal + stripeFeeVal + retoursVal + adsVal;
-    if (totalPct > 100) warns.push(`Frais cumulés (${totalPct.toFixed(1)}%) dépassent 100% du CA.`);
+    if (totalPct > 100) warns.push(`Frais cumulés (${formatPct(totalPct)} %) dépassent 100 % du CA.`);
 
     const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
     const vatRate        = getVatRate(form.categorie);
@@ -1456,11 +1462,15 @@ export default function Index() {
     const processorFixedFee = validateOptionalAmount(simForm.processorFixedFee ?? "0.25", "Frais fixes processeur", errs);
 
     if (errs.length > 0) { setSimErrors(errs); setSimResult(null); return; }
-    if (targetMargin >= 100) { setSimErrors(["La marge cible doit être < 100%."]); return; }
+    if (targetMargin > 95) {
+      setSimErrors([`Marge cible irréaliste : ${formatPct(targetMargin)} % dépasse le maximum conseillé de 95 %. Aucun modèle e-commerce ne peut atteindre durablement une marge nette aussi élevée. Réduisez la marge cible.`]);
+      setSimResult(null); return;
+    }
 
+    const totalVarPct = (shopifyFee ?? 0) + (stripeFee ?? 0) + (retours ?? 0) + (ads ?? 0);
     const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime: simForm.vatRegime ?? "assujetti" });
     if (!sim) {
-      setSimErrors(["Cette marge cible est inatteignable avec ces paramètres — les frais cumulés dépassent 100%. Réduisez les frais ou abaissez la marge cible."]);
+      setSimErrors([`Impossible : marge cible (${formatPct(targetMargin)} %) + frais variables (${formatPct(totalVarPct)} %) = ${formatPct(targetMargin + totalVarPct)} % ≥ 100 %. Le dénominateur est nul ou négatif — aucun prix de vente ne peut atteindre cet objectif. Réduisez les frais ou la marge cible.`]);
       setSimResult(null);
       return;
     }
@@ -1684,7 +1694,7 @@ export default function Index() {
                       <option value="">— Sélectionner un produit (auto-remplit le prix de vente) —</option>
                       {products.map(p => (
                         <option key={p.id} value={p.id}>
-                          {p.title}{p.price > 0 ? ` — ${p.price.toFixed(2)}€` : ""}
+                          {p.title}{p.price > 0 ? ` — ${formatEur(p.price)}` : ""}
                         </option>
                       ))}
                     </select>
@@ -1713,7 +1723,7 @@ export default function Index() {
                     <FieldGroup label="Catégorie produit" tooltip="Utilisée pour estimer vos droits de douane selon la nomenclature TARIC (tarif douanier intégré de l'UE). Choisissez la catégorie la plus proche de votre produit.">
                       <select value={form.categorie} onChange={update("categorie")} style={inputStyle}>
                         {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                          <option key={cat} value={cat}>{cat} — douane {parseFloat((rate * 100).toFixed(1))}%</option>
+                          <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>
                         ))}
                       </select>
                       <div style={hintStyle}>Taux appliqué : {customsRateDisplay}%</div>
@@ -1814,7 +1824,7 @@ export default function Index() {
                 <FieldGroup label="Catégorie produit">
                   <select value={simForm.categorie} onChange={updateSim("categorie")} style={inputStyle}>
                     {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                      <option key={cat} value={cat}>{cat} — douane {parseFloat((rate * 100).toFixed(1))}%</option>
+                      <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>
                     ))}
                   </select>
                 </FieldGroup>
@@ -1881,28 +1891,28 @@ export default function Index() {
                 <div className="tcc-sim-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F1F8F5", border: "2px solid #008060", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente minimum</div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{simResult.prixVenteMin.toFixed(2)}€</div>
-                    <div style={{ fontSize: "12px", color: "#6D7175" }}>pour {simResult.targetMargin}% de marge nette</div>
-                    <div style={{ fontSize: "12px", color: "#008060", fontWeight: "600", marginTop: "4px" }}>({(simResult.prixVenteMin * parseFloat(simResult.targetMargin) / 100).toFixed(2)}€ par vente)</div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{formatEur(simResult.prixVenteMin)}</div>
+                    <div style={{ fontSize: "12px", color: "#6D7175" }}>pour {formatPct(parseFloat(simResult.targetMargin))} % de marge nette</div>
+                    <div style={{ fontSize: "12px", color: "#008060", fontWeight: "600", marginTop: "4px" }}>({formatEur(simResult.prixVenteMin * parseFloat(simResult.targetMargin) / 100)} par vente)</div>
                   </div>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente recommandé</div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#202223", marginBottom: "6px" }}>{simResult.prixVenteRec.toFixed(2)}€</div>
-                    <div style={{ fontSize: "12px", color: "#6D7175" }}>+10% de sécurité ({(parseFloat(simResult.targetMargin) + 4.5).toFixed(1)}% marge estimée)</div>
-                    <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100).toFixed(2)}€ par vente)</div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#202223", marginBottom: "6px" }}>{formatEur(simResult.prixVenteRec)}</div>
+                    <div style={{ fontSize: "12px", color: "#6D7175" }}>+10 % de sécurité ({formatPct(parseFloat(simResult.targetMargin) + 4.5)} % marge estimée)</div>
+                    <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({formatEur(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100)} par vente)</div>
                   </div>
                 </div>
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
-                  Coût rendu (achat + douane + TVA import + port) = <strong>{simResult.coutRendu.toFixed(2)}€</strong><br />
+                  Coût rendu (achat + douane + TVA import + port) = <strong>{formatEur(simResult.coutRendu)}</strong><br />
                   {simResult.fraisFixes > 0 && (() => {
                     const parts = [];
                     if ((simResult.fraisRetour ?? 0) + (simResult.coutEmballage ?? 0) > 0) parts.push("retour + emballage");
                     if ((simResult.processorFixedFee ?? 0) > 0) parts.push(`frais fixe ${simResult.paymentProcessor ?? "processeur"}`);
-                    return <>Frais fixes ({parts.join(" + ") || "divers"}) = <strong>{simResult.fraisFixes.toFixed(2)}€</strong><br /></>;
+                    return <>Frais fixes ({parts.join(" + ") || "divers"}) = <strong>{formatEur(simResult.fraisFixes)}</strong><br /></>;
                   })()}
-                  Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{(simResult.totalFeeRate * 100).toFixed(1)}%</strong><br />
-                  Formule : ({simResult.coutRendu.toFixed(2)}{simResult.fraisFixes > 0 ? ` + ${simResult.fraisFixes.toFixed(2)}` : ""}) ÷ (1 − {(simResult.totalFeeRate * 100).toFixed(1)}% − {simResult.targetMargin}%) = {simResult.prixVenteMin.toFixed(2)}€
+                  Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{formatPct(simResult.totalFeeRate * 100)} %</strong><br />
+                  Formule : ({formatNum(simResult.coutRendu)}{simResult.fraisFixes > 0 ? ` + ${formatNum(simResult.fraisFixes)}` : ""}) ÷ (1 − {formatPct(simResult.totalFeeRate * 100)} % − {formatPct(parseFloat(simResult.targetMargin))} %) = {formatEur(simResult.prixVenteMin)}
                 </div>
               </div>
             )}
@@ -2004,10 +2014,10 @@ export default function Index() {
                         </div>
                         <div className="tcc-hist-col-cat" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
                         <div className="tcc-hist-col-pays" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.country}</div>
-                        <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223" }}>{fmt(calc.selling_price)}€</div>
+                        <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223" }}>{formatEur(calc.selling_price)}</div>
                         <div style={{ padding: "11px 12px" }}>
-                          <span style={{ fontSize: "13px", fontWeight: "700", color: mc }}>{pct(calc.net_margin_percent)}%</span>
-                          <span style={{ fontSize: "11px", color: "#6D7175", marginLeft: "4px" }}>{fmt(calc.net_margin_euros)}€</span>
+                          <span style={{ fontSize: "13px", fontWeight: "700", color: mc }}>{formatPct(calc.net_margin_percent)} %</span>
+                          <span style={{ fontSize: "11px", color: "#6D7175", marginLeft: "4px" }}>{formatEur(calc.net_margin_euros)}</span>
                         </div>
                       </div>
                     );
@@ -2076,8 +2086,8 @@ export default function Index() {
                     <div key={v.id} className="tcc-alert-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: i % 2 === 0 ? "#fff" : "#FFF8F8", borderBottom: i < violations.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                       <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "500", color: "#202223" }}>{v.product_title ?? v.category}</div>
                       <div style={{ padding: "11px 14px", fontSize: "12px", color: "#6D7175" }}>{v.category}</div>
-                      <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "700", color: "#D72C0D" }}>{pct(v.net_margin_percent)}%</div>
-                      <div className="tcc-alert-col-ecart" style={{ padding: "11px 14px", fontSize: "12px", color: "#D72C0D" }}>−{pct(initialThreshold - v.net_margin_percent)} pts</div>
+                      <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "700", color: "#D72C0D" }}>{formatPct(v.net_margin_percent)} %</div>
+                      <div className="tcc-alert-col-ecart" style={{ padding: "11px 14px", fontSize: "12px", color: "#D72C0D" }}>−{formatPct(initialThreshold - v.net_margin_percent)} pts</div>
                     </div>
                   ))}
                 </div>
@@ -2200,7 +2210,7 @@ export default function Index() {
                             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
                               <span style={{ width: "20px", fontWeight: "700", color: "#008060" }}>#{i+1}</span>
                               <span style={{ flex: 1, color: "#202223" }}>{p.title}</span>
-                              <span style={{ fontWeight: "700", color: "#008060" }}>{pct(p.netPct)}%</span>
+                              <span style={{ fontWeight: "700", color: "#008060" }}>{formatPct(p.netPct)} %</span>
                             </div>
                           ))}
                         </div>
@@ -2227,9 +2237,9 @@ export default function Index() {
                         return (
                           <div key={p.id} className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                             <div style={{ padding: "10px 12px", fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
-                            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{fmt(p.price)}€</div>
-                            <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{fmt(p.cost)}€</div>
-                            <div style={{ padding: "10px 12px" }}><span style={{ fontSize: "13px", fontWeight: "700", color: statusColor }}>{pct(p.netPct)}%</span></div>
+                            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.price)}</div>
+                            <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.cost)}</div>
+                            <div style={{ padding: "10px 12px" }}><span style={{ fontSize: "13px", fontWeight: "700", color: statusColor }}>{formatPct(p.netPct)} %</span></div>
                             <div style={{ padding: "10px 12px" }}><span style={{ padding: "3px 10px", borderRadius: "10px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: "700" }}>{statusLabel}</span></div>
                           </div>
                         );
@@ -2315,18 +2325,18 @@ export default function Index() {
               <>
                 <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Perte nette — vous perdez de l'argent à chaque vente.</div>
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
-                  Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
-                  {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{pct(results.margeNettePercent)}%</strong>
-                  <span style={{ display: "block" }}>(<strong style={{ color: "#D72C0D" }}>−{fmt(Math.abs(results.margeNette))}€ par vente</strong>)</span>
+                  Votre marge apparente : <strong style={{ color: "#202223" }}>{formatPct(results.margeApparente)} %</strong>
+                  {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{formatPct(results.margeNettePercent)} %</strong>
+                  <span style={{ display: "block" }}>(<strong style={{ color: "#D72C0D" }}>−{formatEur(Math.abs(results.margeNette))} par vente</strong>)</span>
                 </div>
               </>
             ) : (
               <>
                 <div style={{ fontSize: "17px", fontWeight: "700", color: marginColor, marginBottom: "8px" }}>{marginLabel}</div>
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
-                  Votre marge apparente : <strong style={{ color: "#202223" }}>{pct(results.margeApparente)}%</strong>
-                  {" → "}Votre marge nette réelle : <strong style={{ color: marginColor }}>{pct(results.margeNettePercent)}%</strong>
-                  <span style={{ display: "block" }}>(<strong style={{ color: marginColor }}>{fmt(results.margeNette)}€ par vente</strong>)</span>
+                  Votre marge apparente : <strong style={{ color: "#202223" }}>{formatPct(results.margeApparente)} %</strong>
+                  {" → "}Votre marge nette réelle : <strong style={{ color: marginColor }}>{formatPct(results.margeNettePercent)} %</strong>
+                  <span style={{ display: "block" }}>(<strong style={{ color: marginColor }}>{formatEur(results.margeNette)} par vente</strong>)</span>
                 </div>
               </>
             )}
@@ -2335,7 +2345,7 @@ export default function Index() {
           <div style={{ marginBottom: "32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
               <span style={{ fontSize: "13px", fontWeight: "500", color: "#6D7175" }}>Marge nette réelle</span>
-              <span style={{ fontSize: "26px", fontWeight: "800", color: marginColor, letterSpacing: "-0.5px" }}>{pct(results.margeNettePercent)}%</span>
+              <span style={{ fontSize: "26px", fontWeight: "800", color: marginColor, letterSpacing: "-0.5px" }}>{formatPct(results.margeNettePercent)} %</span>
             </div>
             <div style={{ height: "22px", background: "#F1F2F3", borderRadius: "11px", overflow: "hidden", position: "relative" }}>
               <div style={{ position: "absolute", left: "10%", top: 0, bottom: 0, width: "2px", background: "#D72C0D44" }} />
@@ -2350,19 +2360,19 @@ export default function Index() {
           </div>
 
           <div className="tcc-margin-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "32px" }}>
-            <StatCard label="Marge apparente"    value={`${pct(results.margeApparente)}%`}    sub="Marge apparente calculée"        color="#6D7175"   bg="#F9FAFB" />
-            <StatCard label="Marge brute"         value={`${pct(results.margeBrutePercent)}%`} sub={`${fmt(results.margeBrute)}€ / vente`} color="#202223"   bg="#F9FAFB" />
-            <StatCard label="Marge nette réelle"  value={`${pct(results.margeNettePercent)}%`} sub={`${fmt(results.margeNette)}€ / vente`} color={marginColor} bg={marginBg} />
+            <StatCard label="Marge apparente"    value={`${formatPct(results.margeApparente)} %`}    sub="Marge apparente calculée"        color="#6D7175"   bg="#F9FAFB" />
+            <StatCard label="Marge brute"         value={`${formatPct(results.margeBrutePercent)} %`} sub={`${formatEur(results.margeBrute)} / vente`} color="#202223"   bg="#F9FAFB" />
+            <StatCard label="Marge nette réelle"  value={`${formatPct(results.margeNettePercent)} %`} sub={`${formatEur(results.margeNette)} / vente`} color={marginColor} bg={marginBg} />
           </div>
 
           <div className="tcc-cost-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
             <div>
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Structure du coût d'achat</div>
               {[
-                { label: "Prix fournisseur",                      value: `${fmt(results.prixAchat)}€`,  color: "#202223" },
-                { label: results.douane === 0 ? `+ Droits de douane (de minimis ≤ 150€)` : `+ Droits de douane (${(results.customsRate*100).toFixed(0)}% sur CIF)`, value: `+${fmt(results.douane)}€`, color: "#6D7175" },
-                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)}%)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${fmt(results.tvaImport)}€`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
-                { label: `+ Frais de port (${form.paysImport})`,  value: `+${fmt(results.shipping)}€`,  color: "#6D7175" },
+                { label: "Prix fournisseur",                      value: formatEur(results.prixAchat),  color: "#202223" },
+                { label: results.douane === 0 ? `+ Droits de douane (de minimis ≤ 150 €)` : `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`, value: `+${formatEur(results.douane)}`, color: "#6D7175" },
+                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${formatEur(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
+                { label: `+ Frais de port (${form.paysImport})`,  value: `+${formatEur(results.shipping)}`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color }}>{label}</span>
@@ -2371,18 +2381,18 @@ export default function Index() {
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
                 <span style={{ fontSize: "14px", fontWeight: "700", color: "#202223" }}>= Coût rendu total</span>
-                <span style={{ fontSize: "15px", fontWeight: "700", color: "#202223" }}>{fmt(results.coutRendu)}€</span>
+                <span style={{ fontSize: "15px", fontWeight: "700", color: "#202223" }}>{formatEur(results.coutRendu)}</span>
               </div>
             </div>
             <div>
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Déductions sur le prix de vente</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                 <span style={{ fontSize: "13px", color: "#008060" }}>Prix de vente</span>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#008060" }}>{fmt(results.prixVente)}€</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#008060" }}>{formatEur(results.prixVente)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                 <span style={{ fontSize: "13px", color: "#D72C0D" }}>— Coût rendu</span>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{fmt(results.coutRendu)}€</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{formatEur(results.coutRendu)}</span>
               </div>
               {[
                 { label: `— Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
@@ -2394,12 +2404,12 @@ export default function Index() {
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color: "#D72C0D" }}>{label}</span>
-                  <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{fmt(value)}€</span>
+                  <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{formatEur(value)}</span>
                 </div>
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
                 <span style={{ fontSize: "14px", fontWeight: "700", color: marginColor }}>= Marge nette réelle</span>
-                <span style={{ fontSize: "15px", fontWeight: "700", color: marginColor }}>{fmt(results.margeNette)}€</span>
+                <span style={{ fontSize: "15px", fontWeight: "700", color: marginColor }}>{formatEur(results.margeNette)}</span>
               </div>
             </div>
           </div>
