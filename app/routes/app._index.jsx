@@ -91,7 +91,8 @@ function formatDate(iso) {
   });
 }
 
-// TVA applicable à l'import selon la catégorie produit (taux français).
+// Taux de TVA français par catégorie produit — identique à l'import et à la vente domestique
+// (la catégorie NC/TARIC détermine le taux, pas le type de transaction).
 // Taux réduit 5,5 % : Alimentation (art. 278-0 bis CGI), Livres (art. 278-0 bis A CGI).
 // Taux normal 20 % : toutes les autres catégories.
 // Ajouter ici les taux 10 % ou 2,1 % si de nouvelles catégories éligibles sont créées.
@@ -145,17 +146,19 @@ function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct,
 
 // Core margin computation — same arithmetic as the dashboard's calculate callback.
 // Single source of truth: any divergence here vs the dashboard is a bug.
-function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime) {
+function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true) {
   const customsRate  = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate      = getVatRate(categorie);
   const shipping     = SHIPPING_ESTIMATES[paysImport] ?? 5;
   const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
-  const shopifyCost  = prixVente * (shopifyFee / 100);
-  const stripeCost   = (prixVente * (stripeFee / 100)) + processorFixedFee;
-  const retoursCost  = prixVente * (retours / 100);
-  const adsCost      = prixVente * (ads / 100);
+  // Assujetti + prix TTC : le revenu net est HT (TVA collectée reversée à l'État).
+  const revenu       = vatRegime === "assujetti" && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
+  const shopifyCost  = prixVente * (shopifyFee / 100);   // TTC : base contractuelle Shopify
+  const stripeCost   = (prixVente * (stripeFee / 100)) + processorFixedFee;  // TTC : base contractuelle Stripe
+  const retoursCost  = revenu * (retours / 100);          // HT : un retour = une vente HT perdue
+  const adsCost      = prixVente * (ads / 100);           // TTC : dépense marketing sur CA brut
   const fraisFixes   = fraisRetour + coutEmballage;
-  const margeNette   = (prixVente - coutRendu) - shopifyCost - stripeCost - retoursCost - adsCost - fraisFixes;
+  const margeNette   = (revenu - coutRendu) - shopifyCost - stripeCost - retoursCost - adsCost - fraisFixes;
   const margeNettePercent = prixVente > 0 ? (margeNette / prixVente) * 100 : 0;
   return { margeNette, margeNettePercent, coutRendu, rentable: margeNette > 0 };
 }
@@ -163,10 +166,10 @@ function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, 
 // Generates pre-calculated scenarios for the AI.
 // All output numbers are computed by the same engine as the dashboard —
 // the AI receives finished figures and must never recalculate them.
-function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime }) {
+function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true }) {
   const run = (o = {}) => {
     const p = { prixAchat, prixVente, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, ...o };
-    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime);
+    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded);
   };
 
   const current = run();
@@ -703,6 +706,7 @@ export const loader = async ({ request }) => {
     `),
     admin.graphql(`
       query ProductsPage1 {
+        shop { taxesIncluded }
         products(first: 250, sortKey: TITLE) {
           edges {
             node {
@@ -741,9 +745,15 @@ export const loader = async ({ request }) => {
 
   let products = [];
   let productsCapped = false;
+  // Default true: French B2C Shopify stores almost always include taxes in displayed price.
+  // Overridden below if shop.taxesIncluded is explicitly false.
+  let shopTaxesIncluded = true;
   if (productsResp1.status === "fulfilled") {
     try {
       const json1 = await productsResp1.value.json();
+      if (typeof json1.data?.shop?.taxesIncluded === "boolean") {
+        shopTaxesIncluded = json1.data.shop.taxesIncluded;
+      }
       const page1 = json1.data?.products;
       if (page1) {
         products = page1.edges.map(({ node }) => ({
@@ -825,7 +835,7 @@ export const loader = async ({ request }) => {
     ? (planResult.value.data?.vat_regime ?? "assujetti")
     : "assujetti";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime };
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -954,6 +964,7 @@ export const action = async ({ request }) => {
     // Math.max(1, ...) prevents division by zero even if someone passes "0".
     const qty = Math.max(1, parseInt(body.qty_per_shipment, 10) || 1);
     const shippingPerUnit = shippingCost / qty;
+    const shopTaxesIncluded = body.shop_taxes_included !== false;
 
     const startTime = Date.now();
     let allProducts = [], cursor = null, hasNextPage = true, pages = 0;
@@ -1022,10 +1033,11 @@ export const action = async ({ request }) => {
         const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
         const vatRate      = getVatRate(mappedCategory);
         const { coutRendu } = computeLandedCost(cost, shippingPerUnit, customsRate, vatRate, vatRegime);
+        const revenu   = vatRegime === "assujetti" && shopTaxesIncluded ? price / (1 + vatRate) : price;
         const shopify  = price * shopifyFee;
         const stripe   = (price * processorRate) + processorFixedFee;
-        const returns  = price * returnsRate;
-        const netMargin = price - coutRendu - shopify - stripe - returns;
+        const returns  = revenu * returnsRate;
+        const netMargin = revenu - coutRendu - shopify - stripe - returns;
         const netPct    = (netMargin / price) * 100;
         return { id: node.id, title: node.title, price, cost, coutRendu, netMargin, netPct, mappedCategory, isDefaultCategory, productType: node.productType ?? "" };
       })
@@ -1090,6 +1102,7 @@ export const action = async ({ request }) => {
       fraisRetour:       parseFloat(fraisRetour)        || 0,
       coutEmballage:     parseFloat(coutEmballage)      || 0,
       vatRegime:         vatRegime || "assujetti",
+      shopTaxesIncluded: body.shopTaxesIncluded !== false,
     });
 
     const scenariosBlock = scenList.map((s, i) =>
@@ -1257,7 +1270,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded } = useLoaderData();
 
   const saveFetcher    = useFetcher();
   const aiFetcher      = useFetcher();
@@ -1414,13 +1427,16 @@ export default function Index() {
     const vatRate        = getVatRate(form.categorie);
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
     const { droitsDouane: douane, tvaImport, tvaNetCost, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, form.vatRegime ?? "assujetti");
-    const shopifyCost    = prixVente * (shopifyFeeVal / 100);
-    const stripeCost     = (prixVente * (stripeFeeVal / 100)) + processorFixedFeeVal;
-    const retoursCost    = prixVente * (retoursVal    / 100);
-    const adsCost        = prixVente * (adsVal        / 100);
+    // Assujetti + prix TTC → revenu net HT (TVA collectée reversée à l'État).
+    // Franchise ou taxesIncluded=false → prix déjà net, pas de division.
+    const revenu         = (form.vatRegime === "assujetti" || !form.vatRegime) && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
+    const shopifyCost    = prixVente * (shopifyFeeVal / 100);   // TTC : base contractuelle
+    const stripeCost     = (prixVente * (stripeFeeVal / 100)) + processorFixedFeeVal;  // TTC
+    const retoursCost    = revenu * (retoursVal    / 100);       // HT : vente perdue = revenu HT
+    const adsCost        = prixVente * (adsVal        / 100);   // TTC : dépense sur CA brut
     const totalFraisVente    = shopifyCost + stripeCost + retoursCost + adsCost;
     const fraisFixes         = fraisRetourVal + coutEmballageVal;
-    const margeBrute         = prixVente - coutRendu;
+    const margeBrute         = revenu - coutRendu;
     const margeBrutePercent  = (margeBrute / prixVente) * 100;
     const margeNette         = margeBrute - totalFraisVente - fraisFixes;
     const margeNettePercent  = (margeNette / prixVente) * 100;
@@ -1499,6 +1515,7 @@ export default function Index() {
       processorFixedFee:  r.processorFixedFee,
       vatRegime:          r.vatRegime,
       margeApparente:     r.margeApparente,
+      shopTaxesIncluded:  shopTaxesIncluded,
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
@@ -1549,7 +1566,7 @@ export default function Index() {
     annotFetcher.submit({ _action: "save_annotation", calculation_id: annotModal, note: annotText }, { method: "POST", encType: "application/json" });
   };
   const handleRunAudit = () => {
-    auditFetcher.submit({ _action: "run_audit", ...auditParams }, { method: "POST", encType: "application/json" });
+    auditFetcher.submit({ _action: "run_audit", ...auditParams, shop_taxes_included: shopTaxesIncluded }, { method: "POST", encType: "application/json" });
   };
 
   // ── Derived display ────────────────────────────────────────────────────────
