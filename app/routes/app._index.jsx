@@ -28,7 +28,7 @@ const PAYMENT_PROCESSORS = [
 const CUSTOMS_RATES = {
   Textile: 0.12, Électronique: 0.05, Cosmétique: 0.10,
   Accessoires: 0.07, Sport: 0.05, Alimentation: 0.15,
-  Maroquinerie: 0.03, Jouets: 0, Mobilier: 0.027, Autre: 0.03,
+  Maroquinerie: 0.03, Jouets: 0, Mobilier: 0.027, Livres: 0, Autre: 0.03,
 };
 const SHIPPING_ESTIMATES = { Chine: 8, Inde: 6, Turquie: 4, UE: 2, Autre: 5 };
 
@@ -91,14 +91,15 @@ function formatDate(iso) {
   });
 }
 
-// TVA applicable à l'import selon la catégorie produit.
-// Toutes les catégories actuelles sont soumises au taux normal (20 %).
-// Ajouter ici les taux réduits (5,5 %, 10 %) si de nouvelles catégories
-// éligibles sont créées ultérieurement. Le fallback 0,20 couvre toute
-// catégorie non reconnue.
+// TVA applicable à l'import selon la catégorie produit (taux français).
+// Taux réduit 5,5 % : Alimentation (art. 278-0 bis CGI), Livres (art. 278-0 bis A CGI).
+// Taux normal 20 % : toutes les autres catégories.
+// Ajouter ici les taux 10 % ou 2,1 % si de nouvelles catégories éligibles sont créées.
+// Le fallback 0,20 couvre toute catégorie non reconnue.
 const VAT_RATES = {
+  Alimentation: 0.055, Livres: 0.055,
   Textile: 0.20, Électronique: 0.20, Cosmétique: 0.20,
-  Accessoires: 0.20, Sport: 0.20, Alimentation: 0.20,
+  Accessoires: 0.20, Sport: 0.20,
   Maroquinerie: 0.20, Jouets: 0.20, Mobilier: 0.20, Autre: 0.20,
 };
 function getVatRate(category) {
@@ -991,7 +992,7 @@ export const action = async ({ request }) => {
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
         const { droitsDouane: douane, tvaImport: tva, coutRendu } =
-          computeLandedCost(cost, shippingCost, customsRate, getVatRate(null), "assujetti");
+          computeLandedCost(cost, shippingCost, customsRate, getVatRate("Autre"), "assujetti");
         const shopify  = price * shopifyFee;
         const stripe   = price * stripeFee;
         const returns  = price * returnsRate;
@@ -2396,7 +2397,7 @@ export default function Index() {
               {[
                 { label: "Prix fournisseur",                      value: formatEur(results.prixAchat),  color: "#202223" },
                 { label: results.douane === 0 ? `+ Droits de douane (de minimis ≤ 150 €)` : `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`, value: `+${formatEur(results.douane)}`, color: "#6D7175" },
-                { label: `+ TVA à l'import (${((results.vatRate ?? 0.20) * 100).toFixed(0)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${formatEur(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
+                { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${formatEur(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
                 { label: `+ Frais de port (${form.paysImport})`,  value: `+${formatEur(results.shipping)}`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
@@ -2495,7 +2496,7 @@ export default function Index() {
           <s-unordered-list>
             <s-list-item><strong>Prix fournisseur</strong> — Ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
             <s-list-item><strong>Droits de douane</strong> — Les taxes que vous devez payer quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
-            <s-list-item><strong>TVA import 20%</strong> — La TVA payée à l'importation — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
+            <s-list-item><strong>TVA à l'import</strong> — La TVA payée à l'importation (taux normal 20 %, réduit 5,5 % pour l'alimentation et les livres) — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
             <s-list-item><strong>Frais de port</strong> — Le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
             <s-list-item><strong>Commissions plateformes</strong> — Ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
             <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
