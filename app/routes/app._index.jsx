@@ -981,6 +981,7 @@ export const action = async ({ request }) => {
               edges {
                 node {
                   id title productType
+                  category { name }
                   variants(first: 1) {
                     edges { node { price inventoryItem { unitCost { amount } } } }
                   }
@@ -1003,23 +1004,27 @@ export const action = async ({ request }) => {
       }
     }
 
-    // Maps Shopify productType (free-form text) to an app category for customs/VAT lookup.
-    // Case-insensitive keyword matching; returns null when no match → caller falls back to "Autre".
-    const shopifyTypeToCategory = (productType) => {
-      if (!productType) return null;
-      const t = productType.toLowerCase().trim();
+    // Maps a text string to an app category via case-insensitive keyword matching.
+    // Priority order when called: Shopify Standard Category name → productType → product title.
+    // Returns null on no match → caller falls back to "Autre" with visual indicator.
+    const matchCategory = (text) => {
+      if (!text) return null;
+      const t = text.toLowerCase().trim();
+      if (!t) return null;
       if (/textile|shirt|t-shirt|tee|vêtement|clothing|robe|pantalon|chemise|jean|lingerie|mode|fashion/.test(t)) return "Textile";
       if (/electro|électro|tech|phone|ordinateur|computer|gadget|audio|video|gaming|camera/.test(t)) return "Électronique";
       if (/cosmeti|cosmét|beauty|beauté|skincare|soin|parfum|makeup|maquillage/.test(t)) return "Cosmétique";
-      if (/sport|fitness|gym|yoga|outdoor|running|cycling/.test(t)) return "Sport";
+      if (/sport|fitness|gym|yoga|outdoor|running|cycling|pilates/.test(t)) return "Sport";
       if (/aliment|food|nutrition|supplement|snack|boisson|drink|épicerie/.test(t)) return "Alimentation";
       if (/maroquin|leather|wallet|portefeuille|bagage|luggage/.test(t)) return "Maroquinerie";
       if (/jouet|toy|enfant|kid|bébé|baby/.test(t)) return "Jouets";
       if (/mobil|furniture|meuble|déco|deco|maison|jardin|garden/.test(t)) return "Mobilier";
       if (/livre|book|roman|magazine/.test(t)) return "Livres";
-      if (/accessoir|accessory|bijou|jewelry|jewel|montre|watch/.test(t)) return "Accessoires";
+      if (/accessoir|accessory|bijou|jewelry|jewel|montre|watch|bracelet|collier|bague/.test(t)) return "Accessoires";
       return null;
     };
+    const shopifyTypeToCategory = (categoryName, productType, title) =>
+      matchCategory(categoryName) ?? matchCategory(productType) ?? matchCategory(title);
 
     const products = allProducts
       .map(node => {
@@ -1027,7 +1032,7 @@ export const action = async ({ request }) => {
         const price = parseFloat(variant?.price ?? "0");
         const cost = parseFloat(variant?.inventoryItem?.unitCost?.amount ?? "0");
         if (!cost || !price) return null;
-        const resolvedCategory  = shopifyTypeToCategory(node.productType);
+        const resolvedCategory  = shopifyTypeToCategory(node.category?.name, node.productType, node.title);
         const mappedCategory    = resolvedCategory ?? "Autre";
         const isDefaultCategory = !resolvedCategory;
         const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
@@ -2184,6 +2189,17 @@ export default function Index() {
             const losers  = products.filter(p => p.netPct < 0);
             const risky   = products.filter(p => p.netPct >= 0 && p.netPct < 15);
             const winners = products.filter(p => p.netPct >= 15);
+            // Dedup TOP by normalized title (same product created twice keeps only the best-ranked entry).
+            const _seenTop = new Set();
+            const topWinners = winners.filter(p => {
+              const key = p.title.toLowerCase().trim();
+              if (_seenTop.has(key)) return false;
+              _seenTop.add(key); return true;
+            }).slice(0, 10);
+            // Detect normalized-title duplicates for table badges (data untouched, visual only).
+            const _titleCounts = {};
+            products.forEach(p => { const k = p.title.toLowerCase().trim(); _titleCounts[k] = (_titleCounts[k] || 0) + 1; });
+            const duplicateTitles = new Set(Object.keys(_titleCounts).filter(k => _titleCounts[k] > 1));
             return (
               <div>
                 {/* Guide: how to set unit cost in Shopify */}
@@ -2299,11 +2315,11 @@ export default function Index() {
                       </div>
                     )}
 
-                    {winners.length > 0 && (
+                    {topWinners.length > 0 && (
                       <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F1F8F5", border: "1px solid #00806044", marginBottom: "20px" }}>
-                        <div style={{ fontSize: "14px", fontWeight: "700", color: "#008060", marginBottom: "8px" }}>🏆 TOP 10 produits les plus rentables</div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: "#008060", marginBottom: "8px" }}>🏆 TOP {topWinners.length} produit{topWinners.length > 1 ? "s" : ""} les plus rentables</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {winners.slice(0,10).map((p,i) => (
+                          {topWinners.map((p,i) => (
                             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
                               <span style={{ width: "20px", fontWeight: "700", color: "#008060" }}>#{i+1}</span>
                               <span style={{ flex: 1, color: "#202223" }}>{p.title}</span>
@@ -2334,7 +2350,12 @@ export default function Index() {
                         return (
                           <div key={p.id} className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                             <div style={{ padding: "10px 12px", overflow: "hidden" }}>
-                              <div style={{ fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
+                              <div style={{ fontSize: "13px", color: "#202223", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {p.title}
+                                {duplicateTitles.has(p.title.toLowerCase().trim()) && (
+                                  <span style={{ marginLeft: "6px", fontSize: "10px", color: "#B98900", background: "#FFF9EC", padding: "1px 5px", borderRadius: "4px", fontWeight: "600", verticalAlign: "middle" }}>doublon</span>
+                                )}
+                              </div>
                               <div style={{ fontSize: "11px", color: p.isDefaultCategory ? "#B98900" : "#8A8F98", marginTop: "2px" }}>
                                 {p.mappedCategory}{p.isDefaultCategory ? " — estimation" : ""}
                               </div>
