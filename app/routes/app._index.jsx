@@ -575,9 +575,12 @@ function getRoasViability(roas) {
 
 function BreakEvenROAS({ results, onGoToSimulation }) {
   if (!results) return null;
-  const { prixVente, coutRendu, shopifyCost, stripeCost, retoursCost, fraisFixes = 0 } = results;
-  // CPA_MAX = PV - landed_cost - frais plateformes - TOUS les coûts fixes
-  const available = prixVente - coutRendu - shopifyCost - stripeCost - retoursCost - fraisFixes;
+  const { prixVente, revenu, coutRendu, shopifyCost, stripeCost, retoursCost, fraisFixes = 0 } = results;
+  // CPA_MAX = revenu HT - landed_cost - frais plateformes (TTC) - coûts fixes
+  // revenu = prixVente / (1 + TVA) en assujetti ; = prixVente en franchise et non-TTC.
+  // Shopify/Stripe restent sur TTC (base contractuelle). ROAS = prixVente / CPA_MAX.
+  const revenuEffectif = revenu ?? prixVente; // fallback sûr si résultats anciens
+  const available = revenuEffectif - coutRendu - shopifyCost - stripeCost - retoursCost - fraisFixes;
 
   if (available <= 0) return (
     <div style={{ marginTop: "20px", padding: "16px 20px", borderRadius: "10px", background: "#FFF4F4", border: "2px solid #D72C0D", display: "flex", gap: "12px", alignItems: "flex-start" }}>
@@ -1507,7 +1510,7 @@ export default function Index() {
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
       margeApparente, customsRate, vatRate,
       vatRegime: form.vatRegime ?? "assujetti", tvaNetCost,
-      shippingModel,
+      shippingModel, revenu,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
       retours: retoursVal, ads: adsVal,
     };
