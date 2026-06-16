@@ -10,10 +10,16 @@ import { captureException } from "../sentry.server";
 const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
 const HISTORY_LIMIT_EXPERT = 200;
-// EU de minimis threshold for customs duties (Règlement UE n° 952/2013).
-// Goods whose intrinsic value (supplier price, excl. shipping) ≤ this amount
-// are exempt from customs duties. VAT at import remains due regardless.
-const DE_MINIMIS_DUTY_THRESHOLD = 150;
+// Plafond "faible valeur" qui qualifie un colis pour le régime simplifié dropshipping
+// (ex-seuil de minimis Règlement UE n° 952/2013, requalifié par la réforme 2026).
+// Au-dessus de ce seuil, même en dropshipping, le tarif % plein s'applique.
+const LOW_VALUE_PARCEL_CEILING = 150;
+// Réforme UE : fin de l'exonération douane pour les colis directs au consommateur.
+// Règlement approuvé Conseil UE 11/02/2026, effet 01/07/2026.
+const EU_DROPSHIP_DUTY_REFORM_DATE = new Date("2026-07-01T00:00:00Z");
+// Forfait intérimaire (jusqu'en 2028) : 3€ par position tarifaire par colis.
+// ⚠️ Ce montant changera en 2028 → modifier UNIQUEMENT ici.
+const EU_DROPSHIP_FLAT_DUTY = 3;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
 
@@ -107,34 +113,50 @@ function getVatRate(category) {
   return VAT_RATES[category] ?? 0.20;
 }
 
-// Returns 0 when supplierPrice ≤ DE_MINIMIS_DUTY_THRESHOLD (EU customs exemption).
-// The threshold applies to intrinsic value (supplier price only), NOT CIF.
-function getCustomsDuty({ supplierPrice, shippingCost, dutyRate }) {
-  if (supplierPrice <= DE_MINIMIS_DUTY_THRESHOLD) return 0;
+// Calcule les droits de douane selon le modèle logistique.
+// shippingModel="dropshipping" : colis direct fournisseur → client final.
+//   - colis faible valeur (≤ LOW_VALUE_PARCEL_CEILING) : 0€ avant le 01/07/2026,
+//     forfait EU_DROPSHIP_FLAT_DUTY (3€) à partir du 01/07/2026.
+//   - colis haute valeur (> ceiling) : tarif % plein sur CIF.
+// shippingModel="stock" : import commercial en lot, tarif % plein sur CIF, pas de seuil.
+// `now` est injectable pour tester le chemin post-réforme avant le 1er juillet.
+function getCustomsDuty({ supplierPrice, shippingCost, dutyRate, shippingModel = "stock", now = new Date() }) {
+  if (shippingModel === "dropshipping") {
+    if (supplierPrice > LOW_VALUE_PARCEL_CEILING) {
+      return (supplierPrice + shippingCost) * dutyRate; // haute valeur : tarif plein
+    }
+    return now >= EU_DROPSHIP_DUTY_REFORM_DATE ? EU_DROPSHIP_FLAT_DUTY : 0;
+  }
+  // Import en stock : tarif plein sur CIF, aucun seuil.
   return (supplierPrice + shippingCost) * dutyRate;
 }
 
 // Calcul CIF conforme au droit douanier européen.
 // vatRegime "assujetti" → TVA import récupérable, exclue du coût net.
 // vatRegime "franchise" → TVA import coût sec, incluse dans le coût rendu.
-function computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime = "assujetti") {
-  const valeurEnDouane = prixAchat + shipping;
-  const droitsDouane   = getCustomsDuty({ supplierPrice: prixAchat, shippingCost: shipping, dutyRate: customsRate });
+// shippingModel "dropshipping" → qty forcé à 1 (chaque client = 1 colis, fret non divisible).
+// shippingModel "stock"       → qty divise le fret de lot entre les unités.
+// `now` injectable pour tester le chemin post-réforme avant le 1er juillet.
+function computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime = "assujetti", shippingModel = "stock", qty = 1, now = new Date()) {
+  const qtyEff         = shippingModel === "dropshipping" ? 1 : Math.max(1, parseInt(qty, 10) || 1);
+  const shippingPerUnit = shipping / qtyEff;
+  const valeurEnDouane = prixAchat + shippingPerUnit;
+  const droitsDouane   = getCustomsDuty({ supplierPrice: prixAchat, shippingCost: shippingPerUnit, dutyRate: customsRate, shippingModel, now });
   const baseTVA        = valeurEnDouane + droitsDouane;
   const tvaImport      = baseTVA * vatRate;
   // Assujetti: TVA récupérable → neutralisée (impact net = 0).
   const tvaNetCost     = vatRegime === "franchise" ? tvaImport : 0;
-  const coutRendu      = prixAchat + shipping + droitsDouane + tvaNetCost;
+  const coutRendu      = prixAchat + shippingPerUnit + droitsDouane + tvaNetCost;
   return { valeurEnDouane, droitsDouane, baseTVA, tvaImport, tvaNetCost, coutRendu };
 }
 
 // Feature 3: solve for selling price given a target net margin
 function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti" } = fees;
+  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti", shippingModel = "stock" } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate     = getVatRate(categorie);
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel);
   // fraisFixes includes the processor fixed fee (per-transaction fixed cost)
   const fraisFixes  = fraisRetour + coutEmballage + processorFixedFee;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
@@ -146,11 +168,11 @@ function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct,
 
 // Core margin computation — same arithmetic as the dashboard's calculate callback.
 // Single source of truth: any divergence here vs the dashboard is a bug.
-function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true) {
+function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock") {
   const customsRate  = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate      = getVatRate(categorie);
   const shipping     = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime);
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel);
   // Assujetti + prix TTC : le revenu net est HT (TVA collectée reversée à l'État).
   const revenu       = vatRegime === "assujetti" && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
   const shopifyCost  = prixVente * (shopifyFee / 100);   // TTC : base contractuelle Shopify
@@ -166,10 +188,10 @@ function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, 
 // Generates pre-calculated scenarios for the AI.
 // All output numbers are computed by the same engine as the dashboard —
 // the AI receives finished figures and must never recalculate them.
-function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true }) {
+function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock" }) {
   const run = (o = {}) => {
     const p = { prixAchat, prixVente, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, ...o };
-    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded);
+    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded, shippingModel);
   };
 
   const current = run();
@@ -192,7 +214,7 @@ function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopify
   if (ads > 0) {
     list.push({ id: "ads_0", levier: `Budget ads suspendu (${formatPct(ads)} % → 0 %)`, ...run({ ads: 0 }) });
   }
-  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime });
+  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime, shippingModel });
   if (seuilSim && seuilSim.prixVenteMin > 0) {
     list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00 €)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
   }
@@ -200,7 +222,7 @@ function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopify
     list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50 € + prix +25 % (${formatEur(pv125)})`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
   }
   if (current.margeNette < 0 && coutEmballage > 1.50) {
-    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime });
+    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime, shippingModel });
     if (seuilCombo && seuilCombo.prixVenteMin > 0) {
       list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50 € + prix minimum → ${formatEur(seuilCombo.prixVenteMin)}`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
     }
@@ -959,11 +981,10 @@ export const action = async ({ request }) => {
     const processor    = PAYMENT_PROCESSORS.find(p => p.id === body.payment_processor) ?? PAYMENT_PROCESSORS[0];
     const processorRate     = processor.rate / 100;
     const processorFixedFee = processor.fixedFee;
-    // qty_per_shipment: units per inbound supplier shipment — splits total shipping cost per unit.
-    // parseInt → NaN on empty/invalid string → || 1 gives safe fallback.
-    // Math.max(1, ...) prevents division by zero even if someone passes "0".
+    // qty_per_shipment: units per inbound supplier shipment.
+    // Division by qty is now handled inside computeLandedCost (forced to 1 in dropshipping mode).
     const qty = Math.max(1, parseInt(body.qty_per_shipment, 10) || 1);
-    const shippingPerUnit = shippingCost / qty;
+    const shippingModel = ["dropshipping", "stock"].includes(body.shipping_model) ? body.shipping_model : "stock";
     const shopTaxesIncluded = body.shop_taxes_included !== false;
 
     const startTime = Date.now();
@@ -1037,7 +1058,7 @@ export const action = async ({ request }) => {
         const isDefaultCategory = !resolvedCategory;
         const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
         const vatRate      = getVatRate(mappedCategory);
-        const { coutRendu } = computeLandedCost(cost, shippingPerUnit, customsRate, vatRate, vatRegime);
+        const { coutRendu } = computeLandedCost(cost, shippingCost, customsRate, vatRate, vatRegime, shippingModel, qty);
         const revenu   = vatRegime === "assujetti" && shopTaxesIncluded ? price / (1 + vatRate) : price;
         const shopify  = price * shopifyFee;
         const stripe   = (price * processorRate) + processorFixedFee;
@@ -1108,6 +1129,7 @@ export const action = async ({ request }) => {
       coutEmballage:     parseFloat(coutEmballage)      || 0,
       vatRegime:         vatRegime || "assujetti",
       shopTaxesIncluded: body.shopTaxesIncluded !== false,
+      shippingModel:     ["dropshipping", "stock"].includes(body.shippingModel) ? body.shippingModel : "stock",
     });
 
     const scenariosBlock = scenList.map((s, i) =>
@@ -1431,7 +1453,8 @@ export default function Index() {
     const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
     const vatRate        = getVatRate(form.categorie);
     const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
-    const { droitsDouane: douane, tvaImport, tvaNetCost, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, form.vatRegime ?? "assujetti");
+    const shippingModel  = form.shippingModel ?? "stock"; // toggle ajouté en Lot 2
+    const { droitsDouane: douane, tvaImport, tvaNetCost, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, form.vatRegime ?? "assujetti", shippingModel);
     // Assujetti + prix TTC → revenu net HT (TVA collectée reversée à l'État).
     // Franchise ou taxesIncluded=false → prix déjà net, pas de division.
     const revenu         = (form.vatRegime === "assujetti" || !form.vatRegime) && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
@@ -1458,6 +1481,7 @@ export default function Index() {
       margeBrute, margeBrutePercent, margeNette, margeNettePercent,
       margeApparente, customsRate, vatRate,
       vatRegime: form.vatRegime ?? "assujetti", tvaNetCost,
+      shippingModel,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
       retours: retoursVal, ads: adsVal,
     };
@@ -1521,6 +1545,7 @@ export default function Index() {
       vatRegime:          r.vatRegime,
       margeApparente:     r.margeApparente,
       shopTaxesIncluded:  shopTaxesIncluded,
+      shippingModel:      r.shippingModel ?? "stock",
     };
     aiFetcher.submit(aiData, { method: "POST", encType: "application/json" });
   };
