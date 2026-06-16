@@ -1106,7 +1106,8 @@ export const action = async ({ request }) => {
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
             customsRate, margeBrutePercent, margeNettePercent, margeNette,
             margeApparente,
-            coutEmballage, fraisRetour, processorFixedFee, vatRegime } = body;
+            coutEmballage, fraisRetour, processorFixedFee, vatRegime,
+            shippingModel } = body;
 
     const safeTitle     = sanitizeForPrompt(productTitle) || "Non spécifié";
     const safeCategory  = sanitizeForPrompt(category);
@@ -1149,7 +1150,17 @@ DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
 - Prix fournisseur : ${formatEur(prixAchat)} | Prix de vente : ${formatEur(prixVente)}
-- Douane : ${formatEur(douane)}${parseFloat(prixAchat) <= DE_MINIMIS_DUTY_THRESHOLD ? " (exonéré de minimis)" : ""} | TVA import : ${formatEur(tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(shipping)} | Coût rendu net : ${formatEur(coutRendu)}
+- Douane : ${formatEur(douane)}${(() => {
+      const sm = shippingModel ?? "stock";
+      const pa = parseFloat(prixAchat);
+      if (sm === "dropshipping") {
+        if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur — tarif % plein)";
+        return new Date() < EU_DROPSHIP_DUTY_REFORM_DATE
+          ? " (faible valeur — exonéré jusqu'au 30/06/2026)"
+          : " (faible valeur — forfait 3€ post-01/07/2026)";
+      }
+      return ""; // stock : tarif % standard, aucune note particulière
+    })()} | TVA import : ${formatEur(tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(shipping)} | Coût rendu net : ${formatEur(coutRendu)}
 - ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(shopifyCost)} | Retours : ${retours} % → ${formatEur(retoursCost)} | Ads : ${ads} % → ${formatEur(adsCost)}
 - Emballage : ${formatEur(coutEmballage)} | Frais retour : ${formatEur(fraisRetour)}
 - Marge apparente : ${formatPct(margeApparente)} % | Marge brute : ${formatPct(margeBrutePercent)} % (${formatEur(parseFloat(prixVente) - parseFloat(coutRendu))}) | Marge nette : ${formatPct(margeNettePercent)} % (${formatEur(margeNette)}/vente)
@@ -1321,11 +1332,12 @@ export default function Index() {
     retours: "5", ads: "15",
     fraisRetour: "0", coutEmballage: "0",
     vatRegime: initialVatRegime ?? "assujetti",
+    shippingModel: "dropshipping",
   });
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0", vatRegime: initialVatRegime ?? "assujetti" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0", vatRegime: initialVatRegime ?? "assujetti", shippingModel: "dropshipping" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1358,7 +1370,7 @@ export default function Index() {
   const [annotText, setAnnotText]     = useState("");
 
   // Catalog audit (Expert)
-  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1" });
+  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1", shipping_model: "dropshipping" });
   const [auditElapsed, setAuditElapsed] = useState(0);
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
@@ -1570,7 +1582,7 @@ export default function Index() {
     }
 
     const totalVarPct = (shopifyFee ?? 0) + (stripeFee ?? 0) + (retours ?? 0) + (ads ?? 0);
-    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime: simForm.vatRegime ?? "assujetti" });
+    const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime: simForm.vatRegime ?? "assujetti", shippingModel: simForm.shippingModel ?? "dropshipping" });
     if (!sim) {
       setSimErrors([`Impossible : marge cible (${formatPct(targetMargin)} %) + frais variables (${formatPct(totalVarPct)} %) = ${formatPct(targetMargin + totalVarPct)} % ≥ 100 %. Le dénominateur est nul ou négatif — aucun prix de vente ne peut atteindre cet objectif. Réduisez les frais ou la marge cible.`]);
       setSimResult(null);
@@ -1851,6 +1863,16 @@ export default function Index() {
                       >
                         <option value="assujetti">Assujetti à la TVA (régime réel)</option>
                         <option value="franchise">Franchise en base / non assujetti</option>
+                      </select>
+                    </FieldGroup>
+                    <FieldGroup label="Modèle logistique" direction="left" tooltip="Dropshipping : votre fournisseur expédie directement au client (douane 0€ jusqu'au 30/06/2026, puis forfait 3€/article à partir du 01/07/2026). Stock : vous importez en lot et stockez vous-même (tarif douanier standard en % sur CIF, inchangé par la réforme UE).">
+                      <select
+                        value={form.shippingModel ?? "dropshipping"}
+                        onChange={e => { setForm(prev => ({ ...prev, shippingModel: e.target.value })); setResults(null); setErrors([]); setWarnings([]); }}
+                        style={inputStyle}
+                      >
+                        <option value="dropshipping">Dropshipping (colis direct au client)</option>
+                        <option value="stock">Import en stock (réassort en lot)</option>
                       </select>
                     </FieldGroup>
                   </div>
@@ -2253,16 +2275,12 @@ export default function Index() {
                 {/* Params */}
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
-                  <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                  <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "12px" }}>
                     <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Frais Shopify (taux)</div>
-                      <input type="text" value={auditParams.shopify_fee} onChange={e => setAuditParams(p => ({ ...p, shopify_fee: e.target.value }))}
-                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.02" />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Processeur paiement</div>
-                      <select value={auditParams.payment_processor} onChange={e => setAuditParams(p => ({ ...p, payment_processor: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
-                        {PAYMENT_PROCESSORS.map(proc => <option key={proc.id} value={proc.id}>{proc.id}</option>)}
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Modèle logistique</div>
+                      <select value={auditParams.shipping_model} onChange={e => setAuditParams(p => ({ ...p, shipping_model: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
+                        <option value="dropshipping">Dropshipping</option>
+                        <option value="stock">Import en stock</option>
                       </select>
                     </div>
                     <div>
@@ -2271,6 +2289,17 @@ export default function Index() {
                         <option value="assujetti">Assujetti</option>
                         <option value="franchise">Franchise</option>
                       </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Processeur paiement</div>
+                      <select value={auditParams.payment_processor} onChange={e => setAuditParams(p => ({ ...p, payment_processor: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
+                        {PAYMENT_PROCESSORS.map(proc => <option key={proc.id} value={proc.id}>{proc.id}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Frais Shopify (taux)</div>
+                      <input type="text" value={auditParams.shopify_fee} onChange={e => setAuditParams(p => ({ ...p, shopify_fee: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.02" />
                     </div>
                     <div>
                       <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Retours (taux)</div>
@@ -2282,17 +2311,24 @@ export default function Index() {
                       <input type="text" value={auditParams.shipping_cost} onChange={e => setAuditParams(p => ({ ...p, shipping_cost: e.target.value }))}
                         style={{ ...inputStyle, fontSize: "13px" }} placeholder="8" />
                     </div>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Unités / envoi fournisseur</div>
-                      <input type="text" value={auditParams.qty_per_shipment} onChange={e => setAuditParams(p => ({ ...p, qty_per_shipment: e.target.value }))}
-                        style={{ ...inputStyle, fontSize: "13px" }} placeholder="1" />
-                      {(!auditParams.qty_per_shipment || auditParams.qty_per_shipment === "1") && (
-                        <div style={{ fontSize: "10px", color: "#B98900", marginTop: "3px", lineHeight: "1.4" }}>
-                          ⚠ Hypothèse : 1 article expédié seul (dropshipping). Entrez votre quantité de réassort réelle (ex. 50, 100).
-                        </div>
-                      )}
-                    </div>
+                    {auditParams.shipping_model === "stock" && (
+                      <div>
+                        <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Unités / envoi fournisseur</div>
+                        <input type="text" value={auditParams.qty_per_shipment} onChange={e => setAuditParams(p => ({ ...p, qty_per_shipment: e.target.value }))}
+                          style={{ ...inputStyle, fontSize: "13px" }} placeholder="1" />
+                        {(!auditParams.qty_per_shipment || auditParams.qty_per_shipment === "1") && (
+                          <div style={{ fontSize: "10px", color: "#B98900", marginTop: "3px", lineHeight: "1.4" }}>
+                            ⚠ Port imputé à 100 % sur chaque unité. Entrez votre vraie quantité de réassort (ex. 50).
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {auditParams.shipping_model === "dropshipping" && (
+                    <div style={{ fontSize: "11px", color: "#7C3AED", background: "#f8f6ff", border: "1px solid #c5b8ff", borderRadius: "6px", padding: "8px 12px", marginBottom: "12px", lineHeight: "1.5" }}>
+                      Régime UE : <strong>0€ de douane jusqu'au 30/06/2026</strong>, puis <strong>3€ forfaitaires par article dès le 01/07/2026</strong>. Hypothèse : 1 article = 1 colis = 1 position tarifaire. Si vous groupez plusieurs unités d'un même produit dans un colis, le coût réel par unité est plus bas.
+                    </div>
+                  )}
                   <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
                     style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: isAuditing ? "default" : "pointer", fontFamily: "inherit", opacity: isAuditing ? 0.8 : 1 }}>
                     {isAuditing ? "Analyse en cours…" : "Lancer l'audit →"}
@@ -2518,7 +2554,22 @@ export default function Index() {
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Structure du coût d'achat</div>
               {[
                 { label: "Prix fournisseur",                      value: formatEur(results.prixAchat),  color: "#202223" },
-                { label: results.douane === 0 ? `+ Droits de douane (de minimis ≤ 150 €)` : `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`, value: `+${formatEur(results.douane)}`, color: "#6D7175" },
+                { label: (() => {
+                    const sm = form.shippingModel ?? "stock";
+                    const pa = results.prixAchat ?? 0;
+                    if (results.douane === 0) {
+                      if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
+                        return new Date() < EU_DROPSHIP_DUTY_REFORM_DATE
+                          ? `+ Droits de douane (exonéré jusqu'au 30/06/2026)`
+                          : `+ Droits de douane (faible valeur — exonéré)`;
+                      }
+                      return `+ Droits de douane (exonéré)`;
+                    }
+                    if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
+                      return `+ Droits de douane (forfait 3€/article — réforme UE)`;
+                    }
+                    return `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`;
+                  })(), value: `+${formatEur(results.douane)}`, color: "#6D7175" },
                 { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${formatEur(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
                 { label: `+ Frais de port (${form.paysImport})`,  value: `+${formatEur(results.shipping)}`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
