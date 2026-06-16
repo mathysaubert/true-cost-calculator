@@ -831,7 +831,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("shop_plans").select("vat_regime").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_plans").select("vat_regime, shipping_model").eq("shop_domain", session.shop).maybeSingle(),
   ]);
 
   const monthlyCount = countResult.status === "fulfilled"
@@ -856,8 +856,11 @@ export const loader = async ({ request }) => {
   const vatRegime = planResult.status === "fulfilled"
     ? (planResult.value.data?.vat_regime ?? "assujetti")
     : "assujetti";
+  const shippingModel = planResult.status === "fulfilled"
+    ? (planResult.value.data?.shipping_model ?? "dropshipping")
+    : "dropshipping";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded };
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -938,6 +941,16 @@ export const action = async ({ request }) => {
     const regime = body.vat_regime === "franchise" ? "franchise" : "assujetti";
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, vat_regime: regime, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain" }
+    );
+    return { success: true };
+  }
+
+  // ── Set shipping model ────────────────────────────────────────────────────
+  if (body._action === "set_shipping_model") {
+    const model = body.shipping_model === "dropshipping" ? "dropshipping" : "stock";
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, shipping_model: model, updated_at: new Date().toISOString() },
       { onConflict: "shop_domain" }
     );
     return { success: true };
@@ -1308,14 +1321,15 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel } = useLoaderData();
 
-  const saveFetcher    = useFetcher();
-  const aiFetcher      = useFetcher();
-  const alertFetcher   = useFetcher();
-  const auditFetcher   = useFetcher();
-  const annotFetcher   = useFetcher();
-  const regimeFetcher  = useFetcher();
+  const saveFetcher          = useFetcher();
+  const aiFetcher            = useFetcher();
+  const alertFetcher         = useFetcher();
+  const auditFetcher         = useFetcher();
+  const annotFetcher         = useFetcher();
+  const regimeFetcher        = useFetcher();
+  const shippingModelFetcher = useFetcher();
 
   // Billing uses useSubmit (full-page navigation) so App Bridge can intercept
   // the redirect thrown by billing.request() and open Shopify billing in the
@@ -1332,12 +1346,12 @@ export default function Index() {
     retours: "5", ads: "15",
     fraisRetour: "0", coutEmballage: "0",
     vatRegime: initialVatRegime ?? "assujetti",
-    shippingModel: "dropshipping",
+    shippingModel: initialShippingModel ?? "dropshipping",
   });
 
   // Feature 3: simulation form — persisted in localStorage
   const SIM_STORAGE_KEY = "tcc_simForm";
-  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0", vatRegime: initialVatRegime ?? "assujetti", shippingModel: "dropshipping" };
+  const defaultSimForm = { prixAchat: "20", categorie: "Textile", paysImport: "Chine", targetMargin: "35", shopifyFee: "2", paymentProcessor: "Stripe EU", stripeFee: "1.5", processorFixedFee: "0.25", retours: "5", ads: "15", fraisRetour: "0", coutEmballage: "0", vatRegime: initialVatRegime ?? "assujetti", shippingModel: initialShippingModel ?? "dropshipping" };
   const [simForm, setSimForm] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1370,7 +1384,7 @@ export default function Index() {
   const [annotText, setAnnotText]     = useState("");
 
   // Catalog audit (Expert)
-  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1", shipping_model: "dropshipping" });
+  const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1", shipping_model: initialShippingModel ?? "dropshipping" });
   const [auditElapsed, setAuditElapsed] = useState(0);
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
@@ -1868,7 +1882,12 @@ export default function Index() {
                     <FieldGroup label="Modèle logistique" direction="left" tooltip="Dropshipping : votre fournisseur expédie directement au client (douane 0€ jusqu'au 30/06/2026, puis forfait 3€/article à partir du 01/07/2026). Stock : vous importez en lot et stockez vous-même (tarif douanier standard en % sur CIF, inchangé par la réforme UE).">
                       <select
                         value={form.shippingModel ?? "dropshipping"}
-                        onChange={e => { setForm(prev => ({ ...prev, shippingModel: e.target.value })); setResults(null); setErrors([]); setWarnings([]); }}
+                        onChange={e => {
+                          const model = e.target.value;
+                          setForm(prev => ({ ...prev, shippingModel: model }));
+                          setResults(null); setErrors([]); setWarnings([]);
+                          shippingModelFetcher.submit({ _action: "set_shipping_model", shipping_model: model }, { method: "POST", encType: "application/json" });
+                        }}
                         style={inputStyle}
                       >
                         <option value="dropshipping">Dropshipping (colis direct au client)</option>
