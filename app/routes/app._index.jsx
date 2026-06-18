@@ -4,52 +4,27 @@ import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { supabase } from "../supabase.server";
 import { captureException } from "../sentry.server";
+import {
+  LOW_VALUE_PARCEL_CEILING, EU_DROPSHIP_DUTY_REFORM_DATE,
+  PAYMENT_PROCESSORS, CUSTOMS_RATES, SHIPPING_ESTIMATES,
+  safeNum, formatEur, formatPct, formatNum,
+  computeMargin, computeScenarios, simulateSellingPrice,
+} from "../lib/engine.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
 const HISTORY_LIMIT_EXPERT = 200;
-// Plafond "faible valeur" qui qualifie un colis pour le régime simplifié dropshipping
-// (ex-seuil de minimis Règlement UE n° 952/2013, requalifié par la réforme 2026).
-// Au-dessus de ce seuil, même en dropshipping, le tarif % plein s'applique.
-const LOW_VALUE_PARCEL_CEILING = 150;
-// Réforme UE : fin de l'exonération douane pour les colis directs au consommateur.
-// Règlement approuvé Conseil UE 11/02/2026, effet 01/07/2026.
-const EU_DROPSHIP_DUTY_REFORM_DATE = new Date("2026-07-01T00:00:00Z");
-// Forfait intérimaire (jusqu'en 2028) : 3€ par position tarifaire par colis.
-// ⚠️ Ce montant changera en 2028 → modifier UNIQUEMENT ici.
-const EU_DROPSHIP_FLAT_DUTY = 3;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
-
-const PAYMENT_PROCESSORS = [
-  { id: "Stripe EU",               rate: 1.5,  fixedFee: 0.25, hint: "Cartes EU — 1,5% + 0,25€/transaction" },
-  { id: "Stripe non-EU",           rate: 2.5,  fixedFee: 0.25, hint: "Cartes non-EU — 2,5% + 0,25€/transaction" },
-  { id: "Shopify Payments Basic",  rate: 2.0,  fixedFee: 0.25, hint: "Plan Basic — 2% + 0,25€/transaction" },
-  { id: "Shopify Payments Avancé", rate: 1.0,  fixedFee: 0.25, hint: "Plan Avancé — 1% + 0,25€/transaction" },
-  { id: "Shopify Payments Plus",   rate: 0.5,  fixedFee: 0.25, hint: "Plan Plus — 0,5% + 0,25€/transaction" },
-];
-
-const CUSTOMS_RATES = {
-  Textile: 0.12, Électronique: 0.05, Cosmétique: 0.10,
-  Accessoires: 0.07, Sport: 0.05, Alimentation: 0.15,
-  Maroquinerie: 0.03, Jouets: 0, Mobilier: 0.027, Livres: 0, Autre: 0.03,
-};
-const SHIPPING_ESTIMATES = { Chine: 8, Inde: 6, Turquie: 4, UE: 2, Autre: 5 };
+// Constantes réglementaires, barèmes (CUSTOMS_RATES, SHIPPING_ESTIMATES,
+// PAYMENT_PROCESSORS) et helpers de formatage : importés depuis ../lib/engine.js
+// (source unique partagée avec les tests).
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const normalizeDecimal = (raw) => String(raw ?? "").replace(/\s/g, "").replace(/,/g, ".");
-const safeNum = (n) => (Number.isFinite(n) ? n : 0);
-const fmt = (n) => safeNum(n).toFixed(2);
-const pct = (n) => safeNum(n).toFixed(1);
-
-// FR display helpers — all user-visible numbers go through these.
-// Calculations and server serialisation still use fmt/pct/toFixed.
-const formatEur = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeNum(n));
-const formatPct = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(safeNum(n));
-const formatNum = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeNum(n));
 
 function validatePrice(raw, label, errors) {
   const s = normalizeDecimal(raw);
@@ -95,139 +70,6 @@ function formatDate(iso) {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-}
-
-// Taux de TVA français par catégorie produit — identique à l'import et à la vente domestique
-// (la catégorie NC/TARIC détermine le taux, pas le type de transaction).
-// Taux réduit 5,5 % : Alimentation (art. 278-0 bis CGI), Livres (art. 278-0 bis A CGI).
-// Taux normal 20 % : toutes les autres catégories.
-// Ajouter ici les taux 10 % ou 2,1 % si de nouvelles catégories éligibles sont créées.
-// Le fallback 0,20 couvre toute catégorie non reconnue.
-const VAT_RATES = {
-  Alimentation: 0.055, Livres: 0.055,
-  Textile: 0.20, Électronique: 0.20, Cosmétique: 0.20,
-  Accessoires: 0.20, Sport: 0.20,
-  Maroquinerie: 0.20, Jouets: 0.20, Mobilier: 0.20, Autre: 0.20,
-};
-function getVatRate(category) {
-  return VAT_RATES[category] ?? 0.20;
-}
-
-// Calcule les droits de douane selon le modèle logistique.
-// shippingModel="dropshipping" : colis direct fournisseur → client final.
-//   - colis faible valeur (≤ LOW_VALUE_PARCEL_CEILING) : 0€ avant le 01/07/2026,
-//     forfait EU_DROPSHIP_FLAT_DUTY (3€) à partir du 01/07/2026.
-//   - colis haute valeur (> ceiling) : tarif % plein sur CIF.
-// shippingModel="stock" : import commercial en lot, tarif % plein sur CIF, pas de seuil.
-// `now` est injectable pour tester le chemin post-réforme avant le 1er juillet.
-function getCustomsDuty({ supplierPrice, shippingCost, dutyRate, shippingModel = "stock", now = new Date() }) {
-  if (shippingModel === "dropshipping") {
-    if (supplierPrice > LOW_VALUE_PARCEL_CEILING) {
-      return (supplierPrice + shippingCost) * dutyRate; // haute valeur : tarif plein
-    }
-    return now >= EU_DROPSHIP_DUTY_REFORM_DATE ? EU_DROPSHIP_FLAT_DUTY : 0;
-  }
-  // Import en stock : tarif plein sur CIF, aucun seuil.
-  return (supplierPrice + shippingCost) * dutyRate;
-}
-
-// Calcul CIF conforme au droit douanier européen.
-// vatRegime "assujetti" → TVA import récupérable, exclue du coût net.
-// vatRegime "franchise" → TVA import coût sec, incluse dans le coût rendu.
-// shippingModel "dropshipping" → qty forcé à 1 (chaque client = 1 colis, fret non divisible).
-// shippingModel "stock"       → qty divise le fret de lot entre les unités.
-// `now` injectable pour tester le chemin post-réforme avant le 1er juillet.
-function computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime = "assujetti", shippingModel = "stock", qty = 1, now = new Date()) {
-  const qtyEff         = shippingModel === "dropshipping" ? 1 : Math.max(1, parseInt(qty, 10) || 1);
-  const shippingPerUnit = shipping / qtyEff;
-  const valeurEnDouane = prixAchat + shippingPerUnit;
-  const droitsDouane   = getCustomsDuty({ supplierPrice: prixAchat, shippingCost: shippingPerUnit, dutyRate: customsRate, shippingModel, now });
-  const baseTVA        = valeurEnDouane + droitsDouane;
-  const tvaImport      = baseTVA * vatRate;
-  // Assujetti: TVA récupérable → neutralisée (impact net = 0).
-  const tvaNetCost     = vatRegime === "franchise" ? tvaImport : 0;
-  const coutRendu      = prixAchat + shippingPerUnit + droitsDouane + tvaNetCost;
-  return { valeurEnDouane, droitsDouane, baseTVA, tvaImport, tvaNetCost, coutRendu };
-}
-
-// Feature 3: solve for selling price given a target net margin
-function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti", shippingModel = "stock" } = fees;
-  const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
-  const vatRate     = getVatRate(categorie);
-  const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel);
-  // fraisFixes includes the processor fixed fee (per-transaction fixed cost)
-  const fraisFixes  = fraisRetour + coutEmballage + processorFixedFee;
-  const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
-  const denominator = 1 - totalFeeRate - targetMarginPct / 100;
-  if (denominator <= 0) return null;
-  // P × (1 − totalFeeRate − targetMargin%) = coutRendu + fraisFixes → P = (coutRendu + fraisFixes) / denominator
-  return { prixVenteMin: (coutRendu + fraisFixes) / denominator, coutRendu, fraisFixes, totalFeeRate, customsRate, shipping };
-}
-
-// Core margin computation — same arithmetic as the dashboard's calculate callback.
-// Single source of truth: any divergence here vs the dashboard is a bug.
-function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock") {
-  const customsRate  = CUSTOMS_RATES[categorie] ?? 0.03;
-  const vatRate      = getVatRate(categorie);
-  const shipping     = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel);
-  // Assujetti + prix TTC : le revenu net est HT (TVA collectée reversée à l'État).
-  const revenu       = vatRegime === "assujetti" && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
-  const shopifyCost  = prixVente * (shopifyFee / 100);   // TTC : base contractuelle Shopify
-  const stripeCost   = (prixVente * (stripeFee / 100)) + processorFixedFee;  // TTC : base contractuelle Stripe
-  const retoursCost  = revenu * (retours / 100);          // HT : un retour = une vente HT perdue
-  const adsCost      = prixVente * (ads / 100);           // TTC : dépense marketing sur CA brut
-  const fraisFixes   = fraisRetour + coutEmballage;
-  const margeNette   = (revenu - coutRendu) - shopifyCost - stripeCost - retoursCost - adsCost - fraisFixes;
-  const margeNettePercent = prixVente > 0 ? (margeNette / prixVente) * 100 : 0;
-  return { margeNette, margeNettePercent, coutRendu, rentable: margeNette > 0 };
-}
-
-// Generates pre-calculated scenarios for the AI.
-// All output numbers are computed by the same engine as the dashboard —
-// the AI receives finished figures and must never recalculate them.
-function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock" }) {
-  const run = (o = {}) => {
-    const p = { prixAchat, prixVente, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, ...o };
-    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded, shippingModel);
-  };
-
-  const current = run();
-  const list = [];
-
-  if (coutEmballage > 1.50) {
-    list.push({ id: "emb_150", levier: `Emballage réduit à 1,50 € (−${formatEur(coutEmballage - 1.50)}/vente)`, ...run({ coutEmballage: 1.50 }) });
-  }
-  if (coutEmballage > 3.00) {
-    list.push({ id: "emb_300", levier: `Emballage réduit au seuil 3,00 € (−${formatEur(coutEmballage - 3.00)}/vente)`, ...run({ coutEmballage: 3.00 }) });
-  }
-  const pa80 = parseFloat((prixAchat * 0.80).toFixed(2));
-  list.push({ id: "fourn_80", levier: `Fournisseur renégocié −20 % → ${formatEur(pa80)}`, ...run({ prixAchat: pa80 }) });
-  const pa70 = parseFloat((prixAchat * 0.70).toFixed(2));
-  list.push({ id: "fourn_70", levier: `Fournisseur renégocié −30 % → ${formatEur(pa70)}`, ...run({ prixAchat: pa70 }) });
-  const pv125 = parseFloat((prixVente * 1.25).toFixed(2));
-  list.push({ id: "pv_125", levier: `Prix de vente +25 % → ${formatEur(pv125)}`, ...run({ prixVente: pv125 }) });
-  const pv150 = parseFloat((prixVente * 1.50).toFixed(2));
-  list.push({ id: "pv_150", levier: `Prix de vente +50 % → ${formatEur(pv150)}`, ...run({ prixVente: pv150 }) });
-  if (ads > 0) {
-    list.push({ id: "ads_0", levier: `Budget ads suspendu (${formatPct(ads)} % → 0 %)`, ...run({ ads: 0 }) });
-  }
-  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime, shippingModel });
-  if (seuilSim && seuilSim.prixVenteMin > 0) {
-    list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00 €)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
-  }
-  if (coutEmballage > 1.50) {
-    list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50 € + prix +25 % (${formatEur(pv125)})`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
-  }
-  if (current.margeNette < 0 && coutEmballage > 1.50) {
-    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime, shippingModel });
-    if (seuilCombo && seuilCombo.prixVenteMin > 0) {
-      list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50 € + prix minimum → ${formatEur(seuilCombo.prixVenteMin)}`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
-    }
-  }
-  return { current, scenarios: list };
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -1072,16 +914,16 @@ export const action = async ({ request }) => {
         const resolvedCategory  = shopifyTypeToCategory(node.category?.name, node.productType, node.title);
         const mappedCategory    = resolvedCategory ?? "Autre";
         const isDefaultCategory = !resolvedCategory;
-        const customsRate  = CUSTOMS_RATES[mappedCategory] ?? 0.03;
-        const vatRate      = getVatRate(mappedCategory);
-        const { coutRendu } = computeLandedCost(cost, shippingCost, customsRate, vatRate, vatRegime, shippingModel, qty);
-        const revenu   = vatRegime === "assujetti" && shopTaxesIncluded ? price / (1 + vatRate) : price;
-        const shopify  = price * shopifyFee;
-        const stripe   = (price * processorRate) + processorFixedFee;
-        const returns  = revenu * returnsRate;
-        const netMargin = revenu - coutRendu - shopify - stripe - returns;
-        const netPct    = (netMargin / price) * 100;
-        return { id: node.id, title: node.title, price, cost, coutRendu, netMargin, netPct, mappedCategory, isDefaultCategory, productType: node.productType ?? "" };
+        // Même moteur que le dashboard. Les taux audit sont en DÉCIMAL → ×100 pour computeMargin (percents).
+        // shipping explicite (flat catalogue) + qty ; ni ads ni frais fixes en audit.
+        const m = computeMargin({
+          prixAchat: cost, prixVente: price,
+          categorie: mappedCategory, shipping: shippingCost,
+          shopifyFee: shopifyFee * 100, stripeFee: processorRate * 100, processorFixedFee,
+          retours: returnsRate * 100,
+          vatRegime, shopTaxesIncluded, shippingModel, qty,
+        });
+        return { id: node.id, title: node.title, price, cost, coutRendu: m.coutRendu, netMargin: m.margeNette, netPct: m.margeNettePercent, mappedCategory, isDefaultCategory, productType: node.productType ?? "" };
       })
       .filter(Boolean)
       .sort((a, b) => b.netPct - a.netPct);
@@ -1479,38 +1321,28 @@ export default function Index() {
     const totalPct = shopifyFeeVal + stripeFeeVal + retoursVal + adsVal;
     if (totalPct > 100) warns.push(`Frais cumulés (${formatPct(totalPct)} %) dépassent 100 % du CA.`);
 
-    const customsRate    = CUSTOMS_RATES[form.categorie] ?? 0.03;
-    const vatRate        = getVatRate(form.categorie);
-    const shipping       = SHIPPING_ESTIMATES[form.paysImport] ?? 5;
     const shippingModel  = form.shippingModel ?? "stock"; // toggle ajouté en Lot 2
-    const { droitsDouane: douane, tvaImport, tvaNetCost, coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, form.vatRegime ?? "assujetti", shippingModel);
-    // Assujetti + prix TTC → revenu net HT (TVA collectée reversée à l'État).
-    // Franchise ou taxesIncluded=false → prix déjà net, pas de division.
-    const revenu         = (form.vatRegime === "assujetti" || !form.vatRegime) && shopTaxesIncluded ? prixVente / (1 + vatRate) : prixVente;
-    const shopifyCost    = prixVente * (shopifyFeeVal / 100);   // TTC : base contractuelle
-    const stripeCost     = (prixVente * (stripeFeeVal / 100)) + processorFixedFeeVal;  // TTC
-    const retoursCost    = revenu * (retoursVal    / 100);       // HT : vente perdue = revenu HT
-    const adsCost        = prixVente * (adsVal        / 100);   // TTC : dépense sur CA brut
-    const totalFraisVente    = shopifyCost + stripeCost + retoursCost + adsCost;
-    const fraisFixes         = fraisRetourVal + coutEmballageVal;
-    const margeBrute         = revenu - coutRendu;
-    const margeBrutePercent  = (margeBrute / prixVente) * 100;
-    const margeNette         = margeBrute - totalFraisVente - fraisFixes;
-    const margeNettePercent  = (margeNette / prixVente) * 100;
-    const margeApparente     = ((prixVente - prixAchat) / prixVente) * 100;
+    // Source unique : le moteur partagé. Le dashboard n'a plus sa propre arithmétique.
+    const m = computeMargin({
+      prixAchat, prixVente,
+      categorie: form.categorie, paysImport: form.paysImport,
+      shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
+      retours: retoursVal, ads: adsVal, fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal,
+      vatRegime: form.vatRegime ?? "assujetti", shopTaxesIncluded, shippingModel,
+    });
 
-    const computed = { margeBrutePercent, margeNettePercent, margeApparente, coutRendu, margeNette };
+    const computed = { margeBrutePercent: m.margeBrutePercent, margeNettePercent: m.margeNettePercent, margeApparente: m.margeApparente, coutRendu: m.coutRendu, margeNette: m.margeNette };
     const bad = Object.entries(computed).find(([, v]) => !Number.isFinite(v));
     if (bad) { setErrors([`Erreur de calcul (${bad[0]}).`]); setResults(null); return null; }
 
     const r = {
-      prixAchat, prixVente, douane, tvaImport, shipping, coutRendu,
-      shopifyCost, stripeCost, retoursCost, adsCost, totalFraisVente,
-      fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes,
-      margeBrute, margeBrutePercent, margeNette, margeNettePercent,
-      margeApparente, customsRate, vatRate,
-      vatRegime: form.vatRegime ?? "assujetti", tvaNetCost,
-      shippingModel, revenu,
+      prixAchat, prixVente, douane: m.douane, tvaImport: m.tvaImport, shipping: m.shipping, coutRendu: m.coutRendu,
+      shopifyCost: m.shopifyCost, stripeCost: m.stripeCost, retoursCost: m.retoursCost, adsCost: m.adsCost, totalFraisVente: m.totalFraisVente,
+      fraisRetour: fraisRetourVal, coutEmballage: coutEmballageVal, fraisFixes: m.fraisFixes,
+      margeBrute: m.margeBrute, margeBrutePercent: m.margeBrutePercent, margeNette: m.margeNette, margeNettePercent: m.margeNettePercent,
+      margeApparente: m.margeApparente, customsRate: m.customsRate, vatRate: m.vatRate,
+      vatRegime: form.vatRegime ?? "assujetti", tvaNetCost: m.tvaNetCost,
+      shippingModel, revenu: m.revenu,
       shopifyFee: shopifyFeeVal, stripeFee: stripeFeeVal, processorFixedFee: processorFixedFeeVal,
       retours: retoursVal, ads: adsVal,
     };
