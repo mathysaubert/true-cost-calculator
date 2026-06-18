@@ -125,22 +125,22 @@ export function computeMargin({
 }
 
 // Vue restreinte pour computeScenarios (back-compat). Délègue à computeMargin.
-export function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock") {
+export function calcNetMargin(prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock", now = new Date()) {
   const m = computeMargin({
     prixAchat, prixVente, categorie, paysImport,
     shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage,
-    vatRegime, shopTaxesIncluded, shippingModel,
+    vatRegime, shopTaxesIncluded, shippingModel, now,
   });
   return { margeNette: m.margeNette, margeNettePercent: m.margeNettePercent, coutRendu: m.coutRendu, rentable: m.rentable };
 }
 
 // Feature 3 : résout le prix de vente pour une marge nette cible (solveur inverse).
 export function simulateSellingPrice(prixAchat, categorie, paysImport, targetMarginPct, fees) {
-  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti", shippingModel = "stock" } = fees;
+  const { shopifyFee, stripeFee, retours, ads, fraisRetour = 0, coutEmballage = 0, processorFixedFee = 0, vatRegime = "assujetti", shippingModel = "stock", now = new Date() } = fees;
   const customsRate = CUSTOMS_RATES[categorie] ?? 0.03;
   const vatRate     = getVatRate(categorie);
   const shipping    = SHIPPING_ESTIMATES[paysImport] ?? 5;
-  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel);
+  const { coutRendu } = computeLandedCost(prixAchat, shipping, customsRate, vatRate, vatRegime, shippingModel, 1, now);
   const fraisFixes  = fraisRetour + coutEmballage + processorFixedFee;
   const totalFeeRate = (shopifyFee + stripeFee + retours + ads) / 100;
   const denominator = 1 - totalFeeRate - targetMarginPct / 100;
@@ -149,10 +149,10 @@ export function simulateSellingPrice(prixAchat, categorie, paysImport, targetMar
 }
 
 // Génère les scénarios pré-calculés pour l'IA. Tous les chiffres viennent du moteur.
-export function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock" }) {
+export function computeScenarios({ prixAchat, prixVente, categorie, paysImport, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, vatRegime, shopTaxesIncluded = true, shippingModel = "stock", now = new Date() }) {
   const run = (o = {}) => {
     const p = { prixAchat, prixVente, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, ...o };
-    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded, shippingModel);
+    return calcNetMargin(p.prixAchat, p.prixVente, categorie, paysImport, p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads, p.fraisRetour, p.coutEmballage, vatRegime, shopTaxesIncluded, shippingModel, now);
   };
 
   const current = run();
@@ -175,7 +175,7 @@ export function computeScenarios({ prixAchat, prixVente, categorie, paysImport, 
   if (ads > 0) {
     list.push({ id: "ads_0", levier: `Budget ads suspendu (${formatPct(ads)} % → 0 %)`, ...run({ ads: 0 }) });
   }
-  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime, shippingModel });
+  const seuilSim = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime, shippingModel, now });
   if (seuilSim && seuilSim.prixVenteMin > 0) {
     list.push({ id: "pv_seuil", levier: `Prix seuil rentabilité (marge nette = 0,00 €)`, prixCible: seuilSim.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
   }
@@ -183,7 +183,7 @@ export function computeScenarios({ prixAchat, prixVente, categorie, paysImport, 
     list.push({ id: "combo_emb_pv125", levier: `Combo : emballage 1,50 € + prix +25 % (${formatEur(pv125)})`, ...run({ coutEmballage: 1.50, prixVente: pv125 }) });
   }
   if (current.margeNette < 0 && coutEmballage > 1.50) {
-    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime, shippingModel });
+    const seuilCombo = simulateSellingPrice(prixAchat, categorie, paysImport, 0, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage: 1.50, processorFixedFee, vatRegime, shippingModel, now });
     if (seuilCombo && seuilCombo.prixVenteMin > 0) {
       list.push({ id: "combo_emb_seuil", levier: `Combo seuil : emballage 1,50 € + prix minimum → ${formatEur(seuilCombo.prixVenteMin)}`, prixCible: seuilCombo.prixVenteMin, margeNette: 0, margeNettePercent: 0, rentable: false });
     }

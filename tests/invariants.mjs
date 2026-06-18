@@ -78,25 +78,28 @@ function auditMargin(p) {
 
 // ════════════════════════════════════════════════════════════════════════════════
 // A1 — COHÉRENCE INTER-MODULES (l'invariant central)
-// computeMargin == calcNetMargin == computeScenarios.current, au centième.
-// now par défaut (= aujourd'hui) pour que les 3 voient la même date.
+// computeMargin == calcNetMargin == computeScenarios.current, au centième,
+// dans les DEUX ères (now=PRE et now=POST). `now` injecté de bout en bout
+// (Tâche 1) → le chemin IA n'est plus aveugle au post-réforme.
 // ════════════════════════════════════════════════════════════════════════════════
-section("A1 : Cohérence computeMargin = calcNetMargin = computeScenarios.current");
-for (const vatRegime of REGIMES) {
-  for (const shippingModel of MODELS) {
-    for (const categorie of CATS) {
-      const p = baseParams({ vatRegime, shippingModel, categorie });
-      const mCanon = computeMargin(p).margeNette;
-      const mCalc  = calcNetMargin(
-        p.prixAchat, p.prixVente, p.categorie, p.paysImport,
-        p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads,
-        p.fraisRetour, p.coutEmballage, p.vatRegime, p.shopTaxesIncluded, p.shippingModel
-      ).margeNette;
-      const mScen  = computeScenarios(p).current.margeNette;
-      const okCalc = Math.abs(mCanon - mCalc) < 0.01;
-      const okScen = Math.abs(mCanon - mScen) < 0.01;
-      assert(okCalc && okScen,
-        `${vatRegime}/${shippingModel}/${categorie} : canon=${eur(mCanon)} calc=${eur(mCalc)} scen=${eur(mScen)}`);
+section("A1 : Cohérence computeMargin = calcNetMargin = computeScenarios.current (PRE + POST)");
+for (const [eraLabel, now] of [["PRE", PRE], ["POST", POST]]) {
+  for (const vatRegime of REGIMES) {
+    for (const shippingModel of MODELS) {
+      for (const categorie of CATS) {
+        const p = baseParams({ vatRegime, shippingModel, categorie, now });
+        const mCanon = computeMargin(p).margeNette;
+        const mCalc  = calcNetMargin(
+          p.prixAchat, p.prixVente, p.categorie, p.paysImport,
+          p.shopifyFee, p.stripeFee, p.processorFixedFee, p.retours, p.ads,
+          p.fraisRetour, p.coutEmballage, p.vatRegime, p.shopTaxesIncluded, p.shippingModel, now
+        ).margeNette;
+        const mScen  = computeScenarios(p).current.margeNette;
+        const okCalc = Math.abs(mCanon - mCalc) < 0.01;
+        const okScen = Math.abs(mCanon - mScen) < 0.01;
+        assert(okCalc && okScen,
+          `[${eraLabel}] ${vatRegime}/${shippingModel}/${categorie} : canon=${eur(mCanon)} calc=${eur(mCalc)} scen=${eur(mScen)}`);
+      }
     }
   }
 }
