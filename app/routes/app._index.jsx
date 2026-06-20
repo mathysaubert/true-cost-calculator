@@ -444,11 +444,17 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
     : "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
 
   const cpaColor = available < 5 ? "#D72C0D" : available <= 15 ? "#B98900" : "#008060";
-  const cpaAdvice = available < 5
-    ? "CPA très serré — privilégiez le contenu organique (UGC, SEO) plutôt que la publicité payante."
-    : available <= 15
-    ? "CPA correct pour TikTok Ads et Meta avec une créative bien optimisée."
-    : "Excellent — vous avez une marge confortable pour scaler vos campagnes Meta et Google.";
+  // Le conseil est dérivé du MÊME verdict que le tableau de viabilité ci-dessus
+  // (platformStatus) et de getRoasViability — jamais une phrase rassurante figée.
+  // Règle : si aucune plateforme n'est Viable (ou ROAS irréaliste), on oriente vers
+  // l'organique sans nommer de plateforme ; sinon on ne cite QUE les plateformes
+  // Viable/Limite. Jamais une plateforme marquée « Difficile ».
+  const roasInviable    = getRoasViability(roas).message != null; // ROAS > 10x
+  const viablePlatforms = AD_PLATFORMS.filter(p => platformStatus(roas, p.min, p.max).label === "Viable");
+  const citables        = AD_PLATFORMS.filter(p => platformStatus(roas, p.min, p.max).label !== "Difficile");
+  const cpaAdvice = (roasInviable || viablePlatforms.length === 0)
+    ? "Aucune plateforme publicitaire n'est viable à ce ROAS — privilégiez l'acquisition organique (UGC, SEO, réseaux sociaux) plutôt que la publicité payante."
+    : `CPA exploitable sur ${citables.map(p => p.name).join(", ")} — concentrez-y votre budget et optimisez vos créatives.`;
 
   return (
     <div style={{ marginTop: "28px", display: "flex", flexDirection: "column", gap: "12px", animation: "fsu 0.4s ease-out" }}>
