@@ -958,12 +958,10 @@ export const action = async ({ request }) => {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return { aiUnavailable: true };
 
+    // Seuls les INTRANTS bruts sont lus depuis body ; tous les chiffres dérivés
+    // (douane, coût rendu, marges, frais €…) sont recalculés par computeMargin ci-dessous.
     const { prixAchat, prixVente, category, country, productTitle,
-            douane, tvaImport, shipping, coutRendu,
-            shopifyCost, stripeCost, retoursCost, adsCost,
             shopifyFee, stripeFee, paymentProcessor, retours, ads,
-            customsRate, margeBrutePercent, margeNettePercent, margeNette,
-            margeApparente,
             coutEmballage, fraisRetour, processorFixedFee, vatRegime,
             shippingModel } = body;
 
@@ -972,9 +970,11 @@ export const action = async ({ request }) => {
     const safeCountry   = sanitizeForPrompt(country);
     const safeProcessor = sanitizeForPrompt(paymentProcessor) || "Stripe";
 
-    // Pre-compute scenarios with the deterministic engine — AI receives finished
-    // figures and must never recalculate anything.
-    const { current: scenCurrent, scenarios: scenList } = computeScenarios({
+    // Source unique : le moteur déterministe. L'IA reçoit des chiffres finis et ne
+    // recalcule jamais rien. On rejoue ICI computeMargin avec exactement les mêmes
+    // intrants que le dashboard (mêmes que computeScenarios) : tous les nombres cités
+    // dans le prompt viennent de `m`, plus aucune dérivation inline.
+    const engineInput = {
       prixAchat:         parseFloat(prixAchat)         || 0,
       prixVente:         parseFloat(prixVente)          || 0,
       categorie:         category  || "Autre",
@@ -989,7 +989,9 @@ export const action = async ({ request }) => {
       vatRegime:         vatRegime || "assujetti",
       shopTaxesIncluded: body.shopTaxesIncluded !== false,
       shippingModel:     ["dropshipping", "stock"].includes(body.shippingModel) ? body.shippingModel : "stock",
-    });
+    };
+    const m = computeMargin(engineInput);
+    const { current: scenCurrent, scenarios: scenList } = computeScenarios(engineInput);
 
     const scenariosBlock = scenList.map((s, i) =>
       s.prixCible !== undefined
@@ -1008,7 +1010,7 @@ DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
 - Prix fournisseur : ${formatEur(prixAchat)} | Prix de vente : ${formatEur(prixVente)}
-- Douane : ${formatEur(douane)}${(() => {
+- Douane : ${formatEur(m.douane)}${(() => {
       const sm = shippingModel ?? "stock";
       const pa = parseFloat(prixAchat);
       if (sm === "dropshipping") {
@@ -1018,17 +1020,17 @@ DONNÉES DU CALCUL :
           : " (faible valeur — forfait 3€ post-01/07/2026)";
       }
       return ""; // stock : tarif % standard, aucune note particulière
-    })()} | TVA import : ${formatEur(tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(shipping)} | Coût rendu net : ${formatEur(coutRendu)}
-- ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(shopifyCost)} | Retours : ${retours} % → ${formatEur(retoursCost)} | Ads : ${ads} % → ${formatEur(adsCost)}
+    })()} | TVA import : ${formatEur(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(m.shipping)} | Coût rendu net : ${formatEur(m.coutRendu)}
+- ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(m.stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(m.shopifyCost)} | Retours : ${retours} % → ${formatEur(m.retoursCost)} | Ads : ${ads} % → ${formatEur(m.adsCost)}
 - Emballage : ${formatEur(coutEmballage)} | Frais retour : ${formatEur(fraisRetour)}
-- Marge apparente : ${formatPct(margeApparente)} % | Marge brute : ${formatPct(margeBrutePercent)} % (${formatEur(parseFloat(prixVente) - parseFloat(coutRendu))}) | Marge nette : ${formatPct(margeNettePercent)} % (${formatEur(margeNette)}/vente)
+- Marge apparente : ${formatPct(m.margeApparente)} % | Marge brute : ${formatPct(m.margeBrutePercent)} % (${formatEur(m.margeBrute)}) | Marge nette : ${formatPct(m.margeNettePercent)} % (${formatEur(m.margeNette)}/vente)
 
 ÉTAT ACTUEL : Marge nette = ${formatEur(scenCurrent.margeNette)} / ${formatPct(scenCurrent.margeNettePercent)} % | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
 
 SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
 ${scenariosBlock}
 
-INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (€, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même.
+INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (€, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage — la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
 
 Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette résultante décroissante. Pour chaque action, cite sa marge nette exacte et précise Rentable=OUI/NON. Si marge actuelle ≤ 0 et qu'aucun scénario seul ne la rend positive, recommande la combinaison listée.
 
