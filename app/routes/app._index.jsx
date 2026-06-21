@@ -10,6 +10,11 @@ import {
   safeNum, formatEur, formatPct, formatNum,
   computeMargin, computeScenarios, simulateSellingPrice,
 } from "../lib/engine.js";
+import {
+  AD_PLATFORM_RANGES, platformLabel, roasInviable,
+  computeCpaAdvice,
+} from "../lib/roas.js";
+import { buildMargeLine } from "../lib/aiPayload.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -348,28 +353,27 @@ function ExpertGate({ onUpgrade }) {
 // Break-Even ROAS (Expert feature)
 // Formula: PV / (PV - CoutRendu - FraisShopify - FraisStripe - ProvisionRetours)
 // Ads excluded from denominator — we compute available margin BEFORE ad spend
-const AD_PLATFORMS = [
-  {
-    name: "Meta Ads", sub: "Facebook / Instagram", min: 2.5, max: 3.5,
-    logoBg: "#1877F2",
+// Seuils (min/max) : SOURCE UNIQUE = AD_PLATFORM_RANGES dans lib/roas.js (partagés
+// avec conseil/couleur/phrase). Ici on n'ajoute que l'habillage (sous-titre, logo).
+const AD_PLATFORM_DISPLAY = {
+  "Meta Ads": {
+    sub: "Facebook / Instagram", logoBg: "#1877F2",
     logo: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
         <path d="M17 2h-3a5 5 0 00-5 5v3H6v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/>
       </svg>
     ),
   },
-  {
-    name: "TikTok Ads", sub: "TikTok For Business", min: 1.8, max: 2.5,
-    logoBg: "#010101",
+  "TikTok Ads": {
+    sub: "TikTok For Business", logoBg: "#010101",
     logo: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
         <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V9.07a8.16 8.16 0 004.77 1.52V7.14a4.85 4.85 0 01-1-.45z"/>
       </svg>
     ),
   },
-  {
-    name: "Google Shopping", sub: "Performance Max", min: 3.0, max: 5.0,
-    logoBg: "#fff",
+  "Google Shopping": {
+    sub: "Performance Max", logoBg: "#fff",
     logo: (
       <svg width="16" height="16" viewBox="0 0 24 24">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -379,34 +383,26 @@ const AD_PLATFORMS = [
       </svg>
     ),
   },
-];
+};
+const AD_PLATFORMS = AD_PLATFORM_RANGES.map((r) => ({ ...r, ...AD_PLATFORM_DISPLAY[r.name] }));
 
+// Habillage (couleur/icône/hint) d'un statut plateforme. Le LABEL vient de
+// platformLabel (lib/roas.js) — source unique, jamais re-décidé ici.
+const PLATFORM_STYLE = {
+  Viable:    { color: "#008060", bg: "#F1F8F5", border: "#00806033", icon: "✓", hint: "Votre seuil est sous le ROAS moyen — cette plateforme peut couvrir vos coûts." },
+  Limite:    { color: "#B98900", bg: "#FFF9EC", border: "#B9890033", icon: "⚠", hint: "Votre seuil est dans la fourchette — les campagnes devront être bien optimisées." },
+  Difficile: { color: "#D72C0D", bg: "#FFF4F4", border: "#D72C0D33", icon: "✗", hint: "Votre seuil dépasse le ROAS habituel de cette plateforme." },
+};
 function platformStatus(roas, min, max) {
-  // roas < min  → platform typically exceeds break-even → viable (green)
-  // roas ≤ max  → break-even is within platform range   → limit  (orange)
-  // roas > max  → platform typically can't reach BE      → hard   (red)
-  if (roas < min) return {
-    color: "#008060", bg: "#F1F8F5", border: "#00806033",
-    icon: "✓", label: "Viable",
-    hint: "Votre seuil est sous le ROAS moyen — cette plateforme peut couvrir vos coûts.",
-  };
-  if (roas <= max) return {
-    color: "#B98900", bg: "#FFF9EC", border: "#B9890033",
-    icon: "⚠", label: "Limite",
-    hint: "Votre seuil est dans la fourchette — les campagnes devront être bien optimisées.",
-  };
-  return {
-    color: "#D72C0D", bg: "#FFF4F4", border: "#D72C0D33",
-    icon: "✗", label: "Difficile",
-    hint: "Votre seuil dépasse le ROAS habituel de cette plateforme.",
-  };
+  const label = platformLabel(roas, min, max);
+  return { label, ...PLATFORM_STYLE[label] };
 }
 
 // ROAS viability tiers based on real ad platform benchmarks.
 // Returns non-null message only for the inviable (>10x) case — the existing
 // paliers (Viable / Difficile) below 10x are handled separately and unchanged.
 function getRoasViability(roas) {
-  if (roas > 10) return {
+  if (roasInviable(roas)) return { // seuil > 10x : source unique lib/roas.js
     color: "#B98900", bg: "#FFF9EC", border: "#B98900",
     message: "ROAS requis irréaliste : aucune plateforme publicitaire ne permet d'atteindre ce seuil de manière durable. Votre seul levier de croissance est l'acquisition organique (SEO, réseaux sociaux, bouche-à-oreille).",
   };
@@ -444,17 +440,9 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
     : "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
 
   const cpaColor = available < 5 ? "#D72C0D" : available <= 15 ? "#B98900" : "#008060";
-  // Le conseil est dérivé du MÊME verdict que le tableau de viabilité ci-dessus
-  // (platformStatus) et de getRoasViability — jamais une phrase rassurante figée.
-  // Règle : si aucune plateforme n'est Viable (ou ROAS irréaliste), on oriente vers
-  // l'organique sans nommer de plateforme ; sinon on ne cite QUE les plateformes
-  // Viable/Limite. Jamais une plateforme marquée « Difficile ».
-  const roasInviable    = getRoasViability(roas).message != null; // ROAS > 10x
-  const viablePlatforms = AD_PLATFORMS.filter(p => platformStatus(roas, p.min, p.max).label === "Viable");
-  const citables        = AD_PLATFORMS.filter(p => platformStatus(roas, p.min, p.max).label !== "Difficile");
-  const cpaAdvice = (roasInviable || viablePlatforms.length === 0)
-    ? "Aucune plateforme publicitaire n'est viable à ce ROAS — privilégiez l'acquisition organique (UGC, SEO, réseaux sociaux) plutôt que la publicité payante."
-    : `CPA exploitable sur ${citables.map(p => p.name).join(", ")} — concentrez-y votre budget et optimisez vos créatives.`;
+  // Conseil dérivé du verdict agrégé (lib/roas.js) : organique si aucune plateforme
+  // Viable/ROAS irréaliste, sinon ne cite que les plateformes Viable/Limite.
+  const cpaAdvice = computeCpaAdvice(roas);
 
   return (
     <div style={{ marginTop: "28px", display: "flex", flexDirection: "column", gap: "12px", animation: "fsu 0.4s ease-out" }}>
@@ -1029,7 +1017,7 @@ DONNÉES DU CALCUL :
     })()} | TVA import : ${formatEur(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(m.shipping)} | Coût rendu net : ${formatEur(m.coutRendu)}
 - ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(m.stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(m.shopifyCost)} | Retours : ${retours} % → ${formatEur(m.retoursCost)} | Ads : ${ads} % → ${formatEur(m.adsCost)}
 - Emballage : ${formatEur(coutEmballage)} | Frais retour : ${formatEur(fraisRetour)}
-- Marge apparente : ${formatPct(m.margeApparente)} % | Marge brute : ${formatPct(m.margeBrutePercent)} % (${formatEur(m.margeBrute)}) | Marge nette : ${formatPct(m.margeNettePercent)} % (${formatEur(m.margeNette)}/vente)
+- ${buildMargeLine(m)}
 
 ÉTAT ACTUEL : Marge nette = ${formatEur(scenCurrent.margeNette)} / ${formatPct(scenCurrent.margeNettePercent)} % | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
 
