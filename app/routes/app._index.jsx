@@ -12,7 +12,7 @@ import {
 } from "../lib/engine.js";
 import {
   AD_PLATFORM_RANGES, platformLabel, roasInviable,
-  computeCpaAdvice,
+  computeCpaAdvice, computeCpaColor,
 } from "../lib/roas.js";
 import { buildMargeLine } from "../lib/aiPayload.js";
 
@@ -430,6 +430,9 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
     </div>
   );
 
+  // Break-even ROAS : numérateur TTC (valeur de conversion remontée par le pixel
+  // Meta/Shopify en B2C FR) / marge HT. Si le tracking du marchand remonte du HT,
+  // le numérateur devrait alors être HT. Voir l'hypothèse détaillée dans lib/roas.js.
   const roas      = prixVente / available;
   const roasColor = roas < 2 ? "#008060" : roas < 4 ? "#B98900" : "#D72C0D";
   const roasLabel = roas < 2 ? "Facile à atteindre" : roas < 4 ? "Atteignable" : "Difficile";
@@ -439,7 +442,11 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
     ? "Ce seuil est atteignable avec une campagne Meta bien optimisée."
     : "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
 
-  const cpaColor = available < 5 ? "#D72C0D" : available <= 15 ? "#B98900" : "#008060";
+  // Couleur CPA = ATTEIGNABILITÉ (agrégée sur les 3 plateformes, cohérente avec le
+  // conseil et le tableau), plus « marge € disponible ». Le montant € reste affiché
+  // en chiffre à côté → couleur = atteignable, chiffre = budget max. Source unique :
+  // lib/roas.js (vert ≥1 Viable / orange 0 Viable+≥1 Limite / rouge 3×Difficile|irréaliste).
+  const cpaColor = computeCpaColor(roas);
   // Conseil dérivé du verdict agrégé (lib/roas.js) : organique si aucune plateforme
   // Viable/ROAS irréaliste, sinon ne cite que les plateformes Viable/Limite.
   const cpaAdvice = computeCpaAdvice(roas);
@@ -465,6 +472,9 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6", marginBottom: "14px", fontStyle: "italic" }}>"{roasPhrase}"</div>
         <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
           Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{formatNum(roas)} € de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
+        </div>
+        <div style={{ marginTop: "8px", fontSize: "11px", color: "#8C9196", lineHeight: "1.5" }}>
+          Calcul basé sur une valeur de conversion TTC (standard B2C FR).
         </div>
         {(() => { const v = getRoasViability(roas); return v.message ? (
           <div style={{ marginTop: "14px", padding: "12px 16px", borderRadius: "8px", background: v.bg, border: `1px solid ${v.border}`, display: "flex", gap: "10px", alignItems: "flex-start" }}>
