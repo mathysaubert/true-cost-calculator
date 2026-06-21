@@ -34,6 +34,13 @@ export function platformLabel(roas, min, max) {
   return "Difficile";
 }
 
+// Statut de CHAQUE plateforme à un ROAS donné — le tableau `statuses` unique dont
+// dérivent couleur CPA, conseil CPA et phrase ROAS. Calculé une seule fois, zéro
+// recalcul dupliqué : un seul endroit décide « quelle plateforme est dans quel état ».
+function platformStatuses(roas) {
+  return AD_PLATFORM_RANGES.map((p) => ({ name: p.name, label: platformLabel(roas, p.min, p.max) }));
+}
+
 // Verdict agrégé sur les trois plateformes — la seule règle d'atteignabilité.
 //   "facile"    : au moins une plateforme Viable.
 //   "tendu"     : zéro Viable mais au moins une Limite.
@@ -41,7 +48,7 @@ export function platformLabel(roas, min, max) {
 // Couleur CPA, phrase ROAS et gate organique du conseil en dérivent tous.
 export function roasReachability(roas) {
   if (roasInviable(roas)) return "difficile";
-  const labels = AD_PLATFORM_RANGES.map((p) => platformLabel(roas, p.min, p.max));
+  const labels = platformStatuses(roas).map((s) => s.label);
   if (labels.every((l) => l === "Difficile")) return "difficile";
   if (labels.some((l) => l === "Viable")) return "facile";
   return "tendu";
@@ -63,11 +70,12 @@ export function computeCpaColor(roas) {
 // Si aucune plateforme n'est Viable (ou ROAS irréaliste) → organique, zéro nom.
 // Sinon → ne cite QUE les plateformes Viable/Limite. Jamais une « Difficile ».
 export function computeCpaAdvice(roas) {
-  const viables  = AD_PLATFORM_RANGES.filter((p) => platformLabel(roas, p.min, p.max) === "Viable");
-  const citables = AD_PLATFORM_RANGES.filter((p) => platformLabel(roas, p.min, p.max) !== "Difficile");
-  return (roasInviable(roas) || viables.length === 0)
+  const statuses = platformStatuses(roas);
+  const anyViable = statuses.some((s) => s.label === "Viable");
+  const citables  = statuses.filter((s) => s.label !== "Difficile");
+  return (roasInviable(roas) || !anyViable)
     ? "Aucune plateforme publicitaire n'est viable à ce ROAS — privilégiez l'acquisition organique (UGC, SEO, réseaux sociaux) plutôt que la publicité payante."
-    : `CPA exploitable sur ${citables.map((p) => p.name).join(", ")} — concentrez-y votre budget et optimisez vos créatives.`;
+    : `CPA exploitable sur ${citables.map((s) => s.name).join(", ")} — concentrez-y votre budget et optimisez vos créatives.`;
 }
 
 // Phrase d'ambiance sous le chiffre ROAS — branchée sur le verdict agrégé, JAMAIS
