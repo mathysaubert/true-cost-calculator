@@ -12,7 +12,7 @@ import {
 } from "../lib/engine.js";
 import {
   AD_PLATFORM_RANGES, platformLabel, roasInviable,
-  computeCpaAdvice, computeCpaColor,
+  computeCpaAdvice, computeCpaColor, computeRoasPhrase,
 } from "../lib/roas.js";
 import { buildMargeLine } from "../lib/aiPayload.js";
 
@@ -436,11 +436,9 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
   const roas      = prixVente / available;
   const roasColor = roas < 2 ? "#008060" : roas < 4 ? "#B98900" : "#D72C0D";
   const roasLabel = roas < 2 ? "Facile à atteindre" : roas < 4 ? "Atteignable" : "Difficile";
-  const roasPhrase = roas < 2
-    ? "Ce seuil est très réaliste — même une campagne basique peut l'atteindre."
-    : roas < 4
-    ? "Ce seuil est atteignable avec une campagne Meta bien optimisée."
-    : "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
+  // Phrase branchée sur le verdict agrégé (lib/roas.js), sans nommer de plateforme —
+  // l'ancienne version citait « Meta » même quand Meta était Difficile.
+  const roasPhrase = computeRoasPhrase(roas);
 
   // Couleur CPA = ATTEIGNABILITÉ (agrégée sur les 3 plateformes, cohérente avec le
   // conseil et le tableau), plus « marge € disponible ». Le montant € reste affiché

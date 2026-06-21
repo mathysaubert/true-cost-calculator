@@ -10,7 +10,7 @@
 
 import {
   AD_PLATFORM_RANGES, platformLabel, roasInviable,
-  computeCpaAdvice, computeCpaColor,
+  computeCpaAdvice, computeCpaColor, computeRoasPhrase,
 } from "../app/lib/roas.js";
 import { buildMargeLine } from "../app/lib/aiPayload.js";
 import { computeMargin, formatEur } from "../app/lib/engine.js";
@@ -41,6 +41,20 @@ console.log("\n── BUG 2 : cpaAdvice ne nomme aucune plateforme Difficile (ba
     }
   }
   ok(offenders === 0, `aucun conseil ne nomme une plateforme Difficile sur ${ROAS_SWEEP.length} ROAS testés`);
+
+  // Même garde-fou pour la phrase d'ambiance ROAS (ex-« Meta » figé).
+  let phraseOffenders = 0;
+  for (const roas of ROAS_SWEEP) {
+    const phrase = computeRoasPhrase(roas);
+    for (const p of difficileAt(roas)) {
+      if (phrase.includes(p.name) || phrase.split(" ").includes(p.name.split(" ")[0])) {
+        phraseOffenders++;
+        console.log(`  ✗ ROAS ${roas}: roasPhrase nomme « ${p.name} » marquée Difficile → "${phrase}"`);
+      }
+    }
+  }
+  ok(phraseOffenders === 0, `roasPhrase ne nomme jamais une plateforme Difficile sur ${ROAS_SWEEP.length} ROAS testés`);
+
   // Couverture : le balayage traverse bien les trois verdicts.
   const seen = new Set();
   for (const roas of ROAS_SWEEP) for (const l of labelsAt(roas)) seen.add(l);
