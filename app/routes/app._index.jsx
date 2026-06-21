@@ -12,7 +12,7 @@ import {
 } from "../lib/engine.js";
 import {
   AD_PLATFORM_RANGES, platformLabel, roasInviable,
-  computeCpaAdvice, computeCpaColor, computeRoasPhrase,
+  computeCpaAdvice, computeCpaColor, computeRoasPhrase, computeRoasLabel,
 } from "../lib/roas.js";
 import { buildMargeLine } from "../lib/aiPayload.js";
 
@@ -434,8 +434,12 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
   // Meta/Shopify en B2C FR) / marge HT. Si le tracking du marchand remonte du HT,
   // le numérateur devrait alors être HT. Voir l'hypothèse détaillée dans lib/roas.js.
   const roas      = prixVente / available;
-  const roasColor = roas < 2 ? "#008060" : roas < 4 ? "#B98900" : "#D72C0D";
-  const roasLabel = roas < 2 ? "Facile à atteindre" : roas < 4 ? "Atteignable" : "Difficile";
+  // Couleur + label du grand chiffre branchés sur le MÊME verdict agrégé que le
+  // tableau, la phrase et la pastille CPA (lib/roas.js) — fini les seuils roas<2/<4
+  // propres qui contredisaient la ventilation (ex. titre 🔴 « Difficile » à ROAS 4,5
+  // alors que Google y était encore « Limite »). Couleur partagée avec cpaColor.
+  const roasColor = computeCpaColor(roas);
+  const roasLabel = computeRoasLabel(roas);
   // Phrase branchée sur le verdict agrégé (lib/roas.js), sans nommer de plateforme —
   // l'ancienne version citait « Meta » même quand Meta était Difficile.
   const roasPhrase = computeRoasPhrase(roas);

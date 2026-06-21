@@ -88,3 +88,13 @@ export function computeRoasPhrase(roas) {
     default:       return "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
   }
 }
+
+// Label du grand chiffre ROAS (haut de carte) — même verdict agrégé que la couleur,
+// la phrase et le tableau. Couleur du chiffre = computeCpaColor (mapping partagé).
+export function computeRoasLabel(roas) {
+  switch (roasReachability(roas)) {
+    case "facile": return "Atteignable";
+    case "tendu":  return "Tendu";
+    default:       return "Difficile";
+  }
+}

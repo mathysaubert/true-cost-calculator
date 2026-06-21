@@ -9,8 +9,8 @@
 // ════════════════════════════════════════════════════════════════════════════════
 
 import {
-  AD_PLATFORM_RANGES, platformLabel, roasInviable,
-  computeCpaAdvice, computeCpaColor, computeRoasPhrase,
+  AD_PLATFORM_RANGES, platformLabel, roasInviable, roasReachability,
+  computeCpaAdvice, computeCpaColor, computeRoasPhrase, computeRoasLabel,
 } from "../app/lib/roas.js";
 import { buildMargeLine } from "../app/lib/aiPayload.js";
 import { computeMargin, formatEur } from "../app/lib/engine.js";
@@ -119,6 +119,32 @@ console.log("\n── cpaColor : assert croisé couleur ⟺ conseil (balayage RO
   }
   ok(v1 === 0, "vert ⟺ le conseil nomme ≥ 1 plateforme (donc non-vert ⟺ organique)");
   ok(v2 === 0, "rouge ⟺ 3× Difficile ou ROAS irréaliste");
+}
+
+// ── 4 surfaces verrouillées sur UN verdict : couleur chiffre = cpaColor, et
+//    label/phrase/couleur dérivent tous de la même reachability ──────────────
+console.log("\n── Cohérence des 4 surfaces ROAS (couleur chiffre / label / phrase / cpaColor) ──");
+{
+  const colorToReach = { "#008060": "facile", "#B98900": "tendu", "#D72C0D": "difficile" };
+  const labelToReach = { "Atteignable": "facile", "Tendu": "tendu", "Difficile": "difficile" };
+  const phraseToReach = (p) => p.includes("atteignable") ? "facile" : p.includes("tendu") ? "tendu" : "difficile";
+
+  let diverge = 0;
+  for (const roas of ROAS_SWEEP) {
+    const ref = roasReachability(roas);
+    const surfaces = {
+      "couleur chiffre (=cpaColor)": colorToReach[computeCpaColor(roas)],
+      "label chiffre":              labelToReach[computeRoasLabel(roas)],
+      "phrase":                     phraseToReach(computeRoasPhrase(roas)),
+    };
+    for (const [nom, val] of Object.entries(surfaces)) {
+      if (val !== ref) {
+        diverge++;
+        console.log(`  ✗ ROAS ${roas}: ${nom}=${val} ≠ verdict ${ref}`);
+      }
+    }
+  }
+  ok(diverge === 0, "couleur chiffre, label et phrase dérivent tous du même verdict agrégé");
 }
 
 // ── Table des bascules (lecture humaine) ─────────────────────────────────────
