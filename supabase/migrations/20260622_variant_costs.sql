@@ -29,6 +29,8 @@ ALTER TABLE public.variant_costs ENABLE ROW LEVEL SECURITY;
 
 -- Deny-all : tout accès se fait côté serveur via la service role (qui bypass RLS),
 -- cohérent avec les autres tables (cf. 20260611_rls_policies.sql).
+-- DROP IF EXISTS d'abord : CREATE POLICY n'est pas idempotent → rend le fichier ré-exécutable.
+DROP POLICY IF EXISTS "deny_public_access" ON public.variant_costs;
 CREATE POLICY "deny_public_access" ON public.variant_costs
   FOR ALL USING (false) WITH CHECK (false);
 
