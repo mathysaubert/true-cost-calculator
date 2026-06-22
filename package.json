@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs",
+    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs && node tests/lot5_variant_costs.mjs",
     "vercel-build": "npm test && prisma generate && prisma migrate deploy && react-router build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",

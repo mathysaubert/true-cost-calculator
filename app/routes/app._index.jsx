@@ -15,6 +15,11 @@ import {
   computeCpaAdvice, computeCpaColor, computeRoasPhrase, computeRoasLabel,
 } from "../lib/roas.js";
 import { buildMargeLine } from "../lib/aiPayload.js";
+import {
+  PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS,
+  shopifyTypeToCategory, estimateVariantCost, validateCostRow,
+  parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
+} from "../lib/variantCosts.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -682,7 +687,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("shop_plans").select("vat_regime, shipping_model").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country").eq("shop_domain", session.shop).maybeSingle(),
   ]);
 
   const monthlyCount = countResult.status === "fulfilled"
@@ -710,8 +715,11 @@ export const loader = async ({ request }) => {
   const shippingModel = planResult.status === "fulfilled"
     ? (planResult.value.data?.shipping_model ?? "dropshipping")
     : "dropshipping";
+  const defaultImportCountry = planResult.status === "fulfilled"
+    ? (planResult.value.data?.default_import_country ?? "Chine")
+    : "Chine";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel };
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -807,6 +815,135 @@ export const action = async ({ request }) => {
     return { success: true };
   }
 
+  // ── Brique A : pays d'import par défaut de la boutique ────────────────────
+  if (body._action === "set_default_country") {
+    if (!PAYS_KEYS.includes(body.default_import_country)) return { success: false, error: "Pays d'import invalide." };
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, default_import_country: body.default_import_country, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain" }
+    );
+    return { success: true };
+  }
+
+  // ── Brique A : liste des variantes + coûts (auto-estime et persiste les manquants) ──
+  if (body._action === "costs_list") {
+    const { data: plan } = await supabase.from("shop_plans")
+      .select("vat_regime, shipping_model, default_import_country")
+      .eq("shop_domain", session.shop).maybeSingle();
+    const defaultCountry = plan?.default_import_country ?? "Chine";
+    const vatRegime      = plan?.vat_regime ?? "assujetti";
+    const shippingModel  = plan?.shipping_model ?? "dropshipping";
+
+    // Toutes les variantes actives — variants(first:100) couvre la limite Shopify
+    // (100 variantes/produit) ; variantsCapped signale un dépassement éventuel.
+    const variants = [];
+    let cursor = null, hasNext = true, pages = 0, variantsCapped = false;
+    const startTime = Date.now();
+    while (hasNext && pages < 20) {
+      if (Date.now() - startTime > 8000) { console.error("[Costs] time budget exceeded"); break; }
+      pages++;
+      try {
+        const resp = await admin.graphql(
+          `query CostVariants($cursor: String) {
+            products(first: 50, after: $cursor, query: "status:active") {
+              edges { node {
+                id title productType
+                category { name }
+                variants(first: 100) {
+                  edges { node { id title price inventoryItem { unitCost { amount } } } }
+                  pageInfo { hasNextPage }
+                }
+              } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }`,
+          { variables: { cursor } }
+        );
+        const json = await resp.json();
+        const page = json.data?.products;
+        if (!page) break;
+        for (const { node } of page.edges) {
+          if (node.variants?.pageInfo?.hasNextPage) variantsCapped = true;
+          for (const ve of node.variants.edges) {
+            const v = ve.node;
+            variants.push({
+              variant_id: v.id, product_id: node.id,
+              product_title: node.title, variant_title: v.title,
+              price: parseFloat(v.price ?? "0"),
+              unitCost: v.inventoryItem?.unitCost?.amount,
+              categoryName: node.category?.name, productType: node.productType,
+            });
+          }
+        }
+        hasNext = page.pageInfo.hasNextPage;
+        cursor = page.pageInfo.endCursor;
+      } catch (e) { console.error("[Costs] variants query:", e?.message); break; }
+    }
+
+    const { data: stored } = await supabase.from("variant_costs").select("*").eq("shop_domain", session.shop);
+    const storedMap = new Map((stored ?? []).map(r => [r.variant_id, r]));
+
+    // Variantes sans coûts → estimation persistée en source='estimated' (insert-only :
+    // ignoreDuplicates ne réécrit jamais une ligne confirmed/imported existante).
+    const toInsert = [];
+    const costs = variants.map(v => {
+      const existing = storedMap.get(v.variant_id);
+      const display = { variant_id: v.variant_id, product_id: v.product_id, product_title: v.product_title, variant_title: v.variant_title, price: v.price };
+      if (existing) return { ...display, ...existing };
+      const est = estimateVariantCost({
+        unitCost: v.unitCost, categoryName: v.categoryName, productType: v.productType,
+        title: v.product_title, defaultCountry, vatRegime, shippingModel,
+      });
+      toInsert.push({ shop_domain: session.shop, variant_id: v.variant_id, product_id: v.product_id, ...est, updated_at: new Date().toISOString() });
+      return { ...display, ...est };
+    });
+    if (toInsert.length) {
+      await supabase.from("variant_costs").upsert(toInsert, { onConflict: "shop_domain,variant_id", ignoreDuplicates: true });
+    }
+
+    return { success: true, costs, defaultCountry, variantsCapped };
+  }
+
+  // ── Brique A : enregistrer des coûts édités → source='confirmed' ───────────
+  if (body._action === "costs_save") {
+    const inputRows = Array.isArray(body.rows) ? body.rows : [];
+    if (!inputRows.length) return { success: false, error: "Aucune ligne à enregistrer." };
+    const upserts = [], errors = [];
+    for (const row of inputRows) {
+      if (!row.variant_id) { errors.push({ variant_id: null, messages: ["variant_id manquant"] }); continue; }
+      const { value, errors: vErrors } = validateCostRow(row);
+      if (vErrors.length) { errors.push({ variant_id: row.variant_id, messages: vErrors }); continue; }
+      upserts.push({ shop_domain: session.shop, variant_id: row.variant_id, product_id: row.product_id ?? null, ...value, source: "confirmed", updated_at: new Date().toISOString() });
+    }
+    if (upserts.length) {
+      const { error } = await supabase.from("variant_costs").upsert(upserts, { onConflict: "shop_domain,variant_id" });
+      if (error) return { success: false, error: error.message };
+    }
+    return { success: true, saved: upserts.length, errors };
+  }
+
+  // ── Brique A : "Tout confirmer" — estimées → confirmées (choix actif) ─────
+  if (body._action === "costs_confirm_all") {
+    const { error } = await supabase.from("variant_costs")
+      .update({ source: "confirmed", updated_at: new Date().toISOString() })
+      .eq("shop_domain", session.shop).eq("source", "estimated");
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  }
+
+  // ── Brique A : import CSV → source='imported', erreurs ligne par ligne ────
+  if (body._action === "costs_import_csv") {
+    const { rows, errors } = parseCostsCsv(body.csv ?? "");
+    const upserts = rows.map(r => ({ shop_domain: session.shop, variant_id: r.variant_id, ...r.value, source: "imported", updated_at: new Date().toISOString() }));
+    let saved = 0;
+    if (upserts.length) {
+      const { error } = await supabase.from("variant_costs").upsert(upserts, { onConflict: "shop_domain,variant_id" });
+      if (error) return { success: false, error: error.message };
+      saved = upserts.length;
+    }
+    return { success: true, saved, errors };
+  }
+
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
     if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
@@ -889,28 +1026,8 @@ export const action = async ({ request }) => {
       }
     }
 
-    // Maps a text string to an app category via case-insensitive keyword matching.
-    // Priority order when called: Shopify Standard Category name → productType → product title.
-    // Returns null on no match → caller falls back to "Autre" with visual indicator.
-    const matchCategory = (text) => {
-      if (!text) return null;
-      const t = text.toLowerCase().trim();
-      if (!t) return null;
-      if (/textile|shirt|t-shirt|tee|vêtement|clothing|robe|pantalon|chemise|jean|lingerie|mode|fashion/.test(t)) return "Textile";
-      if (/electro|électro|tech|phone|ordinateur|computer|gadget|audio|video|gaming|camera/.test(t)) return "Électronique";
-      if (/cosmeti|cosmét|beauty|beauté|skincare|soin|parfum|makeup|maquillage/.test(t)) return "Cosmétique";
-      if (/sport|fitness|gym|yoga|outdoor|running|cycling|pilates/.test(t)) return "Sport";
-      if (/aliment|food|nutrition|supplement|snack|boisson|drink|épicerie/.test(t)) return "Alimentation";
-      if (/maroquin|leather|wallet|portefeuille|bagage|luggage/.test(t)) return "Maroquinerie";
-      if (/jouet|toy|enfant|kid|bébé|baby/.test(t)) return "Jouets";
-      if (/mobil|furniture|meuble|déco|deco|maison|jardin|garden/.test(t)) return "Mobilier";
-      if (/livre|book|roman|magazine/.test(t)) return "Livres";
-      if (/accessoir|accessory|bijou|jewelry|jewel|montre|watch|bracelet|collier|bague/.test(t)) return "Accessoires";
-      return null;
-    };
-    const shopifyTypeToCategory = (categoryName, productType, title) =>
-      matchCategory(categoryName) ?? matchCategory(productType) ?? matchCategory(title);
-
+    // Catégorisation auto : shopifyTypeToCategory importé de lib/variantCosts.js
+    // (source unique, partagée avec la saisie des coûts — plus de copie locale).
     const products = allProducts
       .map(node => {
         const variant = node.variants.edges[0]?.node;
@@ -1171,10 +1288,189 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
   return { success: true };
 };
 
+// ── Brique A : Suivi des coûts (saisie par variante) ──────────────────────────
+const SOURCE_PILL = {
+  estimated: { label: "Estimé",   color: "#6D7175", bg: "#F1F2F4" },
+  confirmed: { label: "Confirmé", color: "#008060", bg: "#F1F8F5" },
+  imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
+};
+
+function CostTracker({ defaultImportCountry }) {
+  const listFetcher    = useFetcher();
+  const saveFetcher    = useFetcher();
+  const confirmFetcher = useFetcher();
+  const importFetcher  = useFetcher();
+  const countryFetcher = useFetcher();
+  const fileRef = useRef(null);
+
+  const [rows, setRows]       = useState(null);   // null = pas encore chargé
+  const [dirty, setDirty]     = useState(() => new Set());
+  const [country, setCountry] = useState(defaultImportCountry);
+  const [capped, setCapped]   = useState(false);
+
+  // Charge la liste à l'ouverture de l'onglet.
+  useEffect(() => {
+    listFetcher.submit({ _action: "costs_list" }, { method: "POST", encType: "application/json" });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (listFetcher.data?.costs) { setRows(listFetcher.data.costs); setDirty(new Set()); setCapped(!!listFetcher.data.variantsCapped); }
+  }, [listFetcher.data]);
+
+  // Recharge après une sauvegarde / confirmation / import réussis.
+  useEffect(() => { if (saveFetcher.data?.success)    reload(); }, [saveFetcher.data]);    // eslint-disable-line
+  useEffect(() => { if (confirmFetcher.data?.success) reload(); }, [confirmFetcher.data]); // eslint-disable-line
+  useEffect(() => { if (importFetcher.data?.success)  reload(); }, [importFetcher.data]);  // eslint-disable-line
+
+  function reload() { listFetcher.submit({ _action: "costs_list" }, { method: "POST", encType: "application/json" }); }
+
+  function editRow(variantId, field, value) {
+    setRows(prev => prev.map(r => r.variant_id === variantId ? { ...r, [field]: value } : r));
+    setDirty(prev => new Set(prev).add(variantId));
+  }
+
+  function saveDirty() {
+    const toSave = rows.filter(r => dirty.has(r.variant_id)).map(r => ({
+      variant_id: r.variant_id, product_id: r.product_id,
+      prix_achat: r.prix_achat, port_entrant: r.port_entrant, qty_par_lot: r.qty_par_lot,
+      cout_emballage: r.cout_emballage, vat_regime: r.vat_regime, shipping_model: r.shipping_model,
+      pays_import: r.pays_import, categorie: r.categorie,
+    }));
+    if (toSave.length) saveFetcher.submit({ _action: "costs_save", rows: toSave }, { method: "POST", encType: "application/json" });
+  }
+
+  function exportTemplate() {
+    if (!rows) return;
+    const csv = buildCostsCsv(rows.map(r => Object.fromEntries(CSV_COLUMNS.map(c => [c, r[c]]))));
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "couts-variantes.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function onImportFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importFetcher.submit({ _action: "costs_import_csv", csv: String(reader.result) }, { method: "POST", encType: "application/json" });
+    reader.readAsText(file);
+    e.target.value = ""; // permet de ré-importer le même fichier
+  }
+
+  function changeCountry(next) {
+    setCountry(next);
+    countryFetcher.submit({ _action: "set_default_country", default_import_country: next }, { method: "POST", encType: "application/json" });
+  }
+
+  const loading = rows === null;
+  const estimatedCount = rows ? rows.filter(r => r.source === "estimated").length : 0;
+  const importErrors = importFetcher.data?.errors ?? [];
+  const saveErrors   = saveFetcher.data?.errors ?? [];
+
+  const inputStyle = { width: "100%", padding: "5px 7px", border: "1px solid #C9CCCF", borderRadius: "5px", fontSize: "12px", fontFamily: "inherit", boxSizing: "border-box" };
+  const th = { padding: "8px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "nowrap" };
+
+  return (
+    <div>
+      <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
+        Renseignez une fois, par variante, les coûts que Shopify ne connaît pas. Ils alimenteront le suivi de marge réelle sur vos vraies commandes.
+        Les valeurs <strong>estimées</strong> sont pré-remplies (coût Shopify, catégorie, réglages boutique) — toute marge qui en dépend sera signalée « coûts estimés » tant que vous ne les avez pas confirmées.
+      </div>
+
+      {/* Réglage boutique : pays d'import par défaut */}
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Pays d'import par défaut</span>
+        <select value={country} onChange={e => changeCountry(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+          {PAYS_KEYS.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <span style={{ fontSize: "11px", color: "#6D7175" }}>Les nouvelles variantes en héritent ; chaque variante reste surchargeable.</span>
+      </div>
+
+      {/* Barre d'actions */}
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
+        <button onClick={exportTemplate} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↓ Exporter le modèle CSV</button>
+        <button onClick={() => fileRef.current?.click()} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↑ Importer un CSV</button>
+        <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} style={{ display: "none" }} />
+        <button onClick={saveDirty} disabled={loading || dirty.size === 0} style={{ padding: "7px 14px", background: dirty.size ? "#008060" : "#E4E5E7", color: dirty.size ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: dirty.size ? "pointer" : "default", fontFamily: "inherit" }}>Enregistrer les modifications{dirty.size ? ` (${dirty.size})` : ""}</button>
+        <button onClick={() => confirmFetcher.submit({ _action: "costs_confirm_all" }, { method: "POST", encType: "application/json" })} disabled={loading || estimatedCount === 0} style={{ padding: "7px 14px", background: "#fff", color: estimatedCount ? "#B98900" : "#6D7175", border: `1px solid ${estimatedCount ? "#B98900" : "#C9CCCF"}`, borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: estimatedCount ? "pointer" : "default", fontFamily: "inherit" }}>Tout confirmer{estimatedCount ? ` (${estimatedCount} estimées)` : ""}</button>
+      </div>
+
+      {capped && <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#B98900", marginBottom: "12px" }}>Certains produits ont plus de 100 variantes : seules les 100 premières sont listées.</div>}
+
+      {/* Erreurs d'import / sauvegarde, ligne par ligne (jamais avalées) */}
+      {importErrors.length > 0 && (
+        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
+          <strong style={{ color: "#D72C0D" }}>Import : {importErrors.length} ligne(s) rejetée(s)</strong>
+          <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>
+            {importErrors.slice(0, 20).map((e, i) => <li key={i}>Ligne {e.line} : {e.messages.join(" · ")}</li>)}
+          </ul>
+          {importFetcher.data?.saved > 0 && <div style={{ marginTop: "6px", color: "#008060" }}>{importFetcher.data.saved} ligne(s) importée(s) avec succès.</div>}
+        </div>
+      )}
+      {saveErrors.length > 0 && (
+        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
+          <strong style={{ color: "#D72C0D" }}>{saveErrors.length} ligne(s) non enregistrée(s)</strong>
+          <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>{saveErrors.slice(0, 20).map((e, i) => <li key={i}>{e.variant_id ?? "?"} : {e.messages.join(" · ")}</li>)}</ul>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Chargement des variantes…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Aucune variante active trouvée dans la boutique.</div>
+      ) : (
+        <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "10px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "1000px" }}>
+            <thead>
+              <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
+                <th style={th}>Produit / Variante</th>
+                <th style={th}>Prix achat €</th>
+                <th style={th}>Port lot €</th>
+                <th style={th}>Qté/lot</th>
+                <th style={th}>Emballage €</th>
+                <th style={th}>TVA</th>
+                <th style={th}>Logistique</th>
+                <th style={th}>Pays</th>
+                <th style={th}>Catégorie</th>
+                <th style={th}>État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const pill = SOURCE_PILL[r.source] ?? SOURCE_PILL.estimated;
+                return (
+                  <tr key={r.variant_id} style={{ borderBottom: "1px solid #F1F2F4" }}>
+                    <td style={{ padding: "8px", fontSize: "12px", color: "#202223", maxWidth: "220px" }}>
+                      <div style={{ fontWeight: "600" }}>{r.product_title}</div>
+                      {r.variant_title && r.variant_title !== "Default Title" && <div style={{ color: "#6D7175", fontSize: "11px" }}>{r.variant_title}</div>}
+                    </td>
+                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.prix_achat} onChange={e => editRow(r.variant_id, "prix_achat", e.target.value)} style={inputStyle} /></td>
+                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.port_entrant} onChange={e => editRow(r.variant_id, "port_entrant", e.target.value)} style={inputStyle} /></td>
+                    <td style={{ padding: "6px", width: "70px" }}><input type="number" step="1" min="1" value={r.qty_par_lot} onChange={e => editRow(r.variant_id, "qty_par_lot", e.target.value)} style={inputStyle} /></td>
+                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.cout_emballage} onChange={e => editRow(r.variant_id, "cout_emballage", e.target.value)} style={inputStyle} /></td>
+                    <td style={{ padding: "6px" }}><select value={r.vat_regime} onChange={e => editRow(r.variant_id, "vat_regime", e.target.value)} style={inputStyle}>{VAT_REGIMES.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
+                    <td style={{ padding: "6px" }}><select value={r.shipping_model} onChange={e => editRow(r.variant_id, "shipping_model", e.target.value)} style={inputStyle}>{SHIPPING_MODELS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
+                    <td style={{ padding: "6px" }}><select value={r.pays_import} onChange={e => editRow(r.variant_id, "pays_import", e.target.value)} style={inputStyle}>{PAYS_KEYS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
+                    <td style={{ padding: "6px" }}><select value={r.categorie} onChange={e => editRow(r.variant_id, "categorie", e.target.value)} style={inputStyle}>{CATEGORIE_KEYS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
+                    <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{dirty.has(r.variant_id) ? "Modifié" : pill.label}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry } = useLoaderData();
 
   const saveFetcher          = useFetcher();
   const aiFetcher            = useFetcher();
@@ -1565,6 +1861,7 @@ export default function Index() {
         activeTab === "history"    ? "Historique de vos calculs" :
         activeTab === "alerts"     ? "Alertes de marge" :
         activeTab === "audit"      ? "Audit Catalogue" :
+        activeTab === "costs"      ? "Suivi des coûts" :
         "Calculateur de marge"
       }>
 
@@ -1576,6 +1873,7 @@ export default function Index() {
             { id: "history",    label: isPro ? "Historique" : "Historique 🔒", badge: null },
             { id: "alerts",     label: "Alertes",     badge: null },
             { id: "audit",      label: "Audit Catalogue", badge: "EXPERT" },
+            { id: "costs",      label: "Suivi des coûts", badge: "BÊTA" },
           ].map(({ id, label, badge }) => (
             <button key={id} onClick={() => setActiveTab(id)}
               style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: activeTab === id ? `2px solid ${id === "audit" ? "#7C3AED" : "#008060"}` : "2px solid transparent", marginBottom: "-2px", cursor: "pointer", fontSize: "13px", fontWeight: activeTab === id ? "600" : "400", color: activeTab === id ? (id === "audit" ? "#7C3AED" : "#008060") : "#6D7175", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -2333,6 +2631,9 @@ export default function Index() {
             );
           })()
         )}
+
+        {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
+        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} />}
 
       </s-section>
 
