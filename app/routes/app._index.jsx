@@ -20,6 +20,7 @@ import {
   shopifyTypeToCategory, estimateVariantCost, validateCostRow,
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
 } from "../lib/variantCosts.js";
+import { parseBulkJsonl, buildOrderHistoryRows } from "../lib/orderIngest.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -944,6 +945,125 @@ export const action = async ({ request }) => {
     return { success: true, saved, errors };
   }
 
+  // ── Brique B : backfill commandes 30 j → order_margins (effets de bord isolés) ──
+  // engine.js n'est jamais réécrit : le mapping + l'appel computeMargin + l'agrégation
+  // vivent dans lib/orderIngest.js (pur). Ici : bulk launch/poll/download/upsert seulement.
+  if (body._action === "backfill_orders") {
+    // Fenêtre J-30 en UTC, ISO 8601 explicite (filtre Shopify created_at en UTC).
+    const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Réglages boutique (D2 fees + shopTaxesIncluded).
+    const { data: plan } = await supabase.from("shop_plans")
+      .select("shopify_fee_pct, processor_fee_pct, processor_fixed_fee")
+      .eq("shop_domain", session.shop).maybeSingle();
+    let shopTaxesIncluded = true;
+    try {
+      const sr = await admin.graphql(`{ shop { taxesIncluded } }`);
+      const sj = await sr.json();
+      if (typeof sj.data?.shop?.taxesIncluded === "boolean") shopTaxesIncluded = sj.data.shop.taxesIncluded;
+    } catch (e) { console.error("[Backfill] shop query:", e?.message); }
+    const shopSettings = {
+      shopTaxesIncluded,
+      shopifyFee:        plan?.shopify_fee_pct     ?? 2.0,
+      stripeFee:         plan?.processor_fee_pct   ?? 1.5,
+      processorFixedFee: plan?.processor_fixed_fee ?? 0.25,
+    };
+
+    // Une seule bulk op QUERY par boutique à la fois : ne pas lancer en double.
+    try {
+      const cr = await admin.graphql(`{ currentBulkOperation(type: QUERY) { id status } }`);
+      const cj = await cr.json();
+      const cur = cj.data?.currentBulkOperation;
+      if (cur && (cur.status === "RUNNING" || cur.status === "CREATED")) {
+        return { success: false, error: "Une synchronisation est déjà en cours. Réessayez dans un instant." };
+      }
+    } catch (e) { console.error("[Backfill] currentBulkOperation:", e?.message); }
+
+    // Connexions SANS first: (le bulk paginera) ; __typename pour le re-stitch.
+    const bulkQuery = `{
+      orders(query: "created_at:>=${windowStart}") {
+        edges { node {
+          __typename id createdAt currencyCode
+          lineItems { edges { node {
+            __typename id quantity
+            variant { id } product { id }
+            originalUnitPriceSet { shopMoney { amount } }
+            discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } }
+            discountAllocations { allocatedAmountSet { shopMoney { amount } } }
+          } } }
+          refunds {
+            __typename id
+            refundLineItems { edges { node { __typename quantity lineItem { id } } } }
+            transactions { edges { node { __typename kind status } } }
+          }
+        } }
+      }
+    }`;
+    const runResp = await admin.graphql(
+      `mutation Run($q: String!) { bulkOperationRunQuery(query: $q) { bulkOperation { id status } userErrors { field message } } }`,
+      { variables: { q: bulkQuery } }
+    );
+    const runJson = await runResp.json();
+    const userErrors = runJson.data?.bulkOperationRunQuery?.userErrors ?? [];
+    if (userErrors.length) {
+      await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: "failed", window_start: windowStart, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
+      return { success: false, error: "Requête bulk refusée : " + userErrors.map(e => e.message).join(" ; ") };
+    }
+    const bulkId = runJson.data?.bulkOperationRunQuery?.bulkOperation?.id ?? null;
+    await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: "running", window_start: windowStart, bulk_operation_id: bulkId }, { onConflict: "shop_domain" });
+
+    // Poll jusqu'à COMPLETED (budget temps ; en local/dev pas de timeout serverless).
+    let op = null;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 25000) {
+      await new Promise(r => setTimeout(r, 2000));
+      const pr = await admin.graphql(`{ currentBulkOperation(type: QUERY) { id status errorCode url objectCount } }`);
+      op = (await pr.json()).data?.currentBulkOperation;
+      if (!op) break;
+      if (op.status === "COMPLETED") break;
+      if (["FAILED", "CANCELED", "EXPIRED"].includes(op.status)) break;
+    }
+    if (!op || op.status !== "COMPLETED") {
+      const st = op?.status === "RUNNING" || op?.status === "CREATED" ? "running" : "failed";
+      await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: st, bulk_operation_id: bulkId, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
+      return { success: false, error: st === "running" ? "Synchronisation en cours, relancez dans un instant." : `Bulk échoué (${op?.status ?? "?"} ${op?.errorCode ?? ""}).` };
+    }
+    if (!op.url) { // COMPLETED sans url = zéro résultat
+      await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: "completed", window_start: windowStart, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
+      return { success: true, ingested: 0, orders: 0, message: "Aucune commande sur les 30 derniers jours." };
+    }
+
+    // Download JSONL + re-stitch (module pur).
+    const text = await (await fetch(op.url)).text();
+    const orders = parseBulkJsonl(text);
+
+    // Snapshot des coûts au moment de l'ingestion.
+    const { data: costsRows } = await supabase.from("variant_costs").select("*").eq("shop_domain", session.shop);
+    const costMap = new Map((costsRows ?? []).map(c => [c.variant_id, c]));
+    const lookup = (vid) => costMap.get(vid) ?? null;
+
+    const now = new Date().toISOString();
+    const allRows = [];
+    for (const order of orders) {
+      for (const r of buildOrderHistoryRows(order, lookup, shopSettings)) {
+        allRows.push({ shop_domain: session.shop, ...r, computed_at: now });
+      }
+    }
+
+    let ingested = 0;
+    if (allRows.length) {
+      // ignoreDuplicates : ré-ingestion ne duplique pas et ne mute jamais un snapshot figé.
+      const { error } = await supabase.from("order_margins").upsert(allRows, { onConflict: "shop_domain,order_id,line_item_id", ignoreDuplicates: true });
+      if (error) {
+        await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: "failed", last_backfill_at: now }, { onConflict: "shop_domain" });
+        return { success: false, error: error.message };
+      }
+      ingested = allRows.length;
+    }
+    await supabase.from("order_sync_state").upsert({ shop_domain: session.shop, status: "completed", window_start: windowStart, bulk_operation_id: bulkId, last_backfill_at: now }, { onConflict: "shop_domain" });
+    return { success: true, ingested, orders: orders.length };
+  }
+
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
     if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
@@ -1301,6 +1421,7 @@ function CostTracker({ defaultImportCountry }) {
   const confirmFetcher = useFetcher();
   const importFetcher  = useFetcher();
   const countryFetcher = useFetcher();
+  const backfillFetcher = useFetcher();
   const fileRef = useRef(null);
 
   const [rows, setRows]       = useState(null);   // null = pas encore chargé
@@ -1385,6 +1506,19 @@ function CostTracker({ defaultImportCountry }) {
           {PAYS_KEYS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <span style={{ fontSize: "11px", color: "#6D7175" }}>Les nouvelles variantes en héritent ; chaque variante reste surchargeable.</span>
+      </div>
+
+      {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
+        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Marge réelle sur vos commandes</span>
+        <button
+          onClick={() => backfillFetcher.submit({ _action: "backfill_orders" }, { method: "POST", encType: "application/json" })}
+          disabled={backfillFetcher.state !== "idle"}
+          style={{ padding: "7px 14px", background: backfillFetcher.state !== "idle" ? "#E4E5E7" : "#7C3AED", color: backfillFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: backfillFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+          {backfillFetcher.state !== "idle" ? "Synchronisation…" : "Synchroniser les commandes (30 j)"}
+        </button>
+        {backfillFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {backfillFetcher.data.ingested ?? 0} ligne(s) sur {backfillFetcher.data.orders ?? 0} commande(s).</span>}
+        {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
       </div>
 
       {/* Barre d'actions */}
