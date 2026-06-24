@@ -7,6 +7,20 @@
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; };
 
+// Formate un montant selon la VRAIE devise (currency_code de l'agrégat), pas l'euro
+// codé en dur. Devise invalide/mixte → format neutre + code éventuel (jamais de
+// mauvais symbole). Pur affichage : ne touche aucune valeur stockée.
+export function formatMoney(n, currency) {
+  const v = num(n);
+  if (typeof currency === "string" && /^[A-Z]{3}$/.test(currency)) {
+    try {
+      return new Intl.NumberFormat("fr-FR", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    } catch { /* code ISO inconnu de l'ICU → fallback ci-dessous */ }
+  }
+  const plain = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+  return currency && currency !== "MIXED" ? `${plain} ${currency}` : plain;
+}
+
 // Jour calendaire UTC de order_created_at (le VRAI jour de la commande, pas computed_at).
 function utcDay(ts) {
   if (!ts) return null;

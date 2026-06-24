@@ -21,7 +21,7 @@ import {
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
 } from "../lib/variantCosts.js";
 import { parseBulkJsonl, buildOrderHistoryRows } from "../lib/orderIngest.js";
-import { aggregateOrderMargins } from "../lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney } from "../lib/orderHistory.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1509,7 +1509,8 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
   const [sortBy, setSortBy] = useState("margin"); // margin | revenue
   const agg = useMemo(() => aggregateOrderMargins(orderMargins ?? []), [orderMargins]);
 
-  const fmt = (n) => n == null ? "—" : formatEur(n);
+  const cur0 = agg.currencies[0]; // devise unique (totaux affichés seulement si mono-devise)
+  const fmt = (n) => n == null ? "—" : formatMoney(n, cur0);
   const title = (pid) => pid ? (productTitleById[pid] ?? `Produit ${pid.split("/").pop()}`) : "Produit supprimé";
   const products = [...agg.byProduct].sort((a, b) =>
     sortBy === "revenue" ? b.net_revenue - a.net_revenue : a.net_margin - b.net_margin);
@@ -1575,8 +1576,8 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <td style={{ ...td, maxWidth: "200px" }}>{title(p.product_id)}</td>
                         <td style={td}>{p.orders}</td>
                         <td style={td}>{p.effective_qty}</td>
-                        <td style={td}>{formatEur(p.net_revenue)}</td>
-                        <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatEur(p.net_margin)}</td>
+                        <td style={td}>{formatMoney(p.net_revenue, p.currency)}</td>
+                        <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatMoney(p.net_margin, p.currency)}</td>
                         <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
                         <td style={td}>
                           <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700",

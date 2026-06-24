@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot7_order_history.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { aggregateOrderMargins } from "../app/lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney } from "../app/lib/orderHistory.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -109,6 +109,18 @@ console.log("\n── [LISTE] multi-devises signalé ──");
     row({ order: "O15", product: "P6", rev: 90,  margin: 30, cur: "EUR" }),
   ]);
   ok(a.multiCurrency === true && a.currencies.length === 2, `multiCurrency=true (${a.currencies.join(",")})`);
+}
+
+// ── [DEVISE] formatMoney suit currency_code, pas l'euro codé en dur ──
+console.log("\n── [DEVISE] format selon la vraie devise ──");
+{
+  const usd = formatMoney(1200, "USD");
+  const eur = formatMoney(1200, "EUR");
+  ok(usd.includes("$") && !usd.includes("€"), `USD → symbole $ (${usd})`);
+  ok(eur.includes("€") && !eur.includes("$"), `EUR → symbole € (${eur})`);
+  ok(usd !== eur, "USD et EUR formatés différemment");
+  ok(formatMoney(729.27, "USD").includes("729,27"), "montant préservé au centime (729,27)");
+  ok(!formatMoney(50, null).includes("€") && !formatMoney(50, "MIXED").includes("€"), "devise nulle/mixte → pas de faux symbole €");
 }
 
 // ── [edge] vide → sorties vides propres, pas de crash ──
