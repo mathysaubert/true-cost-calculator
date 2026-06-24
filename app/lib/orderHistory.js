@@ -13,9 +13,14 @@ const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return
 export function formatMoney(n, currency) {
   const v = num(n);
   if (typeof currency === "string" && /^[A-Z]{3}$/.test(currency)) {
+    // narrowSymbol → symbole court ($, €, £…) plutôt que la notation longue fr-FR ($US).
     try {
-      return new Intl.NumberFormat("fr-FR", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-    } catch { /* code ISO inconnu de l'ICU → fallback ci-dessous */ }
+      return new Intl.NumberFormat("fr-FR", { style: "currency", currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    } catch {
+      try { // ICU sans narrowSymbol → symbole standard
+        return new Intl.NumberFormat("fr-FR", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+      } catch { /* code mal formé → fallback neutre ci-dessous */ }
+    }
   }
   const plain = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   return currency && currency !== "MIXED" ? `${plain} ${currency}` : plain;

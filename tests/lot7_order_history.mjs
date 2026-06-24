@@ -116,11 +116,16 @@ console.log("\n── [DEVISE] format selon la vraie devise ──");
 {
   const usd = formatMoney(1200, "USD");
   const eur = formatMoney(1200, "EUR");
-  ok(usd.includes("$") && !usd.includes("€"), `USD → symbole $ (${usd})`);
-  ok(eur.includes("€") && !eur.includes("$"), `EUR → symbole € (${eur})`);
-  ok(usd !== eur, "USD et EUR formatés différemment");
+  const gbp = formatMoney(1200, "GBP");
+  ok(usd.includes("$") && !usd.includes("US"), `USD → symbole court $ sans "US" (${usd})`);
+  ok(eur.includes("€"), `EUR → € (${eur})`);
+  ok(gbp.includes("£"), `GBP → £ (${gbp})`);
+  ok(usd !== eur && eur !== gbp, "devises formatées distinctement");
   ok(formatMoney(729.27, "USD").includes("729,27"), "montant préservé au centime (729,27)");
   ok(!formatMoney(50, null).includes("€") && !formatMoney(50, "MIXED").includes("€"), "devise nulle/mixte → pas de faux symbole €");
+  // devise inconnue (bien formée mais hors ICU) → ne casse pas, renvoie une chaîne avec le code
+  const xyz = formatMoney(50, "XYZ");
+  ok(typeof xyz === "string" && xyz.length > 0 && xyz.includes("XYZ"), `devise inconnue 'XYZ' ne casse pas (${xyz})`);
 }
 
 // ── [edge] vide → sorties vides propres, pas de crash ──
