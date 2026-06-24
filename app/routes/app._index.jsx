@@ -980,6 +980,10 @@ export const action = async ({ request }) => {
     } catch (e) { console.error("[Backfill] currentBulkOperation:", e?.message); }
 
     // Connexions SANS first: (le bulk paginera) ; __typename pour le re-stitch.
+    // Bulk = orders + lineItems UNIQUEMENT. refunds est une LISTE contenant des
+    // connexions (refundLineItems/transactions) → interdit en bulk (« connection field
+    // within a list field »). Les refunds sont récupérés à part par requête paginée
+    // normale (où les connexions sous liste sont autorisées) puis rattachés par order id.
     const bulkQuery = `{
       orders(query: "created_at:>=${windowStart}") {
         edges { node {
@@ -991,11 +995,6 @@ export const action = async ({ request }) => {
             discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } }
             discountAllocations { allocatedAmountSet { shopMoney { amount } } }
           } } }
-          refunds {
-            __typename id
-            refundLineItems { edges { node { __typename quantity lineItem { id } } } }
-            transactions { edges { node { __typename kind status } } }
-          }
         } }
       }
     }`;
@@ -1033,9 +1032,55 @@ export const action = async ({ request }) => {
       return { success: true, ingested: 0, orders: 0, message: "Aucune commande sur les 30 derniers jours." };
     }
 
-    // Download JSONL + re-stitch (module pur).
+    // Download JSONL + re-stitch (module pur). orders ont lineItems ; refunds vide.
     const text = await (await fetch(op.url)).text();
     const orders = parseBulkJsonl(text);
+
+    // Refunds : requête paginée NORMALE (connexions sous liste autorisées hors bulk),
+    // filtrée aux commandes remboursées. Un-edge en tableaux → forme attendue par
+    // effectiveRefundedQty (refund.refundLineItems[].lineItem.id/quantity, transactions[].kind/status).
+    const refundsByOrder = new Map();
+    try {
+      const refundsQ = `created_at:>=${windowStart} AND (financial_status:refunded OR financial_status:partially_refunded)`;
+      let rCursor = null, rHasNext = true, rPages = 0;
+      while (rHasNext && rPages < 20) {
+        rPages++;
+        const rr = await admin.graphql(
+          `query Refunds($q: String!, $cursor: String) {
+            orders(first: 100, query: $q, after: $cursor) {
+              edges { node {
+                id
+                refunds {
+                  id
+                  refundLineItems(first: 100) { edges { node { quantity lineItem { id } } } }
+                  transactions(first: 50) { edges { node { kind status } } }
+                }
+              } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }`,
+          { variables: { q: refundsQ, cursor: rCursor } }
+        );
+        const rj = await rr.json();
+        const conn = rj.data?.orders;
+        if (!conn) break;
+        for (const { node } of conn.edges) {
+          const refunds = (node.refunds ?? []).map((rf) => ({
+            id: rf.id,
+            refundLineItems: (rf.refundLineItems?.edges ?? []).map((e) => e.node),
+            transactions:    (rf.transactions?.edges ?? []).map((e) => e.node),
+          }));
+          refundsByOrder.set(node.id, refunds);
+        }
+        rHasNext = conn.pageInfo.hasNextPage;
+        rCursor = conn.pageInfo.endCursor;
+      }
+    } catch (e) { console.error("[Backfill] refunds query:", e?.message); }
+
+    // Rattache les refunds aux orders re-stitchés (par id).
+    for (const order of orders) {
+      order.refunds = refundsByOrder.get(order.id) ?? [];
+    }
 
     // Snapshot des coûts au moment de l'ingestion.
     const { data: costsRows } = await supabase.from("variant_costs").select("*").eq("shop_domain", session.shop);
