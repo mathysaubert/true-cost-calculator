@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -21,6 +21,7 @@ import {
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
 } from "../lib/variantCosts.js";
 import { parseBulkJsonl, buildOrderHistoryRows } from "../lib/orderIngest.js";
+import { aggregateOrderMargins } from "../lib/orderHistory.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ const DEFAULT_ALERT_THRESHOLD = 25;
 const HISTORY_LIMIT_EXPERT = 200;
 const HISTORY_LIMIT_PRO = 50;
 const HISTORY_LIMIT_FREE = 0;
+// UI Monitor : plafond de lignes order_margins lues. Si le total dépasse, on lit les
+// plus récentes ET on le SIGNALE (jamais de troncature silencieuse → chiffres faux).
+const ORDER_MARGINS_CAP = 5000;
 // Constantes réglementaires, barèmes (CUSTOMS_RATES, SHIPPING_ESTIMATES,
 // PAYMENT_PROCESSORS) et helpers de formatage : importés depuis ../lib/engine.js
 // (source unique partagée avec les tests).
@@ -674,7 +678,7 @@ export const loader = async ({ request }) => {
   const currentMonth = new Date().toISOString().slice(0, 7);
 
   // Fetch usage, history, alert threshold, and vat_regime concurrently
-  const [countResult, historyResult, alertResult, annotationsResult, planResult] = await Promise.allSettled([
+  const [countResult, historyResult, alertResult, annotationsResult, planResult, orderMarginsResult, orderMarginsCountResult] = await Promise.allSettled([
     !isPro
       ? supabase.from("usage").select("calculation_count").eq("shop_domain", session.shop).eq("month", currentMonth).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -689,6 +693,9 @@ export const loader = async ({ request }) => {
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
     supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country").eq("shop_domain", session.shop).maybeSingle(),
+    // UI Monitor : N lignes order_margins les plus récentes + compte total (cap explicite).
+    supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
+    supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
   ]);
 
   const monthlyCount = countResult.status === "fulfilled"
@@ -720,7 +727,15 @@ export const loader = async ({ request }) => {
     ? (planResult.value.data?.default_import_country ?? "Chine")
     : "Chine";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry };
+  // UI Monitor : lignes (plus récentes) + total réel pour signaler le cap.
+  const orderMargins = orderMarginsResult.status === "fulfilled"
+    ? (orderMarginsResult.value.data ?? []) : [];
+  const orderMarginsTotal = orderMarginsCountResult.status === "fulfilled"
+    ? (orderMarginsCountResult.value.count ?? orderMargins.length) : orderMargins.length;
+  const orderMarginsCapped = orderMarginsTotal > ORDER_MARGINS_CAP;
+
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry,
+    orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
 async function checkRateLimit(shop, action, maxPerDay) {
@@ -1453,6 +1468,143 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
   return { success: true };
 };
 
+// ── UI Monitor : courbe bi-série CA net vs marge nette par jour (SVG inline) ──
+// Lecture seule : trace byDay (sorties de aggregateOrderMargins), aucune marge recalculée.
+function DualLineChart({ byDay, fmt }) {
+  if (!byDay || byDay.length === 0) return null;
+  const W = 640, H = 150, PAD = 28;
+  const revs = byDay.map(d => d.net_revenue);
+  const mgs  = byDay.map(d => d.net_margin);
+  const vals = [...revs, ...mgs, 0];
+  const minY = Math.min(...vals), maxY = Math.max(...vals);
+  const rangeY = (maxY - minY) || 1;
+  const toX = (i) => byDay.length === 1 ? W / 2 : PAD + (i / (byDay.length - 1)) * (W - PAD * 2);
+  const toY = (v) => PAD + (1 - (v - minY) / rangeY) * (H - PAD * 2);
+  const poly = (arr) => arr.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
+  const zeroY = toY(0).toFixed(1);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "150px", display: "block" }}>
+        <line x1={PAD} y1={zeroY} x2={W - PAD} y2={zeroY} stroke="#E4E5E7" strokeWidth="0.8" strokeDasharray="3,3" />
+        {byDay.length >= 2 && <polyline points={poly(revs)} fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinejoin="round" />}
+        {byDay.length >= 2 && <polyline points={poly(mgs)} fill="none" stroke="#008060" strokeWidth="2" strokeLinejoin="round" />}
+        {byDay.map((d, i) => <circle key={"r" + i} cx={toX(i)} cy={toY(d.net_revenue)} r="3" fill="#7C3AED" />)}
+        {byDay.map((d, i) => <circle key={"m" + i} cx={toX(i)} cy={toY(d.net_margin)} r="3" fill={d.net_margin < 0 ? "#D72C0D" : "#008060"} />)}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
+        <span style={{ fontSize: "10px", color: "#6D7175" }}>{byDay[0].day}</span>
+        <span style={{ fontSize: "10px", color: "#6D7175" }}>{byDay[byDay.length - 1].day}</span>
+      </div>
+      <div style={{ display: "flex", gap: "16px", marginTop: "6px", fontSize: "11px" }}>
+        <span style={{ color: "#7C3AED" }}>● CA net / jour</span>
+        <span style={{ color: "#008060" }}>● Marge nette / jour</span>
+      </div>
+    </div>
+  );
+}
+
+// ── UI Monitor : sous-bloc repliable (collapsed par défaut) — lecture seule ──
+function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, onGoToCosts }) {
+  const [open, setOpen] = useState(false);
+  const [sortBy, setSortBy] = useState("margin"); // margin | revenue
+  const agg = useMemo(() => aggregateOrderMargins(orderMargins ?? []), [orderMargins]);
+
+  const fmt = (n) => n == null ? "—" : formatEur(n);
+  const title = (pid) => pid ? (productTitleById[pid] ?? `Produit ${pid.split("/").pop()}`) : "Produit supprimé";
+  const products = [...agg.byProduct].sort((a, b) =>
+    sortBy === "revenue" ? b.net_revenue - a.net_revenue : a.net_margin - b.net_margin);
+
+  const th = { padding: "7px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "nowrap" };
+  const td = { padding: "7px 8px", fontSize: "12px", color: "#202223" };
+
+  return (
+    <div style={{ borderRadius: "8px", border: "1px solid #E4E5E7", marginBottom: "16px", overflow: "hidden" }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px", padding: "12px 14px", background: "#FAFAFB", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+        <span style={{ fontSize: "12px", color: "#6D7175", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+        <span style={{ fontSize: "13px", fontWeight: "600", color: "#202223" }}>Historique de marge réelle</span>
+        {agg.unprofitableCount > 0 && <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{agg.unprofitableCount} à perte</span>}
+        {agg.missingCount > 0 && <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#B98900", background: "#FFF9EC" }}>{agg.missingCount} coûts manquants</span>}
+      </button>
+
+      {open && (
+        <div style={{ padding: "14px" }}>
+          {orderMarginsCapped && (
+            <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#B98900", marginBottom: "12px" }}>
+              Affichage limité aux <strong>{orderMarginsCap}</strong> lignes les plus récentes sur <strong>{orderMarginsTotal}</strong> au total — les agrégats et la courbe ci-dessous <strong>ne couvrent pas toute la fenêtre</strong>.
+            </div>
+          )}
+
+          {(orderMargins?.length ?? 0) === 0 ? (
+            <div style={{ padding: "30px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Aucune commande synchronisée. Cliquez « Synchroniser les commandes » ci-dessus.</div>
+          ) : (
+            <>
+              {agg.multiCurrency && (
+                <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
+                  Plusieurs devises sur la fenêtre ({agg.currencies.join(", ")}) — totaux globaux et courbe désactivés (jamais de somme cross-devise). Voir le détail par produit, chacun dans sa devise.
+                </div>
+              )}
+
+              {/* Agrégats globaux + courbe : uniquement si mono-devise (sinon somme à l'aveugle interdite) */}
+              {!agg.multiCurrency && agg.validCount > 0 && (
+                <>
+                  <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "14px" }}>
+                    <div><div style={{ fontSize: "11px", color: "#6D7175" }}>CA net ({agg.currencies[0] ?? ""})</div><div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{fmt(agg.totals.net_revenue)}</div></div>
+                    <div><div style={{ fontSize: "11px", color: "#6D7175" }}>Marge nette réelle</div><div style={{ fontSize: "18px", fontWeight: "700", color: agg.totals.net_margin < 0 ? "#D72C0D" : "#008060" }}>{fmt(agg.totals.net_margin)}</div></div>
+                    <div><div style={{ fontSize: "11px", color: "#6D7175" }}>Commandes</div><div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{agg.totals.orders}</div></div>
+                  </div>
+                  <DualLineChart byDay={agg.byDay} fmt={fmt} />
+                </>
+              )}
+
+              {/* Liste par produit */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Par produit</span>
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 7px", border: "1px solid #C9CCCF", borderRadius: "5px", fontSize: "11px", fontFamily: "inherit" }}>
+                  <option value="margin">Trier par marge ↑</option>
+                  <option value="revenue">Trier par CA net ↓</option>
+                </select>
+              </div>
+              <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "640px" }}>
+                  <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
+                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>État</th>
+                  </tr></thead>
+                  <tbody>
+                    {products.map(p => (
+                      <tr key={p.product_id ?? "__unknown__"} style={{ borderBottom: "1px solid #F1F2F4", background: p.unprofitable ? "#FFF4F4" : "transparent" }}>
+                        <td style={{ ...td, maxWidth: "200px" }}>{title(p.product_id)}</td>
+                        <td style={td}>{p.orders}</td>
+                        <td style={td}>{p.effective_qty}</td>
+                        <td style={td}>{formatEur(p.net_revenue)}</td>
+                        <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatEur(p.net_margin)}</td>
+                        <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
+                        <td style={td}>
+                          <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700",
+                            color: p.unprofitable ? "#D72C0D" : "#008060", background: p.unprofitable ? "#FFF4F4" : "#F1F8F5" }}>
+                            {p.unprofitable ? "À perte" : "Rentable"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Coûts manquants — à part, jamais dans les sommes */}
+              {agg.missingCount > 0 && (
+                <div style={{ marginTop: "12px", padding: "12px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#202223" }}>
+                  <strong style={{ color: "#B98900" }}>{agg.missingCount} ligne(s) à coûts manquants</strong> — exclues des agrégats et de la courbe (aucune marge inventée).{" "}
+                  <button onClick={onGoToCosts} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>Renseigner les coûts ↑</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Brique A : Suivi des coûts (saisie par variante) ──────────────────────────
 const SOURCE_PILL = {
   estimated: { label: "Estimé",   color: "#6D7175", bg: "#F1F2F4" },
@@ -1460,7 +1612,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry }) {
+function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -1566,6 +1718,13 @@ function CostTracker({ defaultImportCountry }) {
         {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
       </div>
 
+      {/* UI Monitor : sous-bloc repliable (lecture seule) de l'historique order_margins */}
+      <MarginMonitor
+        orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal}
+        orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
+        productTitleById={productTitleById ?? {}}
+        onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
+
       {/* Barre d'actions */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
         <button onClick={exportTemplate} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↓ Exporter le modèle CSV</button>
@@ -1649,7 +1808,8 @@ function CostTracker({ defaultImportCountry }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry } = useLoaderData();
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry,
+    orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
   const aiFetcher            = useFetcher();
@@ -2812,7 +2972,9 @@ export default function Index() {
         )}
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
-        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} />}
+        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry}
+          orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
+          productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
 
       </s-section>
 
