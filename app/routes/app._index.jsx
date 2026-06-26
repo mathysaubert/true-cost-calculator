@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, Fragment } from "react";
 import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -1499,6 +1499,84 @@ function DualLineChart({ byDay, fmt }) {
         <span style={{ color: "#7C3AED" }}>● CA net / jour</span>
         <span style={{ color: "#008060" }}>● Marge nette / jour</span>
       </div>
+      {/* F9 : < 2 points → jamais une courbe qui semble cassée. Point unique intentionnel + message explicite. */}
+      {byDay.length < 2 && (
+        <div style={{ marginTop: "6px", fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
+          Une seule journée de données — la tendance apparaîtra avec plus de commandes.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dépli auditable d'UNE ligne de commande — LECTURE PURE (option C) ─────────
+// N'affiche QUE des valeurs STOCKÉES (lb = lineBreakdown). Deux identités d'agrégation
+// réconcilient au centime ; les intrants figés (snapshot) sont du CONTEXTE, jamais sommés.
+// Les postes douane/TVA import/frais Shopify/Stripe ne sont PAS stockés → non détaillés
+// ici (les détailler exigerait de rejouer le moteur = BUG 1). On le DIT, on ne masque pas.
+const REGIME_LABEL = { assujetti: "TVA assujetti", franchise: "TVA franchise" };
+const MODEL_LABEL  = { dropshipping: "Dropshipping", stock: "Stock" };
+function LineBreakdownCard({ lb }) {
+  const m = (n) => formatMoney(n, lb.currency);
+  const sub = lb.snapshot;
+  const refunded = lb.refunded_qty > 0;
+  const lblRow = { display: "flex", justifyContent: "space-between", gap: "12px", padding: "3px 0", fontSize: "12px" };
+  const lbl = { color: "#6D7175" };
+  const val = { color: "#202223", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
+  const date = lb.order_created_at ? String(lb.order_created_at).slice(0, 10) : "—";
+  const pill = SOURCE_PILL[lb.cost_source] ?? { label: lb.cost_source ?? "—", color: "#6D7175", bg: "#F1F2F4" };
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: "8px", border: "1px solid #E4E5E7", background: "#FAFAFB", marginBottom: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        <span style={{ fontSize: "11px", fontWeight: "600", color: "#202223" }}>Commande {lb.order_id ? lb.order_id.split("/").pop() : "—"}</span>
+        <span style={{ fontSize: "11px", color: "#6D7175" }}>{date}</span>
+        <span style={{ padding: "1px 7px", borderRadius: "9px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{pill.label}</span>
+      </div>
+
+      {/* Identité MARGE — cible stockée = line_net_margin (réplique de l'agrégation D3/D4) */}
+      <div style={{ marginBottom: "10px" }}>
+        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Marge nette de ligne</div>
+        <div style={lblRow}><span style={lbl}>Marge nette unitaire</span><span style={val}>{m(lb.unit_net_margin)}</span></div>
+        <div style={lblRow}>
+          <span style={lbl}>× Quantité effective{refunded ? ` (${lb.quantity} − ${lb.refunded_qty} remboursée${lb.refunded_qty > 1 ? "s" : ""})` : ""}</span>
+          <span style={val}>{lb.effective_qty}</span>
+        </div>
+        <div style={lblRow}><span style={lbl}>− Fixe processeur (proraté commande)</span><span style={val}>−{m(lb.allocated_fixed_fee)}</span></div>
+        <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "700" }}>
+          <span style={{ color: "#202223" }}>= Marge nette de ligne</span>
+          <span style={{ ...val, color: lb.line_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.line_net_margin)}</span>
+        </div>
+      </div>
+
+      {/* Identité REVENU — cible stockée = line_net_revenue */}
+      <div style={{ marginBottom: refunded ? "6px" : "0" }}>
+        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>CA net de ligne</div>
+        <div style={lblRow}><span style={lbl}>Prix de vente net unitaire (TTC)</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
+        <div style={lblRow}><span style={lbl}>× Quantité effective</span><span style={val}>{lb.effective_qty}</span></div>
+        <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "600" }}>
+          <span style={{ color: "#202223" }}>= CA net de ligne</span><span style={val}>{m(lb.line_net_revenue)}</span>
+        </div>
+      </div>
+
+      {/* Contexte : intrants figés (coûts SAISIS), jamais sommés — pas une décomposition */}
+      {sub && (
+        <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
+          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>Intrants figés à l'ingestion (coûts saisis)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", fontSize: "11px", color: "#6D7175" }}>
+            <span>Prix d'achat&nbsp;<strong style={{ color: "#202223" }}>{m(sub.prix_achat)}</strong>{sub.qty_par_lot > 1 ? ` / lot de ${sub.qty_par_lot}` : ""}</span>
+            <span>Port entrant&nbsp;<strong style={{ color: "#202223" }}>{m(sub.port_entrant)}</strong></span>
+            <span>Emballage&nbsp;<strong style={{ color: "#202223" }}>{m(sub.cout_emballage)}</strong></span>
+            {sub.categorie && <span>Catégorie&nbsp;<strong style={{ color: "#202223" }}>{sub.categorie}</strong></span>}
+            {sub.pays_import && <span>Import&nbsp;<strong style={{ color: "#202223" }}>{sub.pays_import}</strong></span>}
+            {sub.vat_regime && <span><strong style={{ color: "#202223" }}>{REGIME_LABEL[sub.vat_regime] ?? sub.vat_regime}</strong></span>}
+            {sub.shipping_model && <span><strong style={{ color: "#202223" }}>{MODEL_LABEL[sub.shipping_model] ?? sub.shipping_model}</strong></span>}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: "8px", fontSize: "10px", color: "#8C9196", fontStyle: "italic", lineHeight: "1.5" }}>
+        Douane, TVA import et frais Shopify/Stripe sont intégrés dans la marge nette unitaire et ne sont pas stockés séparément — non détaillés ici (lecture pure, aucun recalcul).
+      </div>
     </div>
   );
 }
@@ -1507,6 +1585,7 @@ function DualLineChart({ byDay, fmt }) {
 function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, onGoToCosts }) {
   const [open, setOpen] = useState(false);
   const [sortBy, setSortBy] = useState("margin"); // margin | revenue
+  const [openLines, setOpenLines] = useState(() => new Set()); // product_ids dépliés
   const agg = useMemo(() => aggregateOrderMargins(orderMargins ?? []), [orderMargins]);
 
   const cur0 = agg.currencies[0]; // devise unique (totaux affichés seulement si mono-devise)
@@ -1539,6 +1618,16 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
             <div style={{ padding: "30px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Aucune commande synchronisée. Cliquez « Synchroniser les commandes » ci-dessus.</div>
           ) : (
             <>
+              {/* CTA complétude (F3/F4) — EN VARIANTES, dénominateur = variantes avec commandes.
+                  Ne promet un gain QUE pour ce qui est dans le monitor (pas le catalogue entier). */}
+              {agg.costCompletion.needing > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "10px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
+                  <strong style={{ color: "#7C3AED" }}>{agg.costCompletion.needing} sur {agg.costCompletion.total}</strong>
+                  variante(s) suivie(s) tournent sur un coût estimé ou manquant — confirme-les pour une marge exacte.
+                  <button onClick={onGoToCosts} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>Confirmer les coûts ↑</button>
+                </div>
+              )}
+
               {agg.multiCurrency && (
                 <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
                   Plusieurs devises sur la fenêtre ({agg.currencies.join(", ")}) — totaux globaux et courbe désactivés (jamais de somme cross-devise). Voir le détail par produit, chacun dans sa devise.
@@ -1571,9 +1660,17 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                     <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>État</th>
                   </tr></thead>
                   <tbody>
-                    {products.map(p => (
-                      <tr key={p.product_id ?? "__unknown__"} style={{ borderBottom: "1px solid #F1F2F4", background: p.unprofitable ? "#FFF4F4" : "transparent" }}>
-                        <td style={{ ...td, maxWidth: "200px" }}>{title(p.product_id)}</td>
+                    {products.map(p => {
+                      const pkey = p.product_id ?? "__unknown__";
+                      const expanded = openLines.has(pkey);
+                      return (
+                      <Fragment key={pkey}>
+                      <tr style={{ borderBottom: "1px solid #F1F2F4", background: p.unprofitable ? "#FFF4F4" : "transparent", cursor: "pointer" }}
+                          onClick={() => setOpenLines(s => { const n = new Set(s); n.has(pkey) ? n.delete(pkey) : n.add(pkey); return n; })}>
+                        <td style={{ ...td, maxWidth: "200px" }}>
+                          <span style={{ display: "inline-block", width: "12px", fontSize: "10px", color: "#6D7175", transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+                          {title(p.product_id)}
+                        </td>
                         <td style={td}>{p.orders}</td>
                         <td style={td}>{p.effective_qty}</td>
                         <td style={td}>{formatMoney(p.net_revenue, p.currency)}</td>
@@ -1586,7 +1683,19 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      {expanded && (
+                        <tr style={{ background: "#FFFFFF" }}>
+                          <td colSpan={7} style={{ padding: "10px 14px" }}>
+                            <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
+                              Détail par ligne de commande — chaque ligne affiche son propre snapshot figé (lecture pure, valeurs stockées).
+                            </div>
+                            {p.lines.map(lb => <LineBreakdownCard key={`${lb.order_id}-${lb.line_item_id}`} lb={lb} />)}
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

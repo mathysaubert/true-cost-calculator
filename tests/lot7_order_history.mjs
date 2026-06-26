@@ -5,10 +5,11 @@
 //  Pour lancer : node tests/lot7_order_history.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { aggregateOrderMargins, formatMoney } from "../app/lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney, lineBreakdown } from "../app/lib/orderHistory.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
+const approx = (a, b, eps = 0.005) => Math.abs(a - b) < eps; // = "au centime"
 
 // Fabrique une ligne order_margins (valeurs déjà calculées par engine.js à l'ingestion).
 const row = (o) => ({
@@ -133,6 +134,92 @@ console.log("\n── [edge] entrée vide ──");
 {
   const a = aggregateOrderMargins([]);
   ok(a.byProduct.length === 0 && a.byDay.length === 0 && a.unprofitableCount === 0 && a.missingCount === 0, "tout vide, aucun crash");
+}
+
+// Ligne order_margins COMPLÈTE (toutes colonnes stockées) pour le dépli auditable.
+const frow = (o) => ({
+  shop_domain: "s", order_id: o.order, line_item_id: o.line ?? o.order + "-L",
+  product_id: o.product ?? null, variant_id: o.variant ?? null,
+  order_created_at: o.day ?? "2026-06-20T10:00:00Z", currency_code: o.cur ?? "USD",
+  quantity: o.q ?? 1, refunded_qty: o.rq ?? 0, effective_qty: o.eq ?? 1,
+  net_unit_revenue: o.nur ?? 0, unit_net_margin: o.unm ?? 0,
+  line_net_revenue: o.lnr ?? 0, line_net_margin: o.lnm ?? 0,
+  allocated_fixed_fee: o.fee ?? 0, cost_source: o.source ?? "confirmed",
+  cost_snapshot_json: o.snap ?? null,
+});
+
+// ── [BREAKDOWN] #1001 : somme des postes STOCKÉS = cible au centime (par ligne) ──
+// Preuve de référence : Snowboard Hydrogen 600$ ×3, 1 remboursé (eq 2). unit 364,76 ;
+// line = 364,76×2 − 0,25 = 729,27. AUCUN poste recalculé : que des valeurs stockées.
+console.log("\n── [BREAKDOWN] dépli ligne #1001 réconcilie au centime ──");
+{
+  const r1001 = frow({
+    order: "gid://shopify/Order/1001", product: "P-snow", variant: "V-hydrogen",
+    q: 3, rq: 1, eq: 2, nur: 600, unm: 364.76, lnr: 1200, lnm: 729.27, fee: 0.25,
+    source: "confirmed",
+    snap: { prix_achat: 214.24, port_entrant: 0, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Sport", source: "confirmed" },
+  });
+  const lb = lineBreakdown(r1001);
+  ok(approx(lb.unit_net_margin * lb.effective_qty - lb.allocated_fixed_fee, lb.line_net_margin),
+     `marge : unit×eq − fixe = line (${(lb.unit_net_margin * lb.effective_qty - lb.allocated_fixed_fee).toFixed(2)} = ${lb.line_net_margin})`);
+  ok(approx(lb.line_net_margin, 729.27), "cible line_net_margin = 729,27 (stockée)");
+  ok(approx(lb.net_unit_revenue * lb.effective_qty, lb.line_net_revenue),
+     `revenu : nur×eq = line (${(lb.net_unit_revenue * lb.effective_qty).toFixed(2)} = ${lb.line_net_revenue})`);
+  ok(lb.refunded_qty === 1 && lb.effective_qty === 2, "mécanique D4 : 1 remboursé → eq 2 (pas un poste €)");
+  ok(lb.snapshot && lb.snapshot.prix_achat === 214.24, "snapshot figé exposé en contexte (intrants saisis)");
+}
+
+// ── [F2 MULTI-SNAPSHOTS] 1 produit, 2 commandes, coûts gelés DIFFÉRENTS ──
+// Le dépli vit au niveau LIGNE : 2 lignes, chacune SON snapshot, chacune réconcilie.
+// Un seul breakdook produit serait faux pour deux structures de coût → interdit.
+console.log("\n── [F2] multi-snapshots : dépli par ligne, jamais fondu ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OA", product: "P-multi", variant: "V-m", q: 2, eq: 2, nur: 20, unm: 5, lnr: 40, lnm: 9.90, fee: 0.10,
+           snap: { prix_achat: 10, port_entrant: 1, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Sport", source: "confirmed" } }),
+    frow({ order: "OB", product: "P-multi", variant: "V-m", q: 1, eq: 1, nur: 20, unm: 4, lnr: 20, lnm: 3.95, fee: 0.05,
+           snap: { prix_achat: 12, port_entrant: 1, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Sport", source: "confirmed" } }),
+  ]);
+  const p = a.byProduct.find(x => x.product_id === "P-multi");
+  ok(p.lines.length === 2, `2 lignes dépliables (${p.lines.length})`);
+  ok(p.lines[0].snapshot.prix_achat !== p.lines[1].snapshot.prix_achat, "chaque ligne garde SON snapshot (10 ≠ 12)");
+  ok(p.lines.every(lb => approx(lb.unit_net_margin * lb.effective_qty - lb.allocated_fixed_fee, lb.line_net_margin)),
+     "chaque ligne réconcilie au centime indépendamment");
+  ok(approx(p.net_margin, 9.90 + 3.95), `Σ marge produit = somme des lignes (${p.net_margin.toFixed(2)})`);
+}
+
+// ── [F4 CTA] compteur EN VARIANTES : 1 produit, 2 variantes, 1 confirmée → "1 sur 2" ──
+console.log("\n── [F4] CTA complétude en variantes (jamais 1 sur 1) ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OC1", product: "P-cta", variant: "V1", eq: 1, nur: 30, unm: 8, lnr: 30, lnm: 8, source: "confirmed" }),
+    frow({ order: "OC2", product: "P-cta", variant: "V2", eq: 1, nur: 30, unm: 6, lnr: 30, lnm: 6, source: "estimated" }),
+  ]);
+  ok(a.costCompletion.needing === 1, `numérateur = 1 variante à confirmer (${a.costCompletion.needing})`);
+  ok(a.costCompletion.total === 2, `dénominateur = 2 variantes avec commandes (${a.costCompletion.total})`);
+  ok(!(a.costCompletion.needing === a.costCompletion.total), "→ '1 sur 2', JAMAIS '1 sur 1'");
+}
+
+// ── [F3 CTA] missing compté (variante avec commande mais coût manquant) ──
+console.log("\n── [F3] CTA : variante 'missing' comptée au numérateur ET dénominateur ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OD1", product: "P-d", variant: "Vc", eq: 1, nur: 30, unm: 8, lnr: 30, lnm: 8, source: "confirmed" }),
+    frow({ order: "OD2", product: "P-d", variant: "Vm", lnm: null, source: "missing" }),
+  ]);
+  ok(a.costCompletion.total === 2, `dénominateur inclut la variante missing (${a.costCompletion.total})`);
+  ok(a.costCompletion.needing === 1, `numérateur = la variante missing (${a.costCompletion.needing})`);
+  ok(a.missingCount === 1, "ligne missing toujours isolée des agrégats");
+}
+
+// ── [F9] graphe < 2 points : un seul jour → byDay length 1 (état explicite côté UI) ──
+console.log("\n── [F9] graphe < 2 points (donnée) ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OE1", product: "P-e", variant: "Ve", eq: 1, nur: 30, unm: 8, lnr: 30, lnm: 8, day: "2026-06-21T08:00:00Z" }),
+    frow({ order: "OE2", product: "P-e", variant: "Ve", eq: 1, nur: 30, unm: 8, lnr: 30, lnm: 8, day: "2026-06-21T20:00:00Z" }),
+  ]);
+  ok(a.byDay.length === 1, `1 seule journée → byDay length 1 (déclenche le message F9) (${a.byDay.length})`);
 }
 
 console.log("\n" + "═".repeat(66));

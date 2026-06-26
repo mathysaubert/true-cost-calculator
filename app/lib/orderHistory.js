@@ -33,6 +33,38 @@ function utcDay(ts) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+// ── Dépli auditable d'UNE ligne de commande — LECTURE PURE STRICTE (option C) ──
+// Ne projette QUE des colonnes order_margins STOCKÉES (jamais de poste recalculé).
+// Les postes douane/TVA import/frais Shopify/Stripe NE SONT PAS stockés (jetés après
+// computeMargin à l'ingestion) → ils ne peuvent PAS figurer ici sans recalcul, donc on
+// ne les invente pas. Deux identités d'agrégation réconcilient AU CENTIME des valeurs
+// STOCKÉES (réplique de orderIngest.js, pas une re-dérivation prix−coût) :
+//   • revenu : net_unit_revenue × effective_qty = line_net_revenue
+//   • marge  : unit_net_margin × effective_qty − allocated_fixed_fee = line_net_margin
+// snapshot = INTRANTS figés (coûts saisis), affichés comme contexte, jamais sommés.
+export function lineBreakdown(r) {
+  return {
+    order_id:         r.order_id ?? null,
+    line_item_id:     r.line_item_id ?? null,
+    order_created_at: r.order_created_at ?? null,
+    currency:         r.currency_code ?? null,
+    cost_source:      r.cost_source ?? null,
+    // identité revenu (valeurs stockées)
+    net_unit_revenue: num(r.net_unit_revenue),
+    line_net_revenue: num(r.line_net_revenue),
+    // identité marge (valeurs stockées) — cible = line_net_margin
+    unit_net_margin:     num(r.unit_net_margin),
+    allocated_fixed_fee: num(r.allocated_fixed_fee),
+    line_net_margin:     num(r.line_net_margin),
+    // mécanique D4 (pas un poste €) : effective_qty = quantity − refunded_qty
+    quantity:      num(r.quantity),
+    refunded_qty:  num(r.refunded_qty),
+    effective_qty: num(r.effective_qty),
+    // contexte : intrants figés (coûts SAISIS, non décomposés), jamais dans une somme
+    snapshot: r.cost_snapshot_json ?? null,
+  };
+}
+
 export function aggregateOrderMargins(rows = []) {
   // [C] cost_source='missing' (marges null) : exclu des agrégats/courbe/rentabilité,
   // rangé à part. Les compter 0 ou perte serait faux.
@@ -47,16 +79,20 @@ export function aggregateOrderMargins(rows = []) {
   const multiCurrency = currencies.length > 1;
 
   // [A] Agrégat PAR PRODUIT (jamais ligne par ligne) — non rentable = Σ marge < 0.
+  // F2 : le dépli vit au niveau LIGNE DE COMMANDE (chaque ligne a SON snapshot figé, sa
+  // cible line_net_margin). On collecte donc les lignes brutes par produit (`lines`),
+  // sans jamais fondre plusieurs snapshots en un seul breakdown.
   const prodMap = new Map();
   for (const r of valid) {
     const key = r.product_id ?? "__unknown__";
     let p = prodMap.get(key);
-    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set() }; prodMap.set(key, p); }
+    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [] }; prodMap.set(key, p); }
     p.orderIds.add(r.order_id);
     p.effective_qty += num(r.effective_qty);
     p.net_revenue   += num(r.line_net_revenue);
     p.net_margin    += num(r.line_net_margin);
     if (r.currency_code) p.currencySet.add(r.currency_code);
+    p.lines.push(lineBreakdown(r));
   }
   const byProduct = [...prodMap.values()].map((p) => ({
     product_id:    p.product_id,
@@ -67,6 +103,8 @@ export function aggregateOrderMargins(rows = []) {
     marginPct:     p.net_revenue > 0 ? (p.net_margin / p.net_revenue) * 100 : null, // CA=0 → null (pas de /0)
     unprofitable:  p.net_margin < 0,
     currency:      p.currencySet.size === 1 ? [...p.currencySet][0] : (p.currencySet.size === 0 ? null : "MIXED"),
+    // lignes les plus récentes d'abord (order_created_at desc), chacune son dépli
+    lines:         p.lines.sort((a, b) => (a.order_created_at < b.order_created_at ? 1 : a.order_created_at > b.order_created_at ? -1 : 0)),
   }));
 
   // [B] Agrégat PAR JOUR (UTC) — deux séries quotidiennes (pas de cumul).
@@ -83,6 +121,24 @@ export function aggregateOrderMargins(rows = []) {
 
   const unprofitableProducts = byProduct.filter((p) => p.unprofitable);
 
+  // [CTA] Complétude des coûts — EN VARIANTES (F3/F4), dérivée des SEULES lignes du
+  // monitor (jamais du catalogue : confirmer une variante sans commande ne bouge pas
+  // l'écran). Dénominateur = variantes AVEC commandes sur la fenêtre (toutes lignes,
+  // valides + missing). Numérateur = variantes qui tournent sur coût estimé OU manquant
+  // (les 'confirmed'/'imported' sont déjà exactes). Wording honnête : ce compteur ne
+  // promet un gain que pour ce qui est DANS le monitor.
+  const variantsWithOrders = new Set();
+  const variantsNeedingCost = new Set();
+  for (const r of rows) {
+    if (!r.variant_id) continue;                       // variante supprimée → inconfirmable
+    variantsWithOrders.add(r.variant_id);
+    if (r.cost_source === "estimated" || r.cost_source === "missing") variantsNeedingCost.add(r.variant_id);
+  }
+  const costCompletion = {
+    needing:  variantsNeedingCost.size,   // numérateur (variantes à confirmer/renseigner)
+    total:    variantsWithOrders.size,    // dénominateur (variantes avec commandes)
+  };
+
   // Totaux GLOBAUX (à n'afficher que mono-devise — la couche UI gate sur multiCurrency).
   const totals = {
     net_revenue: valid.reduce((s, r) => s + num(r.line_net_revenue), 0),
@@ -96,5 +152,6 @@ export function aggregateOrderMargins(rows = []) {
     missingCostRows, missingCount: missingCostRows.length,
     currencies, multiCurrency,
     totals, validCount: valid.length,
+    costCompletion,
   };
 }
