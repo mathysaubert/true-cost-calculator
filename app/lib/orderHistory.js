@@ -62,6 +62,9 @@ export function lineBreakdown(r) {
     effective_qty: num(r.effective_qty),
     // contexte : intrants figés (coûts SAISIS, non décomposés), jamais dans une somme
     snapshot: r.cost_snapshot_json ?? null,
+    // Brique B : breakdown poste-par-poste figé présent ? (null = ligne pré-B → fallback UI).
+    // L'affichage du waterfall lui-même est un chantier SÉPARÉ ; ici on n'expose que le flag.
+    has_breakdown: r.margin_breakdown_json != null,
   };
 }
 

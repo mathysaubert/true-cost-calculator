@@ -20,7 +20,7 @@ import {
   shopifyTypeToCategory, estimateVariantCost, validateCostRow,
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
 } from "../lib/variantCosts.js";
-import { parseBulkJsonl, buildOrderHistoryRows } from "../lib/orderIngest.js";
+import { parseBulkJsonl, buildOrderHistoryRows, backfillRowBreakdown } from "../lib/orderIngest.js";
 import { aggregateOrderMargins, formatMoney } from "../lib/orderHistory.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1124,6 +1124,52 @@ export const action = async ({ request }) => {
     return { success: true, ingested, orders: orders.length };
   }
 
+  // ── Brique B (re-run) : rétro-remplit margin_breakdown_json des lignes ANTÉRIEURES ──
+  // Lit order_margins directement (snapshot figé suffit, aucun appel Shopify), rejoue
+  // computeMargin via backfillRowBreakdown (AUTO-VALIDANT au centime), puis UPDATE CIBLÉ
+  // de la SEULE colonne margin_breakdown_json — jamais unit_net_margin/line_net_margin.
+  // Idempotent : ne sélectionne que les lignes encore null, UPDATE par id (pas d'upsert).
+  if (body._action === "backfill_breakdowns") {
+    const { data: plan } = await supabase.from("shop_plans")
+      .select("shopify_fee_pct, processor_fee_pct, processor_fixed_fee")
+      .eq("shop_domain", session.shop).maybeSingle();
+    let shopTaxesIncluded = true;
+    try {
+      const sr = await admin.graphql(`{ shop { taxesIncluded } }`);
+      const sj = await sr.json();
+      if (typeof sj.data?.shop?.taxesIncluded === "boolean") shopTaxesIncluded = sj.data.shop.taxesIncluded;
+    } catch (e) { console.error("[BackfillBreakdown] shop query:", e?.message); }
+    const shopSettings = {
+      shopTaxesIncluded,
+      shopifyFee:        plan?.shopify_fee_pct     ?? 2.0,
+      stripeFee:         plan?.processor_fee_pct   ?? 1.5,
+      processorFixedFee: plan?.processor_fixed_fee ?? 0.25,
+    };
+
+    // Lignes déjà ingérées, sans breakdown (et avec coût → unit_net_margin non null).
+    const { data: rows, error: selErr } = await supabase.from("order_margins")
+      .select("id, net_unit_revenue, unit_net_margin, order_created_at, cost_source, cost_snapshot_json")
+      .eq("shop_domain", session.shop).is("margin_breakdown_json", null);
+    if (selErr) return { success: false, error: selErr.message };
+
+    let filled = 0;
+    const skips = { no_snapshot: 0, reconcile_mismatch: 0, update_error: 0 };
+    for (const row of rows ?? []) {
+      const res = backfillRowBreakdown(row, shopSettings);
+      if (!res.ok) {
+        skips[res.reason] = (skips[res.reason] ?? 0) + 1;
+        if (res.reason === "reconcile_mismatch") console.warn(`[BackfillBreakdown] skip ${row.id} : rejoué ${res.replayed} ≠ stocké ${res.stored} (taux/taxesIncluded dérivé)`);
+        continue;
+      }
+      const { error: updErr } = await supabase.from("order_margins")
+        .update({ margin_breakdown_json: res.breakdown }).eq("id", row.id);
+      if (updErr) { skips.update_error++; console.error(`[BackfillBreakdown] update ${row.id}:`, updErr.message); continue; }
+      filled++;
+    }
+    const skipped = skips.no_snapshot + skips.reconcile_mismatch + skips.update_error;
+    return { success: true, scanned: rows?.length ?? 0, filled, skipped, skips };
+  }
+
   // ── Save annotation ────────────────────────────────────────────────────────
   if (body._action === "save_annotation") {
     if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
@@ -1577,6 +1623,13 @@ function LineBreakdownCard({ lb }) {
       <div style={{ marginTop: "8px", fontSize: "10px", color: "#8C9196", fontStyle: "italic", lineHeight: "1.5" }}>
         Douane, TVA import et frais Shopify/Stripe sont intégrés dans la marge nette unitaire et ne sont pas stockés séparément — non détaillés ici (lecture pure, aucun recalcul).
       </div>
+      {/* F1 : ligne ingérée avant la persistance du détail (margin_breakdown_json null).
+          Pas un waterfall vide ni une erreur — le dépli ci-dessus reste affiché. */}
+      {!lb.has_breakdown && (
+        <div style={{ marginTop: "4px", fontSize: "10px", color: "#8C9196", lineHeight: "1.5" }}>
+          Détail poste-par-poste indisponible sur les commandes antérieures à cette version.
+        </div>
+      )}
     </div>
   );
 }
@@ -1729,6 +1782,7 @@ function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, or
   const importFetcher  = useFetcher();
   const countryFetcher = useFetcher();
   const backfillFetcher = useFetcher();
+  const breakdownFetcher = useFetcher();
   const fileRef = useRef(null);
 
   const [rows, setRows]       = useState(null);   // null = pas encore chargé
@@ -1826,6 +1880,15 @@ function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, or
         </button>
         {backfillFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {backfillFetcher.data.ingested ?? 0} ligne(s) sur {backfillFetcher.data.orders ?? 0} commande(s).</span>}
         {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
+        {/* Brique B : rétro-remplir le détail poste-par-poste des commandes déjà synchronisées. */}
+        <button
+          onClick={() => breakdownFetcher.submit({ _action: "backfill_breakdowns" }, { method: "POST", encType: "application/json" })}
+          disabled={breakdownFetcher.state !== "idle"}
+          style={{ padding: "7px 14px", background: "#fff", color: breakdownFetcher.state !== "idle" ? "#6D7175" : "#7C3AED", border: `1px solid ${breakdownFetcher.state !== "idle" ? "#C9CCCF" : "#7C3AED66"}`, borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: breakdownFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+          {breakdownFetcher.state !== "idle" ? "Complétion…" : "Compléter le détail des marges"}
+        </button>
+        {breakdownFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {breakdownFetcher.data.filled ?? 0} détail(s) complété(s){(breakdownFetcher.data.skipped ?? 0) > 0 ? ` · ${breakdownFetcher.data.skipped} ignoré(s)` : ""} sur {breakdownFetcher.data.scanned ?? 0} ligne(s) sans détail.</span>}
+        {breakdownFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{breakdownFetcher.data.error}</span>}
       </div>
 
       {/* UI Monitor : sous-bloc repliable (lecture seule) de l'historique order_margins */}

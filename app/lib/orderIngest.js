@@ -121,6 +121,73 @@ const snapshotCosts = (c) => ({
   pays_import: c.pays_import, categorie: c.categorie, source: c.source,
 });
 
+// ── Brique B : fige la sortie computeMargin (PAR UNITÉ) en breakdown persistable ────
+// On LIT le retour du moteur et on le STOCKE tel quel (clés = noms moteur). On n'invente
+// aucun poste : douane/tvaImport/tvaNetCost sont exposés séparément par computeMargin,
+// le reste du détail de coutRendu (achat/port) reste interne au moteur (non exposé) →
+// non persisté ici. shop_taxes_included (résolu) accompagne, pour gater plus tard la note
+// TVA collectée (chantier d'affichage SÉPARÉ). Identité réconciliée au centime :
+//   revenu − coutRendu − shopifyCost − stripeCost − retoursCost − adsCost − fraisFixes
+//   = margeNette (= unit_net_margin).
+export function buildMarginBreakdown(m, shopTaxesIncluded) {
+  return {
+    revenu: m.revenu, coutRendu: m.coutRendu,
+    douane: m.douane, tvaImport: m.tvaImport, tvaNetCost: m.tvaNetCost,
+    shopifyCost: m.shopifyCost, stripeCost: m.stripeCost,
+    retoursCost: m.retoursCost, adsCost: m.adsCost, fraisFixes: m.fraisFixes,
+    customsRate: m.customsRate, vatRate: m.vatRate,
+    shop_taxes_included: shopTaxesIncluded === true,
+  };
+}
+
+// Reconstruit l'engineInput d'une ligne DÉJÀ ingérée, depuis ses intrants FIGÉS
+// (cost_snapshot_json) + net_unit_revenue stocké + order_created_at — SANS l'objet line
+// Shopify d'origine (le backfill lit order_margins, pas Shopify). Mêmes constantes D3
+// (processorFixedFee/retours/ads/fraisRetour = 0) qu'à l'ingestion → reproduit margeNette
+// SSI les taux (shop_plans) et shopTaxesIncluded n'ont pas dérivé depuis l'ingestion.
+export function engineInputFromSnapshot(snapshot, netUnitRevenue, orderCreatedAt, shopSettings) {
+  const c = snapshot ?? {};
+  return {
+    prixVente:         num(netUnitRevenue),
+    prixAchat:         num(c.prix_achat),
+    categorie:         c.categorie,
+    paysImport:        c.pays_import,
+    shipping:          num(c.port_entrant),
+    qty:               intPos(c.qty_par_lot, 1),
+    coutEmballage:     num(c.cout_emballage),
+    vatRegime:         c.vat_regime,
+    shippingModel:     c.shipping_model,
+    shopTaxesIncluded: shopSettings.shopTaxesIncluded !== false,
+    shopifyFee:        num(shopSettings.shopifyFee),
+    stripeFee:         num(shopSettings.stripeFee),
+    processorFixedFee: 0,
+    retours:           0,
+    ads:               0,
+    fraisRetour:       0,
+    now:               new Date(orderCreatedAt),
+  };
+}
+
+// ── Re-run backfill d'UNE ligne existante : rejoue computeMargin, AUTO-VALIDANT ──────
+// N'émet le breakdown QUE si Σ(postes) retombe sur unit_net_margin DÉJÀ stocké au centime
+// (garde-fou F1 : taux/taxesIncluded ont pu dériver depuis l'ingestion → on ne réécrit
+// jamais un détail qui contredit le total figé). Ne MUTE pas la ligne (lecture pure).
+//   { ok:true, breakdown }                          → l'appelant fait l'UPDATE ciblé
+//   { ok:false, reason:"no_snapshot" }               → ligne sans coût figé, rien à rejouer
+//   { ok:false, reason:"reconcile_mismatch", ... }   → dérive → SKIP, champ reste null
+export function backfillRowBreakdown(row, shopSettings, { computeMargin = _computeMargin } = {}) {
+  if (row.cost_source === "missing" || row.unit_net_margin == null || !row.cost_snapshot_json) {
+    return { ok: false, reason: "no_snapshot" };
+  }
+  const input = engineInputFromSnapshot(row.cost_snapshot_json, row.net_unit_revenue, row.order_created_at, shopSettings);
+  const m = computeMargin(input);
+  const stored = num(row.unit_net_margin);
+  if (Math.abs(m.margeNette - stored) >= 0.005) {
+    return { ok: false, reason: "reconcile_mismatch", replayed: m.margeNette, stored };
+  }
+  return { ok: true, breakdown: buildMarginBreakdown(m, input.shopTaxesIncluded) };
+}
+
 // ── Construit la ligne d'historique d'UNE ligne de commande ─────────────────
 // margeNette de computeMargin est PAR UNITÉ → agrégation × effective_qty (somme).
 // Le fixe processeur n'est PAS soustrait ici : allocateOrderFixedFee le fait au prorata.
@@ -141,12 +208,14 @@ export function buildHistoryRow(order, line, costRow, shopSettings, { computeMar
 
   if (!costRow) {
     return { ...base, net_unit_revenue: null, unit_net_margin: null, line_net_revenue: null,
-             line_net_margin: null, allocated_fixed_fee: null, cost_source: "missing", cost_snapshot_json: null };
+             line_net_margin: null, allocated_fixed_fee: null, cost_source: "missing",
+             cost_snapshot_json: null, margin_breakdown_json: null };
   }
 
   const engineInput     = mapLineToEngineInput(line, costRow, shopSettings, order.createdAt, { onFallback });
   const netUnit         = engineInput.prixVente;
-  const unitNetMargin   = computeMargin(engineInput).margeNette;       // ← moteur, jamais réécrit
+  const m               = computeMargin(engineInput);                  // ← moteur, jamais réécrit
+  const unitNetMargin   = m.margeNette;
   const lineNetRevenue  = netUnit * effectiveQty;                      // agrégat (somme d'unités)
   const lineNetMargin   = unitNetMargin * effectiveQty;               // fixe soustrait à l'agrégation
   return {
@@ -158,6 +227,8 @@ export function buildHistoryRow(order, line, costRow, shopSettings, { computeMar
     allocated_fixed_fee: 0,
     cost_source:      costRow.source ?? "estimated",
     cost_snapshot_json: snapshotCosts(costRow),
+    // Brique B : breakdown figé nativement (sortie computeMargin du même engineInput).
+    margin_breakdown_json: buildMarginBreakdown(m, engineInput.shopTaxesIncluded),
   };
 }
 
