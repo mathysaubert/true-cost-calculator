@@ -1607,7 +1607,9 @@ function LineBreakdownCard({ lb }) {
       {/* Identité REVENU — cible stockée = line_net_revenue */}
       <div style={{ marginBottom: refunded ? "6px" : "0" }}>
         <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>CA net de ligne</div>
-        <div style={lblRow}><span style={lbl}>Prix de vente net unitaire (TTC)</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
+        {/* « (TTC) » seulement si l'encaissé est réellement TTC (assujetti+TTC = revenue_is_ht).
+            Franchise / sans TVA / pré-B (wf null) → neutre (on ne devine pas le régime). */}
+        <div style={lblRow}><span style={lbl}>Prix de vente net unitaire{wf?.revenue_is_ht ? " (TTC)" : ""}</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
         <div style={lblRow}><span style={lbl}>× Quantité effective</span><span style={val}>{lb.effective_qty}</span></div>
         <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "600" }}>
           <span style={{ color: "#202223" }}>= CA net de ligne</span><span style={val}>{m(lb.line_net_revenue)}</span>
@@ -1760,7 +1762,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                 </select>
               </div>
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "640px" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                     <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>État</th>
                   </tr></thead>
