@@ -33,15 +33,15 @@ function utcDay(ts) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-// ── Dépli auditable d'UNE ligne de commande — LECTURE PURE STRICTE (option C) ──
+// ── Dépli auditable d'UNE ligne de commande — LECTURE PURE STRICTE ────────────
 // Ne projette QUE des colonnes order_margins STOCKÉES (jamais de poste recalculé).
-// Les postes douane/TVA import/frais Shopify/Stripe NE SONT PAS stockés (jetés après
-// computeMargin à l'ingestion) → ils ne peuvent PAS figurer ici sans recalcul, donc on
-// ne les invente pas. Deux identités d'agrégation réconcilient AU CENTIME des valeurs
-// STOCKÉES (réplique de orderIngest.js, pas une re-dérivation prix−coût) :
+// Deux identités d'agrégation réconcilient AU CENTIME des valeurs STOCKÉES (réplique
+// de orderIngest.js, pas une re-dérivation prix−coût) :
 //   • revenu : net_unit_revenue × effective_qty = line_net_revenue
 //   • marge  : unit_net_margin × effective_qty − allocated_fixed_fee = line_net_margin
 // snapshot = INTRANTS figés (coûts saisis), affichés comme contexte, jamais sommés.
+// breakdown (Brique B) = sortie computeMargin figée à l'ingestion → alimente le waterfall
+// poste-par-poste (lecture pure, cf. waterfallFromBreakdown). null = ligne pré-B → fallback.
 export function lineBreakdown(r) {
   return {
     order_id:         r.order_id ?? null,
@@ -62,9 +62,53 @@ export function lineBreakdown(r) {
     effective_qty: num(r.effective_qty),
     // contexte : intrants figés (coûts SAISIS, non décomposés), jamais dans une somme
     snapshot: r.cost_snapshot_json ?? null,
-    // Brique B : breakdown poste-par-poste figé présent ? (null = ligne pré-B → fallback UI).
-    // L'affichage du waterfall lui-même est un chantier SÉPARÉ ; ici on n'expose que le flag.
+    // Brique B : breakdown figé (lecture pure ; select("*") ramène déjà la colonne).
+    breakdown:     r.margin_breakdown_json ?? null,
     has_breakdown: r.margin_breakdown_json != null,
+  };
+}
+
+// ── Structuration du waterfall poste-par-poste — PURE, LECTURE SEULE ──────────
+// Lit margin_breakdown_json (figé par Brique B). AUCUNE valeur recalculée ; le total
+// reste ANCRÉ sur unit_net_margin stocké côté UI (non re-sommé ici). Retour :
+//   • revenu (+) et revenue_is_ht (libellé "HT" seulement si assujetti + TTC réel)
+//   • deductions : postes NIVEAU 1 qui somment vers unit_net_margin (0 masqués ;
+//     coutRendu toujours ; adsCost JAMAIS affiché — 0 par design v1, pas de "pub 0 €")
+//   • cost_detail : sous-postes de coutRendu (douane, TVA import non récupérable franchise)
+//     — informatifs, JAMAIS sommés en parallèle de coutRendu
+//   • tva_advanced : TVA import avancée puis RÉCUPÉRÉE (assujetti) — hors coutRendu, non déduite
+//   • collected_vat_note : gate W3 de la note TVA collectée (assujetti && shop_taxes_included)
+export function waterfallFromBreakdown(breakdown, snapshot) {
+  if (!breakdown) return null;
+  const b = breakdown;
+  const nz = (v) => num(v) !== 0;
+
+  const deductions = [{ key: "coutRendu", amount: num(b.coutRendu) }]; // toujours affiché
+  if (nz(b.shopifyCost)) deductions.push({ key: "shopifyCost", amount: num(b.shopifyCost) });
+  if (nz(b.stripeCost))  deductions.push({ key: "stripeCost",  amount: num(b.stripeCost) });
+  if (nz(b.retoursCost)) deductions.push({ key: "retoursCost", amount: num(b.retoursCost) });
+  if (nz(b.fraisFixes))  deductions.push({ key: "fraisFixes",  amount: num(b.fraisFixes) });
+  // adsCost volontairement absent (0 par design ; ne jamais suggérer "pub gratuite").
+
+  const tvaNet = num(b.tvaNetCost), tvaImp = num(b.tvaImport);
+  const cost_detail = [];
+  if (nz(b.douane)) cost_detail.push({ key: "douane", amount: num(b.douane), rate: num(b.customsRate) });
+  // Franchise : TVA import NON récupérable, DÉJÀ dans coutRendu (grève la marge via coutRendu).
+  if (tvaNet > 0) cost_detail.push({ key: "tvaImportFranchise", amount: tvaNet, rate: num(b.vatRate) });
+
+  // Assujetti : TVA import avancée puis récupérée → hors coutRendu, informative seulement.
+  const tva_advanced = (tvaNet === 0 && tvaImp > 0) ? { amount: tvaImp, rate: num(b.vatRate) } : null;
+
+  // Gate W3 (croisé snapshot.vat_regime + breakdown.shop_taxes_included) : note + libellé "HT".
+  const isAssujettiTTC = snapshot?.vat_regime === "assujetti" && b.shop_taxes_included === true;
+
+  return {
+    revenu: num(b.revenu),
+    revenue_is_ht: isAssujettiTTC,
+    deductions,
+    cost_detail,
+    tva_advanced,
+    collected_vat_note: isAssujettiTTC,
   };
 }
 

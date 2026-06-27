@@ -21,7 +21,7 @@ import {
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
 } from "../lib/variantCosts.js";
 import { parseBulkJsonl, buildOrderHistoryRows, backfillRowBreakdown } from "../lib/orderIngest.js";
-import { aggregateOrderMargins, formatMoney } from "../lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1562,6 +1562,14 @@ function DualLineChart({ byDay, fmt }) {
 // ici (les détailler exigerait de rejouer le moteur = BUG 1). On le DIT, on ne masque pas.
 const REGIME_LABEL = { assujetti: "TVA assujetti", franchise: "TVA franchise" };
 const MODEL_LABEL  = { dropshipping: "Dropshipping", stock: "Stock" };
+// Waterfall (Brique B) : libellés des postes NIVEAU 1 (somment vers unit_net_margin).
+const WF_DED_LABEL = {
+  coutRendu:   "Coût rendu (CIF)",
+  shopifyCost: "Frais Shopify",
+  stripeCost:  "Frais Stripe",
+  retoursCost: "Retours",
+  fraisFixes:  "Frais fixes (emballage)",
+};
 function LineBreakdownCard({ lb }) {
   const m = (n) => formatMoney(n, lb.currency);
   const sub = lb.snapshot;
@@ -1571,6 +1579,8 @@ function LineBreakdownCard({ lb }) {
   const val = { color: "#202223", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
   const date = lb.order_created_at ? String(lb.order_created_at).slice(0, 10) : "—";
   const pill = SOURCE_PILL[lb.cost_source] ?? { label: lb.cost_source ?? "—", color: "#6D7175", bg: "#F1F2F4" };
+  // Waterfall poste-par-poste : seulement si le breakdown est figé (lignes Brique B).
+  const wf = lb.has_breakdown ? waterfallFromBreakdown(lb.breakdown, lb.snapshot) : null;
   return (
     <div style={{ padding: "12px 14px", borderRadius: "8px", border: "1px solid #E4E5E7", background: "#FAFAFB", marginBottom: "8px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
@@ -1604,6 +1614,46 @@ function LineBreakdownCard({ lb }) {
         </div>
       </div>
 
+      {/* Waterfall poste-par-poste SOUS unit_net_margin (Brique B) — LECTURE PURE du JSON.
+          Niveau 1 (somme) ; douane/TVA = sous-détail de coutRendu ; total ANCRÉ sur la
+          valeur unit_net_margin STOCKÉE (jamais une somme client → zéro dérive). W1/W2/W3. */}
+      {wf && (
+        <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
+          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Décomposition de la marge nette unitaire</div>
+          <div style={lblRow}><span style={lbl}>{wf.revenue_is_ht ? "Prix de vente net (HT)" : "Prix de vente net"}</span><span style={val}>{m(wf.revenu)}</span></div>
+          {wf.deductions.map((d) => (
+            <div key={d.key}>
+              <div style={lblRow}><span style={lbl}>− {WF_DED_LABEL[d.key] ?? d.key}</span><span style={val}>−{m(d.amount)}</span></div>
+              {d.key === "coutRendu" && wf.cost_detail.map((cd) => (
+                <div key={cd.key} style={{ ...lblRow, paddingLeft: "14px", fontSize: "11px" }}>
+                  <span style={{ color: "#8C9196" }}>
+                    {cd.key === "douane" ? `dont douane${cd.rate ? ` (${formatPct(cd.rate * 100)} %)` : ""}` : `dont TVA import (non récupérable${cd.rate ? `, ${formatPct(cd.rate * 100)} %` : ""})`}
+                  </span>
+                  <span style={{ ...val, color: "#8C9196" }}>{m(cd.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {/* W1 : TVA import avancée puis récupérée (assujetti) — JAMAIS sommée, jamais "non récupérable". */}
+          {wf.tva_advanced && (
+            <div style={{ ...lblRow, fontSize: "11px" }}>
+              <span style={{ color: "#8C9196" }}>TVA import — avancée puis récupérée, non déduite de la marge</span>
+              <span style={{ ...val, color: "#8C9196" }}>{m(wf.tva_advanced.amount)}</span>
+            </div>
+          )}
+          <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "700" }}>
+            <span style={{ color: "#202223" }}>= Marge nette unitaire</span>
+            <span style={{ ...val, color: lb.unit_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.unit_net_margin)}</span>
+          </div>
+          {/* Note TVA collectée (gate W3) — note-only, aucun montant. Absente si non assujetti+TTC. */}
+          {wf.collected_vat_note && (
+            <div style={{ marginTop: "8px", padding: "8px 10px", borderRadius: "6px", background: "#F6F3FF", fontSize: "11px", color: "#202223", lineHeight: "1.5" }}>
+              Prix TTC : inclut la TVA collectée, reversée et hors marge. La marge est calculée sur le HT.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Contexte : intrants figés (coûts SAISIS), jamais sommés — pas une décomposition */}
       {sub && (
         <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
@@ -1620,15 +1670,17 @@ function LineBreakdownCard({ lb }) {
         </div>
       )}
 
-      <div style={{ marginTop: "8px", fontSize: "10px", color: "#8C9196", fontStyle: "italic", lineHeight: "1.5" }}>
-        Douane, TVA import et frais Shopify/Stripe sont intégrés dans la marge nette unitaire et ne sont pas stockés séparément — non détaillés ici (lecture pure, aucun recalcul).
-      </div>
-      {/* F1 : ligne ingérée avant la persistance du détail (margin_breakdown_json null).
-          Pas un waterfall vide ni une erreur — le dépli ci-dessus reste affiché. */}
+      {/* F1/W4 : lignes pré-B (pas de breakdown figé). Sur les lignes B, le waterfall ci-dessus
+          REMPLACE cette note (sinon elle le contredirait) → conditionnée à !has_breakdown. */}
       {!lb.has_breakdown && (
-        <div style={{ marginTop: "4px", fontSize: "10px", color: "#8C9196", lineHeight: "1.5" }}>
-          Détail poste-par-poste indisponible sur les commandes antérieures à cette version.
-        </div>
+        <>
+          <div style={{ marginTop: "8px", fontSize: "10px", color: "#8C9196", fontStyle: "italic", lineHeight: "1.5" }}>
+            Douane, TVA import et frais Shopify/Stripe sont intégrés dans la marge nette unitaire et ne sont pas stockés séparément — non détaillés ici (lecture pure, aucun recalcul).
+          </div>
+          <div style={{ marginTop: "4px", fontSize: "10px", color: "#8C9196", lineHeight: "1.5" }}>
+            Détail poste-par-poste indisponible sur les commandes antérieures à cette version.
+          </div>
+        </>
       )}
     </div>
   );

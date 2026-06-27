@@ -10,6 +10,7 @@ import {
   parseBulkJsonl, buildOrderHistoryRows,
   buildMarginBreakdown, engineInputFromSnapshot, backfillRowBreakdown,
 } from "../app/lib/orderIngest.js";
+import { waterfallFromBreakdown } from "../app/lib/orderHistory.js";
 
 let failures = 0;
 const ok    = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -127,6 +128,55 @@ console.log("\n── Déterminisme du re-run ──");
   const a = backfillRowBreakdown(stored, SHOP_US);
   const b = backfillRowBreakdown(stored, SHOP_US);
   ok(JSON.stringify(a.breakdown) === JSON.stringify(b.breakdown), "deux re-runs → breakdown identique (déterministe)");
+}
+
+// Σ NIVEAU 1 du waterfall = revenu − Σ(déductions). DOIT égaler unit_net_margin.
+const sumLevel1 = (wf) => wf.revenu - wf.deductions.reduce((s, d) => s + d.amount, 0);
+
+// ── WATERFALL #1001 : Σ niveau 1 = 364,76 ; tvaImport informatif, JAMAIS sommé ──
+console.log("\n── WATERFALL #1001 : Σ niveau 1 = unit_net_margin, tvaImport non déduit ──");
+{
+  const bd = { revenu: 600, coutRendu: 214.24, douane: 6.24, tvaImport: 42.848, tvaNetCost: 0,
+    shopifyCost: 12, stripeCost: 9, retoursCost: 0, adsCost: 0, fraisFixes: 0,
+    customsRate: 0.03, vatRate: 0.2, shop_taxes_included: false };
+  const wf = waterfallFromBreakdown(bd, { vat_regime: "assujetti" });
+  ok(cents(sumLevel1(wf), 364.76), `Σ niveau 1 = 364,76 (${f2(sumLevel1(wf))})`);
+  ok(!wf.deductions.some((d) => /tva/i.test(d.key)), "aucune TVA en déduction niveau 1 (W1)");
+  ok(wf.tva_advanced && cents(wf.tva_advanced.amount, 42.848), `tvaImport informatif 42,85 (avancée puis récupérée)`);
+  ok(wf.cost_detail.some((c) => c.key === "douane") && !wf.cost_detail.some((c) => c.key === "tvaImportFranchise"),
+     "sous-détail coutRendu : douane seule (tvaNetCost=0 → pas de TVA non récupérable)");
+  ok(wf.collected_vat_note === false, "note TVA collectée ABSENTE (store US, shop_taxes_included=false)");
+  ok(wf.revenue_is_ht === false, "libellé revenu neutre (pas 'HT' sur boutique sans TVA)");
+  // adsCost jamais affiché même si présent
+  ok(!wf.deductions.some((d) => d.key === "adsCost"), "adsCost jamais en déduction (pas de 'pub 0 €')");
+}
+
+// ── WATERFALL W1 FRANCHISE : tvaNetCost = tvaImport > 0, DANS coutRendu, pas en double ──
+console.log("\n── WATERFALL W1 (franchise) : tvaImport DANS coutRendu, jamais doublé ──");
+{
+  const bd = { revenu: 100, coutRendu: 70, douane: 5, tvaImport: 14, tvaNetCost: 14,
+    shopifyCost: 2, stripeCost: 1.5, retoursCost: 0, adsCost: 0, fraisFixes: 0,
+    customsRate: 0.1, vatRate: 0.2, shop_taxes_included: false };
+  const unitStored = 26.5; // 100 − 70 − 2 − 1.5
+  const wf = waterfallFromBreakdown(bd, { vat_regime: "franchise" });
+  ok(cents(sumLevel1(wf), unitStored), `Σ niveau 1 = unit_net_margin 26,50 SANS ajouter tvaImport (${f2(sumLevel1(wf))})`);
+  ok(!wf.deductions.some((d) => /tva/i.test(d.key)), "tvaImport PAS une déduction niveau 1 (déjà dans coutRendu)");
+  ok(wf.cost_detail.some((c) => c.key === "tvaImportFranchise" && cents(c.amount, 14)), "sous-détail : TVA import non récupérable 14 € (dans coutRendu)");
+  ok(wf.tva_advanced === null, "PAS de libellé 'récupérée' en franchise (ne ment pas au marchand)");
+}
+
+// ── WATERFALL W3 : gate note TVA collectée ──
+console.log("\n── WATERFALL W3 : gate note TVA collectée ──");
+{
+  const base = { revenu: 50, coutRendu: 20, douane: 2, tvaImport: 8, tvaNetCost: 0,
+    shopifyCost: 1, stripeCost: 0.75, retoursCost: 0, adsCost: 0, fraisFixes: 0, customsRate: 0.1, vatRate: 0.2 };
+  const wfYes = waterfallFromBreakdown({ ...base, shop_taxes_included: true },  { vat_regime: "assujetti" });
+  const wfNoTax = waterfallFromBreakdown({ ...base, shop_taxes_included: false }, { vat_regime: "assujetti" });
+  const wfFranchise = waterfallFromBreakdown({ ...base, shop_taxes_included: true }, { vat_regime: "franchise" });
+  ok(wfYes.collected_vat_note === true && wfYes.revenue_is_ht === true, "assujetti + taxesIncluded=true → note présente + libellé HT");
+  ok(wfNoTax.collected_vat_note === false, "taxesIncluded=false → note absente (#1001)");
+  ok(wfFranchise.collected_vat_note === false, "franchise → note absente (pas de TVA collectée)");
+  ok(waterfallFromBreakdown(null, { vat_regime: "assujetti" }) === null, "W4 : breakdown null (ligne pré-B) → pas de waterfall, pas de note");
 }
 
 console.log("\n" + "═".repeat(66));
