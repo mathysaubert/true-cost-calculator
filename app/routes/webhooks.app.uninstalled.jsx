@@ -10,7 +10,9 @@ export const action = async ({ request }) => {
     await db.session.deleteMany({ where: { shop } });
   }
 
-  // Delete all shop data from Supabase (RGPD / data isolation)
+  // Delete all shop data from Supabase (RGPD / data isolation).
+  // Purge IMMÉDIATE de toute donnée marchand scopée par shop_domain.
+  // Liste exhaustive — doit rester identique à celle de shop/redact (webhooks.compliance.jsx).
   await Promise.allSettled([
     supabase.from("calculation_annotations").delete().eq("shop_domain", shop),
     supabase.from("calculations").delete().eq("shop_domain", shop),
@@ -18,6 +20,10 @@ export const action = async ({ request }) => {
     supabase.from("margin_alerts").delete().eq("shop_domain", shop),
     supabase.from("rate_limits").delete().eq("shop_domain", shop),
     supabase.from("product_profitability_state").delete().eq("shop_domain", shop),
+    supabase.from("variant_costs").delete().eq("shop_domain", shop),
+    supabase.from("order_margins").delete().eq("shop_domain", shop),
+    supabase.from("order_sync_state").delete().eq("shop_domain", shop),
+    supabase.from("shop_plans").delete().eq("shop_domain", shop),
   ]);
 
   return new Response();
