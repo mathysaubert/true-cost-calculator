@@ -693,7 +693,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country, shopify_fee_pct, processor_fee_pct, processor_fixed_fee").eq("shop_domain", session.shop).maybeSingle(),
     // UI Monitor : N lignes order_margins les plus récentes + compte total (cap explicite).
     supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
     supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
@@ -727,6 +727,12 @@ export const loader = async ({ request }) => {
   const defaultImportCountry = planResult.status === "fulfilled"
     ? (planResult.value.data?.default_import_country ?? "Chine")
     : "Chine";
+  // D2 : taux fees éditables (intrants de la sync order_margins). Défauts = ceux du schéma.
+  const fees = {
+    shopifyFeePct:     planResult.status === "fulfilled" ? (planResult.value.data?.shopify_fee_pct     ?? 2.0)  : 2.0,
+    processorFeePct:   planResult.status === "fulfilled" ? (planResult.value.data?.processor_fee_pct   ?? 1.5)  : 1.5,
+    processorFixedFee: planResult.status === "fulfilled" ? (planResult.value.data?.processor_fixed_fee ?? 0.25) : 0.25,
+  };
 
   // UI Monitor : lignes (plus récentes) + total réel pour signaler le cap.
   const orderMargins = orderMarginsResult.status === "fulfilled"
@@ -735,7 +741,10 @@ export const loader = async ({ request }) => {
     ? (orderMarginsCountResult.value.count ?? orderMargins.length) : orderMargins.length;
   const orderMarginsCapped = orderMarginsTotal > ORDER_MARGINS_CAP;
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry,
+  // Devise d'affichage du frais fixe : celle des commandes synchronisées (sinon EUR).
+  const feesCurrency = orderMargins.find(o => o.currency_code)?.currency_code ?? "EUR";
+
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
@@ -827,6 +836,32 @@ export const action = async ({ request }) => {
     const model = body.shipping_model === "dropshipping" ? "dropshipping" : "stock";
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, shipping_model: model, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain" }
+    );
+    return { success: true };
+  }
+
+  // ── D2 : taux fees de la boutique (intrants de la sync order_margins) ──────
+  // On édite des INTRANTS lus par les FUTURES synchronisations, jamais une marge :
+  // les order_margins déjà ingérés gardent leur snapshot figé (cf. ignoreDuplicates).
+  if (body._action === "set_fees") {
+    // Parsing tolérant virgule FR ("1,5" → 1.5) sur les TROIS champs.
+    const parseFee = (v) => {
+      const n = parseFloat(String(v ?? "").replace(",", ".").trim());
+      return Number.isFinite(n) ? n : null;
+    };
+    const shopifyFee = parseFee(body.shopify_fee_pct);
+    const procFee    = parseFee(body.processor_fee_pct);
+    const fixedFee   = parseFee(body.processor_fixed_fee);
+    // Bornes : pourcentages [0,100] ; fixe [0,10] (>10€/transaction = faute de frappe).
+    if (shopifyFee === null || shopifyFee < 0 || shopifyFee > 100)
+      return { success: false, error: "Le taux Shopify doit être compris entre 0 et 100 %." };
+    if (procFee === null || procFee < 0 || procFee > 100)
+      return { success: false, error: "Le taux du processeur doit être compris entre 0 et 100 %." };
+    if (fixedFee === null || fixedFee < 0 || fixedFee > 10)
+      return { success: false, error: "Le frais fixe doit être compris entre 0 et 10 par transaction." };
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, shopify_fee_pct: shopifyFee, processor_fee_pct: procFee, processor_fixed_fee: fixedFee, updated_at: new Date().toISOString() },
       { onConflict: "shop_domain" }
     );
     return { success: true };
@@ -1676,7 +1711,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -1684,7 +1719,18 @@ function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, or
   const countryFetcher = useFetcher();
   const backfillFetcher = useFetcher();
   const breakdownFetcher = useFetcher();
+  const feesFetcher    = useFetcher();
   const fileRef = useRef(null);
+
+  // D2 : taux fees éditables, pré-remplis au format que le marchand reconnaît
+  // (virgule FR, sans zéros superflus : 2 → "2", 1.5 → "1,5", 0.25 → "0,25").
+  const feeStr = (n) => String(n).replace(".", ",");
+  const [feeForm, setFeeForm] = useState({
+    shopify_fee_pct:     feeStr(fees?.shopifyFeePct     ?? 2.0),
+    processor_fee_pct:   feeStr(fees?.processorFeePct   ?? 1.5),
+    processor_fixed_fee: feeStr(fees?.processorFixedFee ?? 0.25),
+  });
+  const setFee = (k) => (e) => setFeeForm(p => ({ ...p, [k]: e.target.value }));
 
   const [rows, setRows]       = useState(null);   // null = pas encore chargé
   const [dirty, setDirty]     = useState(() => new Set());
@@ -1768,6 +1814,37 @@ function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, or
           {PAYS_KEYS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <span style={{ fontSize: "11px", color: "#6D7175" }}>Les nouvelles variantes en héritent ; chaque variante reste surchargeable.</span>
+      </div>
+
+      {/* D2 : taux fees de la boutique (intrants de la sync marge réelle) */}
+      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Vos taux de frais</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+          <label style={{ fontSize: "11px", color: "#6D7175" }}>
+            <div style={{ marginBottom: "4px" }}>Frais Shopify (% du CA)</div>
+            <input type="text" inputMode="decimal" value={feeForm.shopify_fee_pct} onChange={setFee("shopify_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 2" />
+          </label>
+          <label style={{ fontSize: "11px", color: "#6D7175" }}>
+            <div style={{ marginBottom: "4px" }}>Taux processeur (% du CA)</div>
+            <input type="text" inputMode="decimal" value={feeForm.processor_fee_pct} onChange={setFee("processor_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 1,5" />
+          </label>
+          <label style={{ fontSize: "11px", color: "#6D7175" }}>
+            <div style={{ marginBottom: "4px" }}>Fixe processeur (par transaction)</div>
+            <input type="text" inputMode="decimal" value={feeForm.processor_fixed_fee} onChange={setFee("processor_fixed_fee")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 0,25" />
+            <div style={hintStyle}>{formatMoney(parseFloat(String(feeForm.processor_fixed_fee).replace(",", ".")) || 0, feesCurrency)}/transaction</div>
+          </label>
+          <button
+            onClick={() => feesFetcher.submit({ _action: "set_fees", ...feeForm }, { method: "POST", encType: "application/json" })}
+            disabled={feesFetcher.state !== "idle"}
+            style={{ padding: "7px 14px", background: feesFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: feesFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: feesFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+            {feesFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer les taux"}
+          </button>
+          {feesFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Taux enregistrés.</span>}
+          {feesFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{feesFetcher.data.error}</span>}
+        </div>
+        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+          Ces taux s'appliquent aux prochaines synchronisations. Les commandes déjà analysées conservent les taux en vigueur au moment de leur calcul.
+        </div>
       </div>
 
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
@@ -1882,7 +1959,7 @@ function CostTracker({ defaultImportCountry, orderMargins, orderMarginsTotal, or
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry,
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
@@ -3046,7 +3123,7 @@ export default function Index() {
         )}
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
-        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry}
+        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
 
