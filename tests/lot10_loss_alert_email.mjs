@@ -23,9 +23,9 @@ console.log("\n── digest mixte (2 sections) ──");
     ],
   });
   ok(subject.includes("demo.myshopify.com") && subject.includes("2 produit"), `sujet : shop + compte (${subject})`);
-  ok(/perte/i.test(html) && /redevenus rentables/i.test(html), "html : les 2 sections présentes");
+  ok(/perte/i.test(html) && /repassé au-dessus du seuil/i.test(html), "html : les 2 sections présentes");
   ok(html.includes("Snowboard Hydrogen") && html.includes("Bonnet"), "titres produits affichés");
-  ok(/négative/.test(text) && /repassé rentable/.test(text), "wording état : 'négative' + 'repassé rentable'");
+  ok(/négative/.test(text) && /repassé au-dessus du seuil/.test(text), "wording état : 'négative' + 'repassé au-dessus du seuil'");
   ok(text.includes("12,40") && text.includes("8,10"), "montants au centime");
 }
 
@@ -56,7 +56,7 @@ console.log("\n── pertes seules : une seule section ──");
   const { html } = renderLossAlertEmail({
     shop: "s", basculements: [b({ id: "gid://shopify/Product/5", to: "loss", margin: -2 })],
   });
-  ok(/perte/i.test(html) && !/redevenus rentables/i.test(html), "section perte seule, pas de section rentable");
+  ok(/perte/i.test(html) && !/au-dessus du seuil/i.test(html), "section perte seule, pas de section 'au-dessus du seuil'");
 }
 
 // ── devise respectée (EUR ≠ USD) ──
@@ -66,6 +66,34 @@ console.log("\n── devise par produit ──");
     shop: "s", basculements: [b({ id: "gid://shopify/Product/6", to: "loss", margin: -5, cur: "EUR" })],
   });
   ok(text.includes("€"), `EUR formaté en € (${text})`);
+}
+
+// ── SEUIL : sous-groupage 'à perte' vs 'sous le seuil' + % affiché ──
+console.log("\n── seuil : 2 niveaux d'urgence (perte réelle / sous le seuil) ──");
+{
+  const { html, text } = renderLossAlertEmail({
+    shop: "s.myshopify.com",
+    thresholdPct: 15,
+    basculements: [
+      // perte réelle : margin < 0
+      { product_id: "gid://shopify/Product/1", to: "loss", margin: -4.5, marginPct: -9, currency: "EUR", title: "Tasse" },
+      // sous le seuil mais rentable : 0 ≤ margin < seuil
+      { product_id: "gid://shopify/Product/2", to: "loss", margin: 2.1, marginPct: 8, currency: "EUR", title: "Carnet" },
+    ],
+  });
+  ok(/Passés à perte/.test(html) && /Sous votre seuil/.test(html), "html : 2 sections distinctes (perte / sous seuil)");
+  ok(/Tasse/.test(text) && /négative/.test(text), "Tasse (margin<0) → section 'à perte'");
+  ok(/Carnet/.test(text) && /sous votre seuil de 15 %/.test(text), "Carnet (0≤margin<seuil) → 'sous votre seuil de 15 %'");
+  ok(/8,0 %/.test(text) && /-9,0 %|−9,0 %/.test(text), `% affiché à côté du montant (${text})`);
+}
+
+// ── NON-RÉGRESSION : thresholdPct absent (=0) → wording legacy 'à perte' ──
+console.log("\n── seuil=0 (défaut) : aucune section 'sous le seuil' ──");
+{
+  const { html } = renderLossAlertEmail({
+    shop: "s", basculements: [{ product_id: "gid://shopify/Product/3", to: "loss", margin: -2, marginPct: -5, currency: "USD" }],
+  });
+  ok(/Passés à perte/.test(html) && !/Sous votre seuil/.test(html), "seuil 0 : structure legacy (perte seule, pas de bande 'sous le seuil')");
 }
 
 console.log("\n" + "═".repeat(66));

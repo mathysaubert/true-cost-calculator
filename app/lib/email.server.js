@@ -10,14 +10,14 @@ import { renderLossAlertEmail } from "./profitabilityAlert.js";
 // Prod : remplacer par une adresse d'un domaine vérifié Resend avant envoi à de vrais marchands.
 const FROM = process.env.RESEND_FROM || "True Cost Calculator <onboarding@resend.dev>";
 
-export async function sendLossAlert({ to, shop, basculements }) {
+export async function sendLossAlert({ to, shop, basculements, thresholdPct = 0 }) {
   if (!to) { console.warn(`[Alert] email absent pour ${shop} — envoi ignoré`); return false; }
   if (!process.env.RESEND_API_KEY) { console.error("[Alert] RESEND_API_KEY manquant — envoi ignoré"); return false; }
   if (!basculements?.length) return false;
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const { subject, html, text } = renderLossAlertEmail({ shop, basculements });
+    const { subject, html, text } = renderLossAlertEmail({ shop, thresholdPct, basculements });
     const { error } = await resend.emails.send({ from: FROM, to, subject, html, text });
     if (error) { console.error(`[Alert] envoi KO pour ${shop} :`, error?.message ?? error); return false; }
     return true;

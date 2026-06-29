@@ -693,7 +693,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country, shopify_fee_pct, processor_fee_pct, processor_fixed_fee").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country, shopify_fee_pct, processor_fee_pct, processor_fixed_fee, profitability_threshold_pct").eq("shop_domain", session.shop).maybeSingle(),
     // UI Monitor : N lignes order_margins les plus récentes + compte total (cap explicite).
     supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
     supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
@@ -733,6 +733,9 @@ export const loader = async ({ request }) => {
     processorFeePct:   planResult.status === "fulfilled" ? (planResult.value.data?.processor_fee_pct   ?? 1.5)  : 1.5,
     processorFixedFee: planResult.status === "fulfilled" ? (planResult.value.data?.processor_fixed_fee ?? 0.25) : 0.25,
   };
+  // Seuil d'alerte de rentabilité (% global boutique). Défaut 0 = perte stricte (legacy).
+  const profitabilityThresholdPct = planResult.status === "fulfilled"
+    ? (planResult.value.data?.profitability_threshold_pct ?? 0) : 0;
 
   // UI Monitor : lignes (plus récentes) + total réel pour signaler le cap.
   const orderMargins = orderMarginsResult.status === "fulfilled"
@@ -744,7 +747,7 @@ export const loader = async ({ request }) => {
   // Devise d'affichage du frais fixe : celle des commandes synchronisées (sinon EUR).
   const feesCurrency = orderMargins.find(o => o.currency_code)?.currency_code ?? "EUR";
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency,
+  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
@@ -862,6 +865,20 @@ export const action = async ({ request }) => {
       return { success: false, error: "Le frais fixe doit être compris entre 0 et 10 par transaction." };
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, shopify_fee_pct: shopifyFee, processor_fee_pct: procFee, processor_fixed_fee: fixedFee, updated_at: new Date().toISOString() },
+      { onConflict: "shop_domain" }
+    );
+    return { success: true };
+  }
+
+  // ── Seuil d'alerte de rentabilité (% global boutique, lu par le cron) ─────
+  // On édite un INTRANT du diff d'alerting (computeProfitabilityChanges), jamais une marge :
+  // la frontière devient net_margin < (seuil/100)×CA net. Défaut 0 = perte stricte (legacy).
+  if (body._action === "set_profitability_threshold") {
+    const n = parseFloat(String(body.profitability_threshold_pct ?? "").replace(",", ".").trim());
+    if (!Number.isFinite(n) || n < 0 || n > 100)
+      return { success: false, error: "Le seuil doit être compris entre 0 et 100 %." };
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, profitability_threshold_pct: n, updated_at: new Date().toISOString() },
       { onConflict: "shop_domain" }
     );
     return { success: true };
@@ -1711,7 +1728,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -1720,6 +1737,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, o
   const backfillFetcher = useFetcher();
   const breakdownFetcher = useFetcher();
   const feesFetcher    = useFetcher();
+  const thresholdFetcher = useFetcher();
   const fileRef = useRef(null);
 
   // D2 : taux fees éditables, pré-remplis au format que le marchand reconnaît
@@ -1731,6 +1749,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, o
     processor_fixed_fee: feeStr(fees?.processorFixedFee ?? 0.25),
   });
   const setFee = (k) => (e) => setFeeForm(p => ({ ...p, [k]: e.target.value }));
+
+  // Seuil d'alerte de rentabilité (% global boutique), même format FR que les fees.
+  const [thresholdForm, setThresholdForm] = useState(feeStr(profitabilityThresholdPct ?? 0));
 
   const [rows, setRows]       = useState(null);   // null = pas encore chargé
   const [dirty, setDirty]     = useState(() => new Set());
@@ -1847,6 +1868,28 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, o
         </div>
       </div>
 
+      {/* Seuil d'alerte de rentabilité (% global boutique, lu par l'alerte quotidienne) */}
+      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil d'alerte de rentabilité</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+          <label style={{ fontSize: "11px", color: "#6D7175" }}>
+            <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% du CA)</div>
+            <input type="text" inputMode="decimal" value={thresholdForm} onChange={e => setThresholdForm(e.target.value)} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 15" />
+          </label>
+          <button
+            onClick={() => thresholdFetcher.submit({ _action: "set_profitability_threshold", profitability_threshold_pct: thresholdForm }, { method: "POST", encType: "application/json" })}
+            disabled={thresholdFetcher.state !== "idle"}
+            style={{ padding: "7px 14px", background: thresholdFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: thresholdFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: thresholdFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+            {thresholdFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le seuil"}
+          </button>
+          {thresholdFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Seuil enregistré.</span>}
+          {thresholdFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{thresholdFetcher.data.error}</span>}
+        </div>
+        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+          L'alerte quotidienne se déclenche quand la marge nette cumulée d'un produit passe sous ce seuil. <strong>0 %</strong> = alerte uniquement à perte réelle (marge négative).
+        </div>
+      </div>
+
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
         <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Marge réelle sur vos commandes</span>
@@ -1959,7 +2002,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, orderMargins, o
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency,
+  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
@@ -3123,7 +3166,7 @@ export default function Index() {
         )}
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
-        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency}
+        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
 

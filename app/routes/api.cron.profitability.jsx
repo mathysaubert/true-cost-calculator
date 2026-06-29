@@ -63,13 +63,16 @@ async function runForShop(shop) {
     .eq("shop_domain", shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP);
   const agg = aggregateOrderMargins(rows ?? []);
 
-  // 3. ÉTAT VEILLE.
+  // 3. ÉTAT VEILLE + SEUIL boutique (défaut 0 = perte stricte = legacy).
   const { data: prevRows } = await supabase.from("product_profitability_state")
     .select("product_id, last_state").eq("shop_domain", shop);
   const prevMap = new Map((prevRows ?? []).map((p) => [p.product_id, { last_state: p.last_state }]));
+  const { data: planRow } = await supabase.from("shop_plans")
+    .select("profitability_threshold_pct").eq("shop_domain", shop).maybeSingle();
+  const thresholdPct = planRow?.profitability_threshold_pct ?? 0;
 
   // 4+5. DIFF (premier passage = prevMap vide → tout en seeds, zéro basculement).
-  const { basculements, seeds, majNormales } = computeProfitabilityChanges(agg.byProduct, prevMap);
+  const { basculements, seeds, majNormales } = computeProfitabilityChanges(agg.byProduct, prevMap, thresholdPct);
   const now = new Date().toISOString();
 
   // 6. ÉCRITURES INDÉPENDANTES DU MAIL (seeds + maj) — jamais d'alerte ici.
@@ -89,7 +92,7 @@ async function runForShop(shop) {
       r.noEmail = true;
       await writeStates(basculements.map((e) => stateRow(e, shop, now)));
     } else {
-      const ok = await sendLossAlert({ to, shop, basculements });
+      const ok = await sendLossAlert({ to, shop, basculements, thresholdPct });
       if (ok) { r.mailed = true; await writeStates(basculements.map((e) => stateRow(e, shop, now))); }
       else    { r.mailFailed = true; /* état NON avancé → réessai demain */ }
     }
