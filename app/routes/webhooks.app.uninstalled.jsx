@@ -20,6 +20,7 @@ export const action = async ({ request }) => {
     supabase.from("margin_alerts").delete().eq("shop_domain", shop),
     supabase.from("rate_limits").delete().eq("shop_domain", shop),
     supabase.from("product_profitability_state").delete().eq("shop_domain", shop),
+    supabase.from("subscription_dunning_state").delete().eq("shop_domain", shop),
     supabase.from("variant_costs").delete().eq("shop_domain", shop),
     supabase.from("order_margins").delete().eq("shop_domain", shop),
     supabase.from("order_sync_state").delete().eq("shop_domain", shop),
