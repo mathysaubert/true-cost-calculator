@@ -16,6 +16,32 @@ export const DUNNING_MAX = 5;            // plafond de relances par épisode fro
 export const DUNNING_INTERVAL_DAYS = 3;  // espacement minimal entre deux relances
 const DAY_MS = 86_400_000;
 
+// ── Dérivation du statut COURANT depuis l'historique allSubscriptions — PURE ──
+// allSubscriptions renvoie TOUT l'historique (ACTIVE/FROZEN/PENDING/CANCELLED/EXPIRED…),
+// souvent du bruit (annulations/expirations de tests passés). On ne se fie JAMAIS au volume :
+// précédence ACTIVE > FROZEN > PENDING > cancelled. 'cancelled' = plus aucun actif/frozen/pending.
+// Retourne aussi le frozenNode (pour recréer la charge au MÊME prix). Entrée = [{ status, name, lineItems }].
+export function deriveSubscriptionStatus(nodes = []) {
+  if (nodes.some((n) => n?.status === "ACTIVE")) return { status: "active", frozenNode: null };
+  const frozenNode = nodes.find((n) => n?.status === "FROZEN");
+  if (frozenNode) return { status: "frozen", frozenNode };
+  if (nodes.some((n) => n?.status === "PENDING")) return { status: "pending", frozenNode: null };
+  return { status: "cancelled", frozenNode: null };
+}
+
+// Reconstruit les line items RÉCURRENTS d'un sub (gelé) en entrée de appSubscriptionCreate —
+// au MÊME prix/intervalle (jamais sous-facturer ; aucune table de prix en dur à maintenir).
+// Ignore tout pricing non récurrent. Entrée = node.lineItems de allSubscriptions.
+export function recurringLineItems(node) {
+  return (node?.lineItems ?? [])
+    .map((li) => li?.plan?.pricingDetails)
+    .filter((pd) => pd && pd.__typename === "AppRecurringPricing" && pd.price)
+    .map((pd) => ({ plan: { appRecurringPricingDetails: {
+      price: { amount: Number(pd.price.amount), currencyCode: pd.price.currencyCode },
+      interval: pd.interval,
+    } } }));
+}
+
 // Actions possibles (le cron mappe chacune sur un effet) :
 //   'send_dunning'   → recréer une charge + mail de relance, puis count++ / last_dunning_at=now
 //   'send_resolved'  → mail "c'est réglé" (une fois), puis reset count=0

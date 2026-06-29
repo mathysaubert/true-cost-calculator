@@ -8,7 +8,7 @@
 import { unauthenticated } from "../shopify.server";
 import { supabase } from "../supabase.server";
 import prisma from "../db.server";
-import { decideDunningAction } from "../lib/dunning.js";
+import { decideDunningAction, deriveSubscriptionStatus, recurringLineItems } from "../lib/dunning.js";
 import { sendDunningEmail, sendDunningResolved } from "../lib/email.server.js";
 
 // La sync n'a pas lieu ici (pas de bulk) ; 60 s reste un plafond large et sûr.
@@ -46,28 +46,7 @@ const CREATE_MUTATION = `
     }
   }`;
 
-// ── Dérivation du statut COURANT depuis l'historique allSubscriptions ─────────
-// Précédence ACTIVE > FROZEN > PENDING > cancelled (cf. décision produit). L'historique
-// contient du bruit (CANCELLED/EXPIRED de tests passés) : on ne se fie JAMAIS au volume,
-// seulement à la présence d'un statut prioritaire. 'cancelled' = plus aucun actif/frozen/pending.
-function deriveStatus(nodes) {
-  if (nodes.some((n) => n.status === "ACTIVE")) return { status: "active", frozenNode: null };
-  const frozenNode = nodes.find((n) => n.status === "FROZEN");
-  if (frozenNode) return { status: "frozen", frozenNode };
-  if (nodes.some((n) => n.status === "PENDING")) return { status: "pending", frozenNode: null };
-  return { status: "cancelled", frozenNode: null };
-}
-
-// Reconstruit les line items récurrents du sub gelé pour appSubscriptionCreate (même prix/intervalle).
-function recurringLineItems(node) {
-  return (node?.lineItems ?? [])
-    .map((li) => li?.plan?.pricingDetails)
-    .filter((pd) => pd && pd.__typename === "AppRecurringPricing" && pd.price)
-    .map((pd) => ({ plan: { appRecurringPricingDetails: {
-      price: { amount: Number(pd.price.amount), currencyCode: pd.price.currencyCode },
-      interval: pd.interval,
-    } } }));
-}
+// deriveSubscriptionStatus + recurringLineItems vivent dans lib/dunning.js (purs, testés lot13).
 
 const writeState = (row) =>
   supabase.from("subscription_dunning_state").upsert(row, { onConflict: "shop_domain" });
@@ -97,7 +76,7 @@ async function runForShop(shop, now) {
     nodes = (j.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map((e) => e.node);
   } catch (e) { console.error(`[Dunning] allSubscriptions KO ${shop}:`, e?.message); r.error = "subs_query_failed"; return r; }
 
-  const { status, frozenNode } = deriveStatus(nodes);
+  const { status, frozenNode } = deriveSubscriptionStatus(nodes);
   r.status = status;
 
   // 3. État de dunning stocké.
