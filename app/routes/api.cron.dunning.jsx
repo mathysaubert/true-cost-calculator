@@ -1,0 +1,184 @@
+// ── Cron quotidien : dunning (récupération de churn involontaire / frozen) ──────
+// Resource route (loader seul, server-only). Déclenchée par Vercel Cron (GET) avec
+// Authorization: Bearer $CRON_SECRET. Pour CHAQUE boutique installée (session offline) :
+//   lire allSubscriptions → DÉRIVER le statut courant → decideDunningAction (pur) → exécuter.
+// SÉPARÉ du cron profitability : doit tourner même si la sync commandes échoue pour une
+// boutique. Réutilise unauthenticated.admin, Resend (sendDunning*), garde-fou G2.
+// engine.js intouché.
+import { unauthenticated } from "../shopify.server";
+import { supabase } from "../supabase.server";
+import prisma from "../db.server";
+import { decideDunningAction } from "../lib/dunning.js";
+import { sendDunningEmail, sendDunningResolved } from "../lib/email.server.js";
+
+// La sync n'a pas lieu ici (pas de bulk) ; 60 s reste un plafond large et sûr.
+export const config = { maxDuration: 60 };
+
+// Charges de TEST hors prod (dev store), réelles en prod — identique au bouton subscribe
+// (app._index.jsx). Sur un dev store, Shopify force de toute façon le mode test.
+const IS_TEST = process.env.NODE_ENV !== "production";
+
+// allSubscriptions (PAS activeSubscriptions : ce dernier masque les FROZEN). On lit aussi le
+// pricing des line items du sub gelé → on recrée la charge AU MÊME PRIX (jamais sous-facturer).
+const ALL_SUBS_QUERY = `
+  query AllSubs {
+    currentAppInstallation {
+      allSubscriptions(first: 25) {
+        edges { node {
+          id name status createdAt
+          lineItems {
+            plan { pricingDetails {
+              __typename
+              ... on AppRecurringPricing { price { amount currencyCode } interval }
+            } }
+          }
+        } }
+      }
+    }
+  }`;
+
+const CREATE_MUTATION = `
+  mutation Recreate($name: String!, $returnUrl: URL!, $test: Boolean, $lineItems: [AppSubscriptionLineItemInput!]!) {
+    appSubscriptionCreate(name: $name, returnUrl: $returnUrl, test: $test, lineItems: $lineItems) {
+      confirmationUrl
+      appSubscription { id status }
+      userErrors { field message }
+    }
+  }`;
+
+// ── Dérivation du statut COURANT depuis l'historique allSubscriptions ─────────
+// Précédence ACTIVE > FROZEN > PENDING > cancelled (cf. décision produit). L'historique
+// contient du bruit (CANCELLED/EXPIRED de tests passés) : on ne se fie JAMAIS au volume,
+// seulement à la présence d'un statut prioritaire. 'cancelled' = plus aucun actif/frozen/pending.
+function deriveStatus(nodes) {
+  if (nodes.some((n) => n.status === "ACTIVE")) return { status: "active", frozenNode: null };
+  const frozenNode = nodes.find((n) => n.status === "FROZEN");
+  if (frozenNode) return { status: "frozen", frozenNode };
+  if (nodes.some((n) => n.status === "PENDING")) return { status: "pending", frozenNode: null };
+  return { status: "cancelled", frozenNode: null };
+}
+
+// Reconstruit les line items récurrents du sub gelé pour appSubscriptionCreate (même prix/intervalle).
+function recurringLineItems(node) {
+  return (node?.lineItems ?? [])
+    .map((li) => li?.plan?.pricingDetails)
+    .filter((pd) => pd && pd.__typename === "AppRecurringPricing" && pd.price)
+    .map((pd) => ({ plan: { appRecurringPricingDetails: {
+      price: { amount: Number(pd.price.amount), currencyCode: pd.price.currencyCode },
+      interval: pd.interval,
+    } } }));
+}
+
+const writeState = (row) =>
+  supabase.from("subscription_dunning_state").upsert(row, { onConflict: "shop_domain" });
+
+// Email marchand via l'Admin API (best-effort), comme le cron profitability.
+async function resolveEmail(admin) {
+  try {
+    const sr = await admin.graphql(`{ shop { email contactEmail } }`);
+    const sj = await sr.json();
+    return sj.data?.shop?.email || sj.data?.shop?.contactEmail || null;
+  } catch (e) { console.error("[Dunning] email:", e?.message); return null; }
+}
+
+async function runForShop(shop, now) {
+  const r = { shop, status: null, action: "nothing", mailed: false };
+
+  // 1. Admin offline (skip+log si refresh expiré) — n'affecte pas les autres boutiques.
+  let admin;
+  try { ({ admin } = await unauthenticated.admin(shop)); }
+  catch (e) { console.error(`[Dunning] admin offline KO ${shop}:`, e?.message); r.error = "admin_unauthorized"; return r; }
+
+  // 2. STATUT COURANT lu À L'INSTANT T (jamais d'état périmé).
+  let nodes = [];
+  try {
+    const resp = await admin.graphql(ALL_SUBS_QUERY);
+    const j = await resp.json();
+    nodes = (j.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map((e) => e.node);
+  } catch (e) { console.error(`[Dunning] allSubscriptions KO ${shop}:`, e?.message); r.error = "subs_query_failed"; return r; }
+
+  const { status, frozenNode } = deriveStatus(nodes);
+  r.status = status;
+
+  // 3. État de dunning stocké.
+  const { data: prev } = await supabase.from("subscription_dunning_state")
+    .select("dunning_count, last_dunning_at, last_status, frozen_since").eq("shop_domain", shop).maybeSingle();
+  const state = prev ?? {};
+
+  // 4. DÉCISION PURE.
+  const action = decideDunningAction({ status, state, now: Date.parse(now) });
+  r.action = action;
+
+  if (action === "send_dunning") {
+    // 5a. Recréer la charge DU MÊME PLAN (lecture du pricing réel → jamais sous-facturer).
+    const lineItems = recurringLineItems(frozenNode);
+    const plan = frozenNode?.name ?? null;
+    if (!lineItems.length) { console.error(`[Dunning] line items introuvables ${shop}`); r.error = "no_line_items"; return r; }
+
+    let confirmationUrl = null;
+    try {
+      const resp = await admin.graphql(CREATE_MUTATION, { variables: {
+        name: plan,
+        returnUrl: `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
+        test: IS_TEST,
+        lineItems,
+      } });
+      const payload = (await resp.json()).data?.appSubscriptionCreate;
+      if (payload?.userErrors?.length) { console.error(`[Dunning] charge userErrors ${shop}:`, JSON.stringify(payload.userErrors)); r.error = "charge_errors"; return r; }
+      confirmationUrl = payload?.confirmationUrl ?? null;
+    } catch (e) { console.error(`[Dunning] appSubscriptionCreate KO ${shop}:`, e?.message); r.error = "charge_failed"; return r; }
+    if (!confirmationUrl) { r.error = "no_confirmation_url"; return r; }
+
+    // 5b. Destinataire. Sans email on ne peut PAS relancer → on n'avance RIEN (réessai au run suivant).
+    const to = await resolveEmail(admin);
+    if (!to) { console.warn(`[Dunning] email absent ${shop} — relance impossible`); r.noEmail = true; return r; }
+
+    // 5c. ENVOI puis — G2 STRICT — n'avancer compteur/date qu'APRÈS un envoi réussi.
+    const ok = await sendDunningEmail({ to, shop, plan, confirmationUrl });
+    if (!ok) { r.mailFailed = true; return r; }      // état NON avancé → réessai au prochain run
+    r.mailed = true;
+    await writeState({
+      shop_domain: shop,
+      last_status: "frozen",
+      dunning_count: (Number(state.dunning_count) || 0) + 1,
+      last_dunning_at: now,
+      frozen_since: state.frozen_since ?? now,
+      updated_at: now,
+    });
+  } else if (action === "send_resolved") {
+    // Retour à active après relance(s) : confirmation (1×) puis reset compteur APRÈS envoi réussi.
+    const plan = nodes.find((n) => n.status === "ACTIVE")?.name ?? null;
+    const to = await resolveEmail(admin);
+    if (!to) { r.noEmail = true; return r; }
+    const ok = await sendDunningResolved({ to, shop, plan });
+    if (!ok) { r.mailFailed = true; return r; }      // réessai au prochain run (count encore > 0)
+    r.mailed = true;
+    await writeState({ shop_domain: shop, last_status: "active", dunning_count: 0, frozen_since: null, updated_at: now });
+  } else if (action === "stop_cancelled") {
+    // Garde de persistance : on n'écrit que si un épisode existait (jamais de ligne pour une
+    // boutique free jamais abonnée). Aucun mail.
+    if (prev) await writeState({ shop_domain: shop, last_status: "cancelled", updated_at: now });
+  }
+  // action === "nothing" → aucune écriture.
+
+  return r;
+}
+
+export async function loader({ request }) {
+  // [G0] sécurité : Vercel Cron envoie Authorization: Bearer $CRON_SECRET.
+  const secret = process.env.CRON_SECRET;
+  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const sessions = await prisma.session.findMany({ where: { isOnline: false }, select: { shop: true } });
+  const shops = [...new Set(sessions.map((s) => s.shop))];
+  const now = new Date().toISOString();
+
+  const results = [];
+  for (const shop of shops) {
+    try { results.push(await runForShop(shop, now)); }
+    catch (e) { console.error(`[Dunning] échec ${shop}:`, e?.message); results.push({ shop, error: e?.message ?? "exception" }); }
+  }
+  return Response.json({ ok: true, shops: shops.length, results });
+}
