@@ -46,3 +46,56 @@ export function decideDunningAction({
       return "nothing";                               // pending, expired, inconnu → rien
   }
 }
+
+// ── Rendus PURS des mails de dunning — aucun I/O, aucun envoi ────────────────
+// Ton FACTUEL : on énonce la conséquence RÉELLE (paiement échoué → accès suspendu tant que
+// non régularisé), jamais de fausse urgence / dark pattern ("DERNIÈRE CHANCE", compte à
+// rebours, rareté factice). L'incitation vient du fait, pas de l'emphase. Le LIEN de
+// régularisation est TOUJOURS présent (le cron ne déclenche l'envoi qu'avec une URL valide).
+
+const planLabel = (plan) => (plan ? `votre abonnement ${plan}` : "votre abonnement");
+
+// Mail de relance (épisode frozen). Entrée : { shop, plan, confirmationUrl }.
+export function renderDunningEmail({ shop, plan, confirmationUrl }) {
+  const subject = "Paiement en échec — votre abonnement True Cost Calculator est suspendu";
+  const lien = confirmationUrl;
+
+  const text = [
+    `Le dernier paiement de ${planLabel(plan)} n'a pas abouti.`,
+    `Shopify a suspendu l'abonnement : les fonctionnalités payantes de True Cost Calculator`,
+    `resteront indisponibles tant que le paiement n'est pas régularisé.`,
+    ``,
+    `Pour rétablir votre accès, régularisez votre paiement ici :`,
+    lien,
+    ``,
+    `Si vous avez déjà régularisé, vous pouvez ignorer ce message.`,
+  ].join("\n");
+
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
+    <p>Le dernier paiement de <strong>${planLabel(plan)}</strong> n'a pas abouti.</p>
+    <p>Shopify a suspendu l'abonnement : les fonctionnalités payantes de True Cost Calculator resteront indisponibles tant que le paiement n'est pas régularisé.</p>
+    <p style="margin:20px 0">
+      <a href="${lien}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Régulariser mon paiement</a>
+    </p>
+    <p style="font-size:12px;color:#6D7175">Ou copiez ce lien : <a href="${lien}">${lien}</a></p>
+    <p style="font-size:12px;color:#6D7175">Si vous avez déjà régularisé, vous pouvez ignorer ce message.</p>
+  </div>`;
+
+  return { subject, html, text };
+}
+
+// Mail de confirmation (retour à active après relances). Entrée : { shop, plan }.
+export function renderDunningResolvedEmail({ shop, plan }) {
+  const subject = "Paiement à jour — accès rétabli";
+  const text = [
+    `Votre paiement a été régularisé et ${planLabel(plan)} est de nouveau actif.`,
+    `L'accès complet à True Cost Calculator est rétabli.`,
+    `Merci.`,
+  ].join("\n");
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
+    <p>Votre paiement a été régularisé et <strong>${planLabel(plan)}</strong> est de nouveau actif.</p>
+    <p>L'accès complet à True Cost Calculator est rétabli.</p>
+    <p>Merci.</p>
+  </div>`;
+  return { subject, html, text };
+}
