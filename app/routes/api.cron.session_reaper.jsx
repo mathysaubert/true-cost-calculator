@@ -1,4 +1,4 @@
-// ── Cron hebdomadaire : entretien des sessions mortes ───────────────────────
+// ── Cron quotidien : entretien des sessions mortes ──────────────────────────
 // Resource route (loader seul, server-only). Déclenchée par Vercel Cron (GET) avec
 // Authorization: Bearer $CRON_SECRET. AUTONOME : refait son propre probe admin, ne touche
 // NI au cron profitability NI au cron dunning (zéro risque de régression pour un gain d'entretien).
