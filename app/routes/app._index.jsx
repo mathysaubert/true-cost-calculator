@@ -2406,7 +2406,7 @@ export default function Index() {
             { id: "history",    label: isPro ? "Historique" : "Historique 🔒", badge: null },
             { id: "alerts",     label: "Alertes",     badge: null },
             { id: "audit",      label: "Audit Catalogue", badge: "EXPERT" },
-            { id: "costs",      label: "Suivi des coûts", badge: "BÊTA" },
+            { id: "costs",      label: "Suivi des coûts", badge: null },
           ].map(({ id, label, badge }) => (
             <button key={id} onClick={() => setActiveTab(id)}
               style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: activeTab === id ? `2px solid ${id === "audit" ? "#7C3AED" : "#008060"}` : "2px solid transparent", marginBottom: "-2px", cursor: "pointer", fontSize: "13px", fontWeight: activeTab === id ? "600" : "400", color: activeTab === id ? (id === "audit" ? "#7C3AED" : "#008060") : "#6D7175", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}>
