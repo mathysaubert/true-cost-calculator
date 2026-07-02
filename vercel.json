@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/profitability", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/dunning", "schedule": "0 7 * * *" }
+    { "path": "/api/cron/dunning", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/session_reaper", "schedule": "0 8 * * 1" }
   ]
 }
