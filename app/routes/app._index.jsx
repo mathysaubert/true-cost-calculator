@@ -2056,6 +2056,35 @@ export default function Index() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [localCount,  setLocalCount]  = useState(initialCount);
 
+  // ── Activation semaine 1 : parcours guidé install → marge réelle (Shape 1) ──
+  // Réutilise les actions EXISTANTES sans les modifier : costs_list (estime + persiste les
+  // coûts) PUIS backfill_orders (sync). L'ordre est impératif : synchroniser sans coûts
+  // estimés produirait un monitor 100 % « coûts manquants » (orderSync ne lit que le stocké).
+  const estimateFetcher     = useFetcher();
+  const activateSyncFetcher = useFetcher();
+  const [activationPhase, setActivationPhase] = useState("idle"); // idle | estimating | syncing | done
+
+  const startActivation = () => {
+    setActivationPhase("estimating");
+    estimateFetcher.submit({ _action: "costs_list" }, { method: "POST", encType: "application/json" });
+  };
+
+  // Étape 1 finie (coûts estimés & persistés) → déclencher la sync des commandes.
+  useEffect(() => {
+    if (activationPhase !== "estimating" || estimateFetcher.state !== "idle" || !estimateFetcher.data) return;
+    if (!estimateFetcher.data.costs) { setActivationPhase("idle"); return; }        // échec estimation
+    setActivationPhase("syncing");
+    activateSyncFetcher.submit({ _action: "backfill_orders" }, { method: "POST", encType: "application/json" });
+  }, [estimateFetcher.state, estimateFetcher.data, activationPhase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Étape 2 finie (commandes analysées) → atterrir sur le monitor si des marges ont été produites.
+  useEffect(() => {
+    if (activationPhase !== "syncing" || activateSyncFetcher.state !== "idle" || !activateSyncFetcher.data) return;
+    if (activateSyncFetcher.data.error) { setActivationPhase("idle"); return; }      // échec sync
+    setActivationPhase("done");
+    if ((activateSyncFetcher.data.ingested ?? 0) > 0) setActiveTab("costs");         // → marge réelle
+  }, [activateSyncFetcher.state, activateSyncFetcher.data, activationPhase]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // History filters (Expert)
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historyCategory, setHistoryCategory] = useState("all");
@@ -2379,6 +2408,39 @@ export default function Index() {
           </div>
         </s-section>
       )}
+
+      {/* ── ACTIVATION semaine 1 : carte guidée install → marge réelle ────────
+          Visible tant qu'aucune commande n'est synchronisée (orderMarginsTotal === 0).
+          Un clic orchestre estimation des coûts → sync → atterrissage sur le monitor. */}
+      {orderMarginsTotal === 0 && (() => {
+        const syncData = activateSyncFetcher.data;
+        const busy     = activationPhase === "estimating" || activationPhase === "syncing";
+        const noOrders = activationPhase === "done" && !syncData?.error && (syncData?.orders ?? 0) === 0;
+        const errMsg   = estimateFetcher.data?.error || syncData?.error
+          || (activationPhase === "idle" && estimateFetcher.data && !estimateFetcher.data.costs
+                ? "L'estimation des coûts a échoué. Réessayez." : null);
+        const box = { padding: "20px 24px", borderRadius: "10px", background: "#F1F8F5", border: "1px solid #008060", lineHeight: "1.6" };
+        return (
+          <s-section>
+            {noOrders ? (
+              <div style={box}>
+                <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Aucune commande sur les 30 derniers jours</div>
+                <div style={{ fontSize: "14px", color: "#202223" }}>Dès votre prochaine vente, revenez ici : vous verrez votre marge nette réelle — frais Shopify, paiement, retours et TVA compris — sur vos vraies commandes.</div>
+              </div>
+            ) : (
+              <div style={box}>
+                <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Voyez votre marge nette réelle sur vos vraies commandes</div>
+                <div style={{ fontSize: "14px", color: "#202223" }}>En un clic, on estime vos coûts et on analyse vos commandes des 30 derniers jours pour afficher votre <strong>vraie marge</strong> : frais Shopify, paiement, retours et TVA compris. Vous pourrez affiner les coûts ensuite.</div>
+                <button onClick={startActivation} disabled={busy}
+                  style={{ marginTop: "14px", padding: "10px 20px", background: busy ? "#E4E5E7" : "#008060", color: busy ? "#6D7175" : "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "700", cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+                  {activationPhase === "estimating" ? "Estimation de vos coûts…" : activationPhase === "syncing" ? "Analyse de vos commandes…" : "Voir ma marge réelle"}
+                </button>
+                {errMsg && <div style={{ marginTop: "10px", fontSize: "12px", color: "#D72C0D" }}>{errMsg}</div>}
+              </div>
+            )}
+          </s-section>
+        );
+      })()}
 
       {/* ── ALERT BANNER (Feature 4) ─────────────────────────────────────── */}
       {violations.length > 0 && (
