@@ -908,14 +908,16 @@ export const action = async ({ request }) => {
       return { success: true, cleared: true };
     }
     const n = parseFloat(raw); // "" déjà court-circuité → aucun NaN issu du vide ne traverse
-    if (!Number.isFinite(n) || n < 0 || n > 1000)
-      return { success: false, error: "Le CPA doit être compris entre 0 et 1000 par commande." };
+    // Borne dure 150/commande : calibrée sur la cible e-commerce B2C FR/EU (au-delà = quasi
+    // certainement une faute de frappe / mauvaise unité). 0 accepté (dépense nulle déclarée).
+    if (!Number.isFinite(n) || n < 0 || n > 150)
+      return { success: false, error: "Le CPA doit être compris entre 0 et 150 par commande." };
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, current_cpa: n, current_cpa_updated_at: nowIso, updated_at: nowIso },
       { onConflict: "shop_domain" });
-    // Avertissement non bloquant : au-delà du réaliste B2C FR/EU, probable faute de frappe.
-    return n > 150
-      ? { success: true, warning: "CPA inhabituellement élevé pour du e-commerce B2C — vérifiez la saisie." }
+    // Avertissement non bloquant au-delà de 80 : élevé pour du B2C, à vérifier sans bloquer.
+    return n > 80
+      ? { success: true, warning: "CPA élevé pour du e-commerce B2C — vérifiez la saisie." }
       : { success: true };
   }
 
@@ -1692,13 +1694,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {cpaTargets?.noAcqCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
-                  produit(s) ne peuvent financer aucune acquisition payante sans vendre à perte — repérez-les dans la colonne « Marge dispo/unité ».
-                </div>
-              )}
-              {cpaTargets?.valueDestroyedCount > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
-                  <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>{cpaTargets.valueDestroyedCount}</span>
-                  produit(s) entièrement remboursés à perte sur la fenêtre — voir la colonne « Marge dispo/unité ».
+                  produit(s) ne supportent aucune acquisition payante — marge épuisée ou entièrement remboursés à perte. Voir la colonne « Marge dispo/unité », qui distingue les deux cas.
                 </div>
               )}
               {cpaTargets?.blended && (
