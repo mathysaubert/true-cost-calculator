@@ -85,12 +85,12 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, cu
     };
   }
 
-  // Signaux INCONDITIONNELS (indépendants du tri UI) — comptés SÉPARÉMENT (deux problèmes, deux
-  // remèdes ; on ne conflate pas « marge ≤ 0 » et « CA détruit », mais on n'en cache aucun) :
-  //   noAcqCount        → vend mais ne peut financer aucune acquisition (state no_acquisition) ;
-  //   valueDestroyedCount → entièrement remboursé à perte (state value_destroyed).
-  const noAcqCount          = perProduct.filter((x) => x.state === "no_acquisition").length;
-  const valueDestroyedCount = perProduct.filter((x) => x.state === "value_destroyed").length;
+  // Signal INCONDITIONNEL (indépendant du tri UI) : produits qui ne supportent AUCUNE acquisition
+  // payante — DEUX réalités sous UN compteur à LIBELLÉ HONNÊTE. Le marchand descend à la colonne,
+  // où les badges « Acquisition impossible » (marge ≤ 0) vs « Remboursé — perte » les distinguent :
+  //   • no_acquisition  → vend mais marge dispo/unité ≤ 0 ;
+  //   • value_destroyed → 0 unité, entièrement remboursé à perte.
+  const noAcqCount = perProduct.filter((x) => x.state === "no_acquisition" || x.state === "value_destroyed").length;
 
-  return { perProduct, blended, ecart, noAcqCount, valueDestroyedCount };
+  return { perProduct, blended, ecart, noAcqCount };
 }

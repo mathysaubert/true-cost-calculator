@@ -72,8 +72,8 @@ console.log("\n── exhaustivité : aucun état inattendu ──");
   }
 }
 
-// ── COMPTEURS séparés : noAcqCount vs valueDestroyedCount (point 2) ──
-console.log("\n── compteurs inconditionnels : deux réalités, deux compteurs ──");
+// ── COMPTEUR UNIQUE noAcqCount : inclut no_acquisition ET value_destroyed (libellé honnête) ──
+console.log("\n── noAcqCount inconditionnel : les deux réalités, un compteur ──");
 {
   const a = agg([
     P({ id: "A", m: -500, r: 1000, q: 5 }),   // no_acquisition
@@ -82,10 +82,11 @@ console.log("\n── compteurs inconditionnels : deux réalités, deux compteur
     P({ id: "D", m: -3, r: 0, q: 0 }),        // value_destroyed
   ], { net_margin: 95, net_revenue: 2000, orders: 10 });
   const r = computeCpaTargets(a, { thresholdPct: 0 });
-  ok(r.noAcqCount === 1, "noAcqCount = 1 (A) — ne compte QUE les no_acquisition");
-  ok(r.valueDestroyedCount === 2, "valueDestroyedCount = 2 (C, D) — comptés à part, PAS dans noAcqCount");
+  ok(r.noAcqCount === 3, "noAcqCount = 3 (A no_acquisition + C,D value_destroyed) — un compteur, libellé honnête ; la colonne les distingue");
   const clean = computeCpaTargets(agg([P({ id: "B", m: 600, r: 1000, q: 10 })], { net_margin: 600, net_revenue: 1000, orders: 10 }), {});
-  ok(clean.noAcqCount === 0 && clean.valueDestroyedCount === 0, "catalogue sain → deux compteurs à 0 (aucune bannière)");
+  ok(clean.noAcqCount === 0, "catalogue sain → 0 (aucune bannière)");
+  const onlyDestroyed = computeCpaTargets(agg([P({ id: "C", m: -2, r: 0, q: 0 })], { net_margin: -2, net_revenue: 0, orders: 1 }), {});
+  ok(onlyDestroyed.noAcqCount === 1, "value_destroyed seul → compté (jamais sous-estimé)");
 }
 
 // ── A2 : CA=0 & qty>0 → seuil inopérant, no_acquisition quand même ──
@@ -133,6 +134,15 @@ console.log("\n── écart : gapLabel/gapAmount serveur, 0 ≠ null ──");
   const zero = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 0 });
   ok(zero.ecart !== null && near(zero.ecart.gapAmount, 30), "A4 : currentCpa=0 (déclaré) → écart plein (30)");
   ok(computeCpaTargets(a, { thresholdPct: 0, currentCpa: null }).ecart === null, "A4 : currentCpa=null (jamais saisi) → écart null (l'action DOIT mapper '' → null)");
+}
+
+// ── DEVISE ABSENTE/AMBIGUË → écart DISPARAÎT (jamais de calcul sur hypothèse tacite) ──
+console.log("\n── multi-devises → blended ET écart null (même avec CPA déclaré) ──");
+{
+  const multi = computeCpaTargets(
+    agg([P({ id: "A", m: 200, r: 500, q: 5 })], { net_margin: 200, net_revenue: 500, orders: 5 }, { multiCurrency: true, currencies: ["USD", "EUR"] }),
+    { currentCpa: 20, currentCpaUpdatedAt: new Date().toISOString() });
+  ok(multi.blended === null && multi.ecart === null, "devise ambiguë → pas de plafond ni d'écart (l'UI ne compare pas dans le vide)");
 }
 
 // ── OBSOLESCENCE : ecart.stale (point 2) ──
