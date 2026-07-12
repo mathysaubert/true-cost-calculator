@@ -1724,7 +1724,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
                   {cpaTargets.blended.lowSample && (
                     <div style={{ fontSize: "12px", color: "#B98900", marginTop: "6px", padding: "8px 10px", background: "#FFF9EC", borderRadius: "6px" }}>
-                      Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable — chiffre <strong>indicatif</strong>, il se stabilisera avec le volume.
+                      Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable — chiffre <strong>indicatif</strong>, il se stabilisera avec le volume. La colonne « Marge dispo/unité » ci-dessous, elle, ne dépend pas du nombre de commandes : c'est le niveau fiable pour décider.
                     </div>
                   )}
                   {cpaTargets.ecart == null ? (
