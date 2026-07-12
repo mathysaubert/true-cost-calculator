@@ -886,7 +886,9 @@ export const action = async ({ request }) => {
     const shopifyFee = parseFee(body.shopify_fee_pct);
     const procFee    = parseFee(body.processor_fee_pct);
     const fixedFee   = parseFee(body.processor_fixed_fee);
-    // Bornes : pourcentages [0,100] ; fixe [0,10] (>10€/transaction = faute de frappe).
+    // Bornes DURES [0,100]/[0,10] CONSERVÉES : contrairement au CPA, ces taux ENTRENT dans le
+    // calcul de marge (chaque future ingestion) — un taux à 100 % détruirait toutes les marges
+    // calculées, silencieusement. Ici la borne protège un vrai calcul, elle a un rôle.
     if (shopifyFee === null || shopifyFee < 0 || shopifyFee > 100)
       return { success: false, error: "Le taux Shopify doit être compris entre 0 et 100 %." };
     if (procFee === null || procFee < 0 || procFee > 100)
@@ -897,7 +899,11 @@ export const action = async ({ request }) => {
       { shop_domain: session.shop, shopify_fee_pct: shopifyFee, processor_fee_pct: procFee, processor_fixed_fee: fixedFee, updated_at: new Date().toISOString() },
       { onConflict: "shop_domain" }
     );
-    return { success: true };
+    // Avertissements NON bloquants (valeurs enregistrées) : disent la CONSÉQUENCE. Taux réels ~1–3 %.
+    const feeWarnings = [];
+    if (shopifyFee > 10) feeWarnings.push(`Taux Shopify inhabituellement élevé (${shopifyFee} %) — il sera déduit de chaque marge calculée. Vérifiez (le réel est ~2 %).`);
+    if (procFee > 5)     feeWarnings.push(`Taux processeur inhabituellement élevé (${procFee} %) — déduit de chaque marge calculée. Vérifiez (le réel est ~1,5 %).`);
+    return feeWarnings.length ? { success: true, warning: feeWarnings.join(" ") } : { success: true };
   }
 
   // ── Seuil d'alerte de rentabilité (% global boutique, lu par le cron) ─────
@@ -905,18 +911,26 @@ export const action = async ({ request }) => {
   // la frontière devient net_margin < (seuil/100)×CA net. Défaut 0 = perte stricte (legacy).
   if (body._action === "set_profitability_threshold") {
     const n = parseFloat(String(body.profitability_threshold_pct ?? "").replace(",", ".").trim());
+    // Borne dure 100 : au-delà, mathématiquement impossible (marge nette > 100 % = coût négatif).
     if (!Number.isFinite(n) || n < 0 || n > 100)
       return { success: false, error: "Le seuil doit être compris entre 0 et 100 %." };
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, profitability_threshold_pct: n, updated_at: new Date().toISOString() },
       { onConflict: "shop_domain" }
     );
-    return { success: true };
+    // Avertissement non bloquant > 40 % : dit la CONSÉQUENCE (le marchand doit comprendre ce qu'il
+    // déclenche). En e-commerce physique la marge nette dépasse rarement 20–30 %.
+    return n > 40
+      ? { success: true, warning: "Seuil élevé : la plupart de vos produits vont basculer « sous le seuil » — l'alerte quotidienne se déclenchera massivement et le suivi CPA les marquera « Acquisition impossible ». En e-commerce physique, la marge nette dépasse rarement 20–30 %." }
+      : { success: true };
   }
 
   // ── CPA blended ACTUEL déclaré par le marchand (repère prescriptif, pas mesuré) ──
   // Saisi dans la devise BOUTIQUE (le champ l'indique). "" → null explicite (jamais 0) ; date
-  // remise à null si effacé. Borne dure > 1000 (garbage) + avertissement non bloquant > 150 (typo).
+  // remise à null si effacé. AUCUNE borne MÉTIER : current_cpa n'entre dans AUCUN calcul de marge
+  // (il ne sert qu'à afficher un écart) → une valeur aberrante se voit à l'écran et se corrige,
+  // sans corrompre aucune donnée ni fausser aucun calcul. Le DÉPASSEMENT doit TOUJOURS être
+  // déclarable (c'est l'info la plus actionnable). Seule borne = TECHNIQUE (affichage/précision).
   if (body._action === "set_current_cpa") {
     const raw = String(body.current_cpa ?? "").replace(",", ".").trim();
     const nowIso = new Date().toISOString();
@@ -928,17 +942,31 @@ export const action = async ({ request }) => {
       return { success: true, cleared: true };
     }
     const n = parseFloat(raw); // "" déjà court-circuité → aucun NaN issu du vide ne traverse
-    // Borne dure 150/commande : calibrée sur la cible e-commerce B2C FR/EU (au-delà = quasi
-    // certainement une faute de frappe / mauvaise unité). 0 accepté (dépense nulle déclarée).
-    if (!Number.isFinite(n) || n < 0 || n > 150)
-      return { success: false, error: "Le CPA doit être compris entre 0 et 150 par commande." };
+    // Borne TECHNIQUE seule (1 000 000) : au-delà, risque d'affichage cassé / perte de précision
+    // NUMERIC. Pas de plafond métier : aucun CPA réel n'en approche, et on n'interdit rien d'utile.
+    if (!Number.isFinite(n) || n < 0 || n > 1_000_000)
+      return { success: false, error: "Valeur invalide." };
     await supabase.from("shop_plans").upsert(
       { shop_domain: session.shop, current_cpa: n, current_cpa_updated_at: nowIso, updated_at: nowIso },
       { onConflict: "shop_domain" });
-    // Avertissement non bloquant au-delà de 80 : élevé pour du B2C, à vérifier sans bloquer.
-    return n > 80
-      ? { success: true, warning: "CPA élevé pour du e-commerce B2C — vérifiez la saisie." }
-      : { success: true };
+
+    // Avertissements NON bloquants (la valeur est enregistrée quoi qu'il arrive). La CONSÉQUENCE,
+    // pas juste « inhabituel ».
+    const warnings = [];
+    // > plafond blended : on lit l'agrégat RÉEL du marchand (même chemin que le monitor) — repère,
+    // pas borne. C'est le cas overspend qu'on VEUT rendre déclarable, donc jamais un rejet.
+    try {
+      const [omRes, planRes] = await Promise.all([
+        supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
+        supabase.from("shop_plans").select("profitability_threshold_pct").eq("shop_domain", session.shop).maybeSingle(),
+      ]);
+      const bl = computeCpaTargets(aggregateOrderMargins(omRes.data ?? []), { thresholdPct: planRes.data?.profitability_threshold_pct ?? 0 }).blended;
+      if (bl && n > bl.cpaMax)
+        warnings.push(`Vous déclarez un CPA supérieur à votre plafond (${formatMoney(bl.cpaMax, bl.currency)}) — vérifiez la saisie, ou c'est un dépassement réel : vous vendez à perte sur l'acquisition.`);
+    } catch (e) { console.error("[CPA] plafond warn:", e?.message); }
+    if (n > 80) warnings.push("CPA élevé pour du e-commerce B2C — probable faute de frappe à vérifier.");
+
+    return warnings.length ? { success: true, warning: warnings.join(" ") } : { success: true };
   }
 
   // ── Brique A : pays d'import par défaut de la boutique ────────────────────
@@ -1992,6 +2020,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
             {feesFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer les taux"}
           </button>
           {feesFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Taux enregistrés.</span>}
+          {feesFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {feesFetcher.data.warning}</span>}
           {feesFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{feesFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
@@ -2014,6 +2043,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
             {thresholdFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le seuil"}
           </button>
           {thresholdFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Seuil enregistré.</span>}
+          {thresholdFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {thresholdFetcher.data.warning}</span>}
           {thresholdFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{thresholdFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
