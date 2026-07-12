@@ -751,13 +751,19 @@ export const loader = async ({ request }) => {
   // CPA prescriptif — CPA déclaré (null = jamais renseigné, distinct de 0) + date.
   const currentCpa = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa ?? null) : null;
   const currentCpaUpdatedAt = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa_updated_at ?? null) : null;
+  // Date de déclaration formatée SERVEUR en JJ/MM/AAAA (UTC, manuel) → aucune dépendance à la
+  // locale du runtime, aucun mismatch d'hydratation. Le JSX ne fait que rendre la chaîne.
+  const currentCpaDeclaredLabel = currentCpaUpdatedAt ? (() => {
+    const d = new Date(currentCpaUpdatedAt); const pad = (n) => String(n).padStart(2, "0");
+    return Number.isNaN(d.getTime()) ? null : `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+  })() : null;
   // BUG 1 : toute la dérivation CPA vit ICI (serveur), pas dans le JSX. computeCpaTargets consomme
   // l'agrégat (net_margin = marge avant pub) ; le client n'affichera que formatMoney(...).
   const cpaTargets = computeCpaTargets(aggregateOrderMargins(orderMargins), { thresholdPct: profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt });
   const cpaByProduct = Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]));
 
   return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
-    currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct,
+    currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
@@ -1625,7 +1631,7 @@ function LineBreakdownCard({ lb }) {
 }
 
 // ── UI Monitor : sous-bloc repliable (collapsed par défaut) — lecture seule ──
-function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, cpaTargets, cpaByProduct, currentCpaUpdatedAt, thresholdPct, onGoToCosts }) {
+function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, cpaTargets, cpaByProduct, currentCpaDeclaredLabel, thresholdPct, onGoToCosts }) {
   const [open, setOpen] = useState(false);
   const [sortBy, setSortBy] = useState("margin"); // margin | revenue
   const [openLines, setOpenLines] = useState(() => new Set()); // product_ids dépliés
@@ -1701,6 +1707,12 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                 <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "8px" }}>
                   <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
                   <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
+                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
+                  {cpaTargets.blended.lowSample && (
+                    <div style={{ fontSize: "12px", color: "#B98900", marginTop: "6px", padding: "8px 10px", background: "#FFF9EC", borderRadius: "6px" }}>
+                      Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable — chiffre <strong>indicatif</strong>, il se stabilisera avec le volume.
+                    </div>
+                  )}
                   {cpaTargets.ecart == null ? (
                     <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "6px" }}>Renseignez votre CPA actuel (dans les réglages plus haut) pour situer votre marge de manœuvre.</div>
                   ) : cpaTargets.ecart.stale ? (
@@ -1710,10 +1722,10 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       {cpaTargets.ecart.overspend ? "⚠ " : ""}{cpaTargets.ecart.gapLabel} : {formatMoney(cpaTargets.ecart.gapAmount, cpaTargets.blended.currency)}{cpaTargets.ecart.overspend ? " — vous dépensez au-dessus de votre plafond (vente à perte sur l'acquisition)." : ""}
                     </div>
                   )}
-                  {currentCpaUpdatedAt && (
-                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {new Date(currentCpaUpdatedAt).toLocaleDateString("fr-FR")} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
+                  {currentCpaDeclaredLabel && (
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {currentCpaDeclaredLabel} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
                   )}
-                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Moyenne sur tout votre catalogue : un mix de marges très différentes rend ce plafond trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
+                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable — si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne catalogue : un mix de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
                 </div>
               )}
 
@@ -1810,7 +1822,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -2027,7 +2039,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal}
         orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
         productTitleById={productTitleById ?? {}}
-        cpaTargets={cpaTargets} cpaByProduct={cpaByProduct} currentCpaUpdatedAt={currentCpaUpdatedAt} thresholdPct={profitabilityThresholdPct}
+        cpaTargets={cpaTargets} cpaByProduct={cpaByProduct} currentCpaDeclaredLabel={currentCpaDeclaredLabel} thresholdPct={profitabilityThresholdPct}
         onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
 
       {/* Barre d'actions */}
@@ -2114,7 +2126,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 
 export default function Index() {
   const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
-    currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct,
+    currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
@@ -3363,7 +3375,7 @@ export default function Index() {
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
         {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
-          currentCpa={currentCpa} currentCpaUpdatedAt={currentCpaUpdatedAt} cpaTargets={cpaTargets} cpaByProduct={cpaByProduct}
+          currentCpa={currentCpa} currentCpaUpdatedAt={currentCpaUpdatedAt} currentCpaDeclaredLabel={currentCpaDeclaredLabel} cpaTargets={cpaTargets} cpaByProduct={cpaByProduct}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
 
