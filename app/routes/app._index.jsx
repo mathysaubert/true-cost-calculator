@@ -2415,29 +2415,51 @@ export default function Index() {
       {orderMarginsTotal === 0 && (() => {
         const syncData = activateSyncFetcher.data;
         const busy     = activationPhase === "estimating" || activationPhase === "syncing";
-        const noOrders = activationPhase === "done" && !syncData?.error && (syncData?.orders ?? 0) === 0;
+        const done     = activationPhase === "done";
+        const ingested = syncData?.ingested ?? 0;
+        // Messages retryables (erreur d'estimation, échec/sync-déjà-en-cours) : ton informatif
+        // (ambre = « à réessayer », pas rouge « cassé ») + bouton redevenu cliquable.
         const errMsg   = estimateFetcher.data?.error || syncData?.error
           || (activationPhase === "idle" && estimateFetcher.data && !estimateFetcher.data.costs
                 ? "L'estimation des coûts a échoué. Réessayez." : null);
-        const box = { padding: "20px 24px", borderRadius: "10px", background: "#F1F8F5", border: "1px solid #008060", lineHeight: "1.6" };
+        const box   = { padding: "20px 24px", borderRadius: "10px", background: "#F1F8F5", border: "1px solid #008060", lineHeight: "1.6" };
+        const title = { fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "6px" };
+        const text  = { fontSize: "14px", color: "#202223" };
+
+        // Succès AVEC données : on a basculé sur le monitor ; la revalidation du loader masquera
+        // la carte (orderMarginsTotal > 0). null → évite un flash du pitch entre-temps.
+        if (done && !syncData?.error && ingested > 0) return null;
+
+        // État terminal SANS données (sync OK, 0 ligne ingérée) : TOUJOURS un feedback explicite —
+        // pas de cul-de-sac. orders === 0 → aucune commande ; orders > 0 → aucune ligne exploitable.
+        if (done && !syncData?.error && ingested === 0) {
+          const noOrders = (syncData?.orders ?? 0) === 0;
+          return (
+            <s-section>
+              <div style={box}>
+                <div style={title}>{noOrders ? "Aucune commande sur les 30 derniers jours" : "Analyse terminée"}</div>
+                <div style={text}>
+                  {noOrders
+                    ? "Dès votre prochaine vente, revenez ici : vous verrez votre marge nette réelle — frais Shopify, paiement, retours et TVA compris — sur vos vraies commandes."
+                    : "Vos commandes ont été analysées, mais aucune ligne exploitable n'a été trouvée sur les 30 derniers jours. Revenez après votre prochaine vente."}
+                </div>
+              </div>
+            </s-section>
+          );
+        }
+
+        // État initial / relançable (idle, y compris après une erreur ou « sync déjà en cours »).
         return (
           <s-section>
-            {noOrders ? (
-              <div style={box}>
-                <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Aucune commande sur les 30 derniers jours</div>
-                <div style={{ fontSize: "14px", color: "#202223" }}>Dès votre prochaine vente, revenez ici : vous verrez votre marge nette réelle — frais Shopify, paiement, retours et TVA compris — sur vos vraies commandes.</div>
-              </div>
-            ) : (
-              <div style={box}>
-                <div style={{ fontSize: "16px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Voyez votre marge nette réelle sur vos vraies commandes</div>
-                <div style={{ fontSize: "14px", color: "#202223" }}>En un clic, on estime vos coûts et on analyse vos commandes des 30 derniers jours pour afficher votre <strong>vraie marge</strong> : frais Shopify, paiement, retours et TVA compris. Vous pourrez affiner les coûts ensuite.</div>
-                <button onClick={startActivation} disabled={busy}
-                  style={{ marginTop: "14px", padding: "10px 20px", background: busy ? "#E4E5E7" : "#008060", color: busy ? "#6D7175" : "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "700", cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
-                  {activationPhase === "estimating" ? "Estimation de vos coûts…" : activationPhase === "syncing" ? "Analyse de vos commandes…" : "Voir ma marge réelle"}
-                </button>
-                {errMsg && <div style={{ marginTop: "10px", fontSize: "12px", color: "#D72C0D" }}>{errMsg}</div>}
-              </div>
-            )}
+            <div style={box}>
+              <div style={title}>Voyez votre marge nette réelle sur vos vraies commandes</div>
+              <div style={text}>En un clic, on estime vos coûts et on analyse vos commandes des 30 derniers jours pour afficher votre <strong>vraie marge</strong> : frais Shopify, paiement, retours et TVA compris. Vous pourrez affiner les coûts ensuite.</div>
+              <button onClick={startActivation} disabled={busy}
+                style={{ marginTop: "14px", padding: "10px 20px", background: busy ? "#E4E5E7" : "#008060", color: busy ? "#6D7175" : "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "700", cursor: busy ? "default" : "pointer", fontFamily: "inherit" }}>
+                {activationPhase === "estimating" ? "Estimation de vos coûts…" : activationPhase === "syncing" ? "Analyse de vos commandes…" : "Voir ma marge réelle"}
+              </button>
+              {errMsg && <div style={{ marginTop: "10px", fontSize: "12px", color: "#B98900" }}>{errMsg}</div>}
+            </div>
           </s-section>
         );
       })()}
