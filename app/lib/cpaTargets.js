@@ -19,10 +19,12 @@
 const num = (v) => { const n = +v; return Number.isFinite(n) ? n : 0; };
 const DAY_MS = 86_400_000;
 
-// Obsolescence du CPA DÉCLARÉ : les marges sont dérivées d'une fenêtre de 30 jours de commandes
-// (orderSync windowStart = now − 30 j). Comparer le plafond (frais de 30 j) à un CPA déclaré plus
-// ancien que cette fenêtre est incohérent → au-delà, l'écart est marqué stale (l'UI le grise et
-// invite à remettre à jour, au lieu d'afficher un vert « validé » trompeur).
+// Obsolescence du CPA DÉCLARÉ : c'est un POINT FIXE saisi par le marchand qui VIEILLIT, comparé à
+// une marge MESURÉE et recalculée à chaque sync (fenêtre glissante, toujours fraîche). Ce n'est
+// donc PAS une comparaison structurellement saine — c'est une approximation « valeur déclarée vs
+// marge mesurée ». Au-delà de CPA_STALE_DAYS (≈ un mois de campagnes — convention, pas un
+// alignement de fenêtres), on grise l'écart et on invite à remettre à jour, plutôt qu'un vert
+// « validé » trompeur. Le wording UI DOIT assumer l'approximation, jamais prétendre l'inverse.
 export const CPA_STALE_DAYS = 30;
 
 // Budget disponible pour l'acquisition (avant pub), après réserve de seuil. Pure soustraction
@@ -34,17 +36,18 @@ export function availableForAds(netMargin, netRevenue, thresholdPct = 0) {
 export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, currentCpaUpdatedAt = null, now = Date.now(), staleDays = CPA_STALE_DAYS } = {}) {
   const byProduct = agg?.byProduct ?? [];
 
-  // Par produit : marge disponible / unité. margeDispoUnite null ⇒ unavailableReason DIT pourquoi
-  // (l'UI rend un "—" explicite + tooltip, jamais une cellule vide ambiguë) :
-  //   "mixed_currency" → produit multi-devises (somme cross-devise interdite) ;
-  //   "no_units"       → effective_qty ≤ 0 (produit entièrement remboursé : rien à acquérir —
-  //                      son éventuel saignement reste porté par la colonne Marge nette / badge « À perte »).
+  // Par produit : marge disponible / unité. margeDispoUnite null ⇒ unavailableReason DIT pourquoi,
+  // pour que l'UI rende un état EXPLICITE (jamais un "—" muet ambigu) :
+  //   "mixed_currency" → multi-devises (somme cross-devise interdite) → "—" neutre ;
+  //   "refunded_loss"  → 0 unité vendue ET net_margin < 0 : le produit a DÉTRUIT de la valeur
+  //                      (tout remboursé, résidu de frais/retours) → traitement VISIBLE, pas un tiret ;
+  //   "no_units"       → 0 unité vendue, net_margin ≥ 0 (remboursement neutre) → "—" neutre.
   const perProduct = byProduct.map((p) => {
     const qty = num(p.effective_qty);
     let margeDispoUnite = null;
     let unavailableReason = null;
     if (p.currency === "MIXED")      unavailableReason = "mixed_currency";
-    else if (qty <= 0)               unavailableReason = "no_units";
+    else if (qty <= 0)               unavailableReason = num(p.net_margin) < 0 ? "refunded_loss" : "no_units";
     else margeDispoUnite = availableForAds(p.net_margin, p.net_revenue, thresholdPct) / qty;
     return {
       product_id: p.product_id ?? null,
@@ -70,9 +73,16 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, cu
   let ecart = null;
   if (blended && currentCpa != null && Number.isFinite(+currentCpa)) {
     const value = blended.cpaMax - num(currentCpa);
+    const overspend = value < 0;
     const ageMs = currentCpaUpdatedAt ? (now - Date.parse(currentCpaUpdatedAt)) : NaN;
     const stale = !Number.isFinite(ageMs) || ageMs >= staleDays * DAY_MS;
-    ecart = { value, currentCpa: num(currentCpa), overspend: value < 0, stale };
+    // gapLabel + gapAmount (magnitude ABSOLUE) calculés SERVEUR → le JSX ne fait que rendre :
+    // aucun Math.abs, aucune comparaison de marge côté client (BUG 1).
+    ecart = {
+      value, currentCpa: num(currentCpa), overspend, stale,
+      gapLabel: overspend ? "Dépassement" : "Marge de manœuvre",
+      gapAmount: Math.abs(value),
+    };
   }
 
   // Signal INCONDITIONNEL (indépendant du tri UI) : combien de produits ne supportent AUCUNE

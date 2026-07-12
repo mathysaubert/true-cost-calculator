@@ -105,13 +105,16 @@ console.log("\n── écart CPA max blended − CPA déclaré ──");
 // ════════════════════════════════════════════════════════════════════════════════
 
 // ── A1 : produit entièrement remboursé (net_revenue=0 ET qty=0) → null EXPLIQUÉ ──
-console.log("\n── A1 : entièrement remboursé (qty=0) → null + raison 'no_units' ──");
+console.log("\n── A1 : entièrement remboursé → 'refunded_loss' (perte) vs 'no_units' (neutre) ──");
 {
-  // Résidu de frais → net_margin légèrement négatif, mais 0 unité vendue.
-  const r = computeCpaTargets(agg([P({ id: "R", m: -0.5, r: 0, q: 0 })]), { thresholdPct: 0 });
-  ok(r.perProduct[0].margeDispoUnite === null, "margeDispoUnite null (aucune unité → 'par unité' indéfini)");
-  ok(r.perProduct[0].unavailableReason === "no_units", "raison explicite 'no_units' (UI rend '—' + tooltip, pas de cellule vide)");
-  ok(r.perProduct[0].exhausted === false, "PAS exhausted : le saignement est porté par la colonne Marge nette / badge À perte, pas par le CPA");
+  // (a) résidu de frais → net_margin < 0 : le produit a DÉTRUIT de la valeur → refunded_loss (visible).
+  const loss = computeCpaTargets(agg([P({ id: "R", m: -0.5, r: 0, q: 0 })]), { thresholdPct: 0 });
+  ok(loss.perProduct[0].margeDispoUnite === null, "margeDispoUnite null (aucune unité → 'par unité' indéfini)");
+  ok(loss.perProduct[0].unavailableReason === "refunded_loss", "net_margin<0 & qty=0 → 'refunded_loss' (traité visuellement, pas un '—' muet)");
+  ok(loss.perProduct[0].exhausted === false, "PAS exhausted (le saignement est un fait passé, pas un plafond d'acquisition)");
+  // (b) remboursement neutre → net_margin ≥ 0 : "—" neutre légitime.
+  const neutral = computeCpaTargets(agg([P({ id: "N", m: 0, r: 0, q: 0 })]), { thresholdPct: 0 });
+  ok(neutral.perProduct[0].unavailableReason === "no_units", "net_margin≥0 & qty=0 → 'no_units' (— neutre)");
 }
 
 // ── A2 : net_revenue=0 mais qty>0 → seuil ne mord pas, mais ≤0 capte quand même ──
@@ -152,6 +155,10 @@ console.log("\n── A5 : dépassement → overspend true (à rendre le plus vi
   const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
   const over = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 45 }); // cpaMax=30
   ok(near(over.ecart.value, -15) && over.ecart.overspend === true, "CPA déclaré 45 > max 30 → écart −15, overspend (vente à perte sur l'acquisition)");
+  // gap SERVEUR (label + magnitude absolue) → le JSX ne fait aucun Math.abs / comparaison.
+  ok(over.ecart.gapLabel === "Dépassement" && near(over.ecart.gapAmount, 15), "gapLabel='Dépassement', gapAmount=15 (magnitude positive, calculée serveur)");
+  const under = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20 }); // cpaMax=30
+  ok(under.ecart.gapLabel === "Marge de manœuvre" && near(under.ecart.gapAmount, 10), "gapLabel='Marge de manœuvre', gapAmount=10");
 }
 
 // ── A6 : totals.orders=0 mais des produits existent → blended disparaît proprement ──
