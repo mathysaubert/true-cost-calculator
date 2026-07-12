@@ -17,6 +17,13 @@
 // DÉCLARÉ par le marchand (jamais mesuré par l'app) → sert à l'écart, avec sa date côté UI.
 
 const num = (v) => { const n = +v; return Number.isFinite(n) ? n : 0; };
+const DAY_MS = 86_400_000;
+
+// Obsolescence du CPA DÉCLARÉ : les marges sont dérivées d'une fenêtre de 30 jours de commandes
+// (orderSync windowStart = now − 30 j). Comparer le plafond (frais de 30 j) à un CPA déclaré plus
+// ancien que cette fenêtre est incohérent → au-delà, l'écart est marqué stale (l'UI le grise et
+// invite à remettre à jour, au lieu d'afficher un vert « validé » trompeur).
+export const CPA_STALE_DAYS = 30;
 
 // Budget disponible pour l'acquisition (avant pub), après réserve de seuil. Pure soustraction
 // de sommes serveur : net_margin − (seuil/100)×CA. Seuil 0 → = net_margin (break-even).
@@ -24,7 +31,7 @@ export function availableForAds(netMargin, netRevenue, thresholdPct = 0) {
   return num(netMargin) - (num(thresholdPct) / 100) * num(netRevenue);
 }
 
-export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null } = {}) {
+export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, currentCpaUpdatedAt = null, now = Date.now(), staleDays = CPA_STALE_DAYS } = {}) {
   const byProduct = agg?.byProduct ?? [];
 
   // Par produit : marge disponible / unité. margeDispoUnite null ⇒ unavailableReason DIT pourquoi
@@ -58,11 +65,19 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null } =
   }
 
   // Écart vs CPA déclaré : seulement si blended dispo ET une valeur saisie finie.
+  // stale = le CPA déclaré est plus vieux que la fenêtre (ou sans date fiable) → l'UI grise
+  // l'écart et invite à le remettre à jour, plutôt qu'un vert/rouge « frais » trompeur (B1).
   let ecart = null;
   if (blended && currentCpa != null && Number.isFinite(+currentCpa)) {
     const value = blended.cpaMax - num(currentCpa);
-    ecart = { value, currentCpa: num(currentCpa), overspend: value < 0 };
+    const ageMs = currentCpaUpdatedAt ? (now - Date.parse(currentCpaUpdatedAt)) : NaN;
+    const stale = !Number.isFinite(ageMs) || ageMs >= staleDays * DAY_MS;
+    ecart = { value, currentCpa: num(currentCpa), overspend: value < 0, stale };
   }
 
-  return { perProduct, blended, ecart };
+  // Signal INCONDITIONNEL (indépendant du tri UI) : combien de produits ne supportent AUCUNE
+  // acquisition payante (marge dispo/unité ≤ 0). L'UI l'affiche dès que > 0, à côté du blended.
+  const exhaustedCount = perProduct.filter((x) => x.exhausted).length;
+
+  return { perProduct, blended, ecart, exhaustedCount };
 }

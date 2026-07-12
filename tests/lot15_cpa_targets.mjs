@@ -6,7 +6,7 @@
 //  Pour lancer : node tests/lot15_cpa_targets.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { computeCpaTargets, availableForAds } from "../app/lib/cpaTargets.js";
+import { computeCpaTargets, availableForAds, CPA_STALE_DAYS } from "../app/lib/cpaTargets.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -170,6 +170,40 @@ console.log("\n── A7 : seuil 100 % → tout exhausted (conséquence logique)
   ok(near(r.perProduct[0].margeDispoUnite, -30), "(50 − 100%×200)/5 = −30 : seuil 100% réclame 100% du CA en profit");
   ok(r.perProduct[0].exhausted === true, "exhausted : conséquence logique d'un seuil absurde, pas un bug moteur");
   ok(near(r.blended.cpaMax, -30), "blended aussi négatif : (50 − 200)/5 = −30 (cohérent)");
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  B. SIGNAL INCONDITIONNEL + OBSOLESCENCE (durcissements point 1 & 2).
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ── Point 1 : exhaustedCount indépendant du tri (compté serveur) ──
+console.log("\n── exhaustedCount : signal inconditionnel ──");
+{
+  const a = agg(
+    [P({ id: "A", m: -500, r: 1000, q: 5 }), P({ id: "B", m: 600, r: 1000, q: 10 }), P({ id: "C", m: -1, r: 10, q: 1 })],
+    { net_margin: 99, net_revenue: 2010, orders: 10 });
+  const r = computeCpaTargets(a, { thresholdPct: 0 });
+  ok(r.exhaustedCount === 2, "2 produits exhausted (A et C) comptés serveur — le tri UI n'y change rien");
+  const none = computeCpaTargets(agg([P({ id: "B", m: 600, r: 1000, q: 10 })], { net_margin: 600, net_revenue: 1000, orders: 10 }), {});
+  ok(none.exhaustedCount === 0, "aucun exhausted → 0 (pas de bannière)");
+  // qty=0 / MIXED ne comptent PAS comme exhausted (ce ne sont pas des availableUnit ≤ 0).
+  const refunded = computeCpaTargets(agg([P({ id: "R", m: -0.5, r: 0, q: 0 })], { net_margin: -0.5, net_revenue: 0, orders: 1 }), {});
+  ok(refunded.exhaustedCount === 0, "produit remboursé (null) NON compté exhausted (porté par 'À perte', pas ici)");
+}
+
+// ── Point 2 : obsolescence de l'écart (stale) ──
+console.log("\n── ecart.stale : fraîcheur du CPA déclaré ──");
+{
+  const NOW = Date.parse("2026-07-12T12:00:00Z");
+  const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
+  const fresh = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - 5 * 86400000).toISOString(), now: NOW });
+  ok(fresh.ecart.stale === false, "déclaré il y a 5 j (< 30) → frais (écart vert/rouge actionnable)");
+  const old = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - 40 * 86400000).toISOString(), now: NOW });
+  ok(old.ecart.stale === true, "déclaré il y a 40 j (≥ 30) → stale (écart grisé, à remettre à jour)");
+  const exact = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - CPA_STALE_DAYS * 86400000).toISOString(), now: NOW });
+  ok(exact.ecart.stale === true, `pile ${CPA_STALE_DAYS} j → stale (≥)`);
+  const noDate = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: null, now: NOW });
+  ok(noDate.ecart.stale === true, "date de déclaration absente → stale (on ne peut pas vérifier la fraîcheur)");
 }
 
 console.log("\n" + "═".repeat(66));
