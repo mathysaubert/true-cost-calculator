@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs && node tests/lot5_variant_costs.mjs && node tests/lot6_order_ingest.mjs && node tests/lot7_order_history.mjs && node tests/lot8_breakdown_backfill.mjs && node tests/lot9_profitability_alert.mjs && node tests/lot10_loss_alert_email.mjs && node tests/lot11_dunning_decision.mjs && node tests/lot12_dunning_email.mjs && node tests/lot13_dunning_status.mjs && node tests/lot14_session_reaper.mjs",
+    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs && node tests/lot5_variant_costs.mjs && node tests/lot6_order_ingest.mjs && node tests/lot7_order_history.mjs && node tests/lot8_breakdown_backfill.mjs && node tests/lot9_profitability_alert.mjs && node tests/lot10_loss_alert_email.mjs && node tests/lot11_dunning_decision.mjs && node tests/lot12_dunning_email.mjs && node tests/lot13_dunning_status.mjs && node tests/lot14_session_reaper.mjs && node tests/lot15_cpa_targets.mjs",
     "vercel-build": "npm test && prisma generate && prisma migrate deploy && react-router build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
