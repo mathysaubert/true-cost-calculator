@@ -23,6 +23,7 @@ import {
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
+import { computeCpaTargets } from "../lib/cpaTargets.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -693,7 +694,7 @@ export const loader = async ({ request }) => {
     isExpert
       ? supabase.from("calculation_annotations").select("*").eq("shop_domain", session.shop)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country, shopify_fee_pct, processor_fee_pct, processor_fixed_fee, profitability_threshold_pct").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_plans").select("vat_regime, shipping_model, default_import_country, shopify_fee_pct, processor_fee_pct, processor_fixed_fee, profitability_threshold_pct, current_cpa, current_cpa_updated_at").eq("shop_domain", session.shop).maybeSingle(),
     // UI Monitor : N lignes order_margins les plus récentes + compte total (cap explicite).
     supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
     supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
@@ -747,7 +748,16 @@ export const loader = async ({ request }) => {
   // Devise d'affichage du frais fixe : celle des commandes synchronisées (sinon EUR).
   const feesCurrency = orderMargins.find(o => o.currency_code)?.currency_code ?? "EUR";
 
+  // CPA prescriptif — CPA déclaré (null = jamais renseigné, distinct de 0) + date.
+  const currentCpa = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa ?? null) : null;
+  const currentCpaUpdatedAt = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa_updated_at ?? null) : null;
+  // BUG 1 : toute la dérivation CPA vit ICI (serveur), pas dans le JSX. computeCpaTargets consomme
+  // l'agrégat (net_margin = marge avant pub) ; le client n'affichera que formatMoney(...).
+  const cpaTargets = computeCpaTargets(aggregateOrderMargins(orderMargins), { thresholdPct: profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt });
+  const cpaByProduct = Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]));
+
   return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+    currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
@@ -882,6 +892,31 @@ export const action = async ({ request }) => {
       { onConflict: "shop_domain" }
     );
     return { success: true };
+  }
+
+  // ── CPA blended ACTUEL déclaré par le marchand (repère prescriptif, pas mesuré) ──
+  // Saisi dans la devise BOUTIQUE (le champ l'indique). "" → null explicite (jamais 0) ; date
+  // remise à null si effacé. Borne dure > 1000 (garbage) + avertissement non bloquant > 150 (typo).
+  if (body._action === "set_current_cpa") {
+    const raw = String(body.current_cpa ?? "").replace(",", ".").trim();
+    const nowIso = new Date().toISOString();
+    if (raw === "") {
+      // Effacement : valeur ET date à null (pas de « déclaré le … » orphelin).
+      await supabase.from("shop_plans").upsert(
+        { shop_domain: session.shop, current_cpa: null, current_cpa_updated_at: null, updated_at: nowIso },
+        { onConflict: "shop_domain" });
+      return { success: true, cleared: true };
+    }
+    const n = parseFloat(raw); // "" déjà court-circuité → aucun NaN issu du vide ne traverse
+    if (!Number.isFinite(n) || n < 0 || n > 1000)
+      return { success: false, error: "Le CPA doit être compris entre 0 et 1000 par commande." };
+    await supabase.from("shop_plans").upsert(
+      { shop_domain: session.shop, current_cpa: n, current_cpa_updated_at: nowIso, updated_at: nowIso },
+      { onConflict: "shop_domain" });
+    // Avertissement non bloquant : au-delà du réaliste B2C FR/EU, probable faute de frappe.
+    return n > 150
+      ? { success: true, warning: "CPA inhabituellement élevé pour du e-commerce B2C — vérifiez la saisie." }
+      : { success: true };
   }
 
   // ── Brique A : pays d'import par défaut de la boutique ────────────────────
@@ -1588,7 +1623,7 @@ function LineBreakdownCard({ lb }) {
 }
 
 // ── UI Monitor : sous-bloc repliable (collapsed par défaut) — lecture seule ──
-function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, onGoToCosts }) {
+function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, cpaTargets, cpaByProduct, currentCpaUpdatedAt, thresholdPct, onGoToCosts }) {
   const [open, setOpen] = useState(false);
   const [sortBy, setSortBy] = useState("margin"); // margin | revenue
   const [openLines, setOpenLines] = useState(() => new Set()); // product_ids dépliés
@@ -1652,6 +1687,40 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                 </>
               )}
 
+              {/* CPA prescriptif — signaux INCONDITIONNELS (indépendants du tri) + plafond blended.
+                  Tout vient de cpaTargets (serveur) ; le JSX ne fait que rendre (BUG 1). */}
+              {cpaTargets?.noAcqCount > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
+                  <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
+                  produit(s) ne peuvent financer aucune acquisition payante sans vendre à perte — repérez-les dans la colonne « Marge dispo/unité ».
+                </div>
+              )}
+              {cpaTargets?.valueDestroyedCount > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
+                  <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>{cpaTargets.valueDestroyedCount}</span>
+                  produit(s) entièrement remboursés à perte sur la fenêtre — voir la colonne « Marge dispo/unité ».
+                </div>
+              )}
+              {cpaTargets?.blended && (
+                <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "8px" }}>
+                  <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
+                  {cpaTargets.ecart == null ? (
+                    <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "6px" }}>Renseignez votre CPA actuel (dans les réglages plus haut) pour situer votre marge de manœuvre.</div>
+                  ) : cpaTargets.ecart.stale ? (
+                    <div style={{ fontSize: "12px", color: "#8C9196", marginTop: "6px", fontStyle: "italic" }}>Écart non affiché : votre CPA déclaré date de plus de 30 jours. Remettez-le à jour pour une comparaison utile.</div>
+                  ) : (
+                    <div style={{ fontSize: "13px", fontWeight: cpaTargets.ecart.overspend ? "600" : "400", color: cpaTargets.ecart.overspend ? "#D72C0D" : "#008060", marginTop: "6px", padding: cpaTargets.ecart.overspend ? "8px 10px" : "0", background: cpaTargets.ecart.overspend ? "#FFF4F4" : "transparent", borderRadius: "6px" }}>
+                      {cpaTargets.ecart.overspend ? "⚠ " : ""}{cpaTargets.ecart.gapLabel} : {formatMoney(cpaTargets.ecart.gapAmount, cpaTargets.blended.currency)}{cpaTargets.ecart.overspend ? " — vous dépensez au-dessus de votre plafond (vente à perte sur l'acquisition)." : ""}
+                    </div>
+                  )}
+                  {currentCpaUpdatedAt && (
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {new Date(currentCpaUpdatedAt).toLocaleDateString("fr-FR")} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
+                  )}
+                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Moyenne sur tout votre catalogue : un mix de marges très différentes rend ce plafond trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
+                </div>
+              )}
+
               {/* Liste par produit */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 8px" }}>
                 <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Par produit</span>
@@ -1663,7 +1732,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>État</th>
+                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>Marge dispo/unité</th><th style={th}>État</th>
                   </tr></thead>
                   <tbody>
                     {products.map(p => {
@@ -1682,6 +1751,23 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <td style={td}>{formatMoney(p.net_revenue, p.currency)}</td>
                         <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatMoney(p.net_margin, p.currency)}</td>
                         <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
+                        {/* Marge dispo/unité — switch PUR sur cpaByProduct[pkey].state (serveur). Zéro calcul. */}
+                        <td style={td}>
+                          {(() => {
+                            const c = cpaByProduct?.[pkey];
+                            if (!c) return <span style={{ color: "#6D7175" }}>—</span>;
+                            if (c.state === "value_destroyed") return (
+                              <span title="Toutes les unités vendues ont été remboursées et l'opération laisse une perte (frais/retours) — aucune marge par unité à calculer."
+                                    style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>Remboursé — perte</span>
+                            );
+                            if (c.state === "no_acquisition") return (
+                              <span title={`La marge disponible par unité est ≤ 0 : la moindre dépense d'acquisition sur ce produit le fait vendre à perte, compte tenu de votre seuil de rentabilité (${thresholdPct} %).`}
+                                    style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Acquisition impossible</span>
+                            );
+                            if (c.state === "ok") return formatMoney(c.margeDispoUnite, p.currency);
+                            return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises — pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) — pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
+                          })()}
+                        </td>
                         <td style={td}>
                           <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700",
                             color: p.unprofitable ? "#D72C0D" : "#008060", background: p.unprofitable ? "#FFF4F4" : "#F1F8F5" }}>
@@ -1691,7 +1777,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       </tr>
                       {expanded && (
                         <tr style={{ background: "#FFFFFF" }}>
-                          <td colSpan={7} style={{ padding: "10px 14px" }}>
+                          <td colSpan={8} style={{ padding: "10px 14px" }}>
                             <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
                               Détail par ligne de commande — chaque ligne affiche son propre snapshot figé (lecture pure, valeurs stockées).
                             </div>
@@ -1728,7 +1814,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -1752,6 +1838,10 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 
   // Seuil d'alerte de rentabilité (% global boutique), même format FR que les fees.
   const [thresholdForm, setThresholdForm] = useState(feeStr(profitabilityThresholdPct ?? 0));
+
+  // CPA prescriptif : CPA actuel DÉCLARÉ (repère). "" = jamais renseigné (≠ 0). Même format FR.
+  const cpaFetcher = useFetcher();
+  const [cpaForm, setCpaForm] = useState(currentCpa == null ? "" : feeStr(currentCpa));
 
   const [rows, setRows]       = useState(null);   // null = pas encore chargé
   const [dirty, setDirty]     = useState(() => new Set());
@@ -1890,6 +1980,30 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         </div>
       </div>
 
+      {/* CPA prescriptif : CPA actuel déclaré — devise BOUTIQUE explicite (point A anti-erreur devise) */}
+      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Votre CPA d'acquisition actuel</div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+          <label style={{ fontSize: "11px", color: "#6D7175" }}>
+            <div style={{ marginBottom: "4px" }}>CPA par commande ({feesCurrency})</div>
+            <input type="text" inputMode="decimal" value={cpaForm} onChange={e => setCpaForm(e.target.value)} style={{ ...inputStyle, width: "110px" }} placeholder="ex : 25" />
+          </label>
+          <button
+            onClick={() => cpaFetcher.submit({ _action: "set_current_cpa", current_cpa: cpaForm }, { method: "POST", encType: "application/json" })}
+            disabled={cpaFetcher.state !== "idle"}
+            style={{ padding: "7px 14px", background: cpaFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: cpaFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: cpaFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+            {cpaFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le CPA"}
+          </button>
+          {cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#6D7175" }}>CPA effacé.</span>}
+          {cpaFetcher.data?.success && !cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#008060" }}>✓ CPA enregistré.</span>}
+          {cpaFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {cpaFetcher.data.warning}</span>}
+          {cpaFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{cpaFetcher.data.error}</span>}
+        </div>
+        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+          Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord — sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
+        </div>
+      </div>
+
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
         <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Marge réelle sur vos commandes</span>
@@ -1917,6 +2031,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal}
         orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
         productTitleById={productTitleById ?? {}}
+        cpaTargets={cpaTargets} cpaByProduct={cpaByProduct} currentCpaUpdatedAt={currentCpaUpdatedAt} thresholdPct={profitabilityThresholdPct}
         onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
 
       {/* Barre d'actions */}
@@ -2003,6 +2118,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 
 export default function Index() {
   const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+    currentCpa, currentCpaUpdatedAt, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
@@ -3251,6 +3367,7 @@ export default function Index() {
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
         {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
+          currentCpa={currentCpa} currentCpaUpdatedAt={currentCpaUpdatedAt} cpaTargets={cpaTargets} cpaByProduct={cpaByProduct}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
 
