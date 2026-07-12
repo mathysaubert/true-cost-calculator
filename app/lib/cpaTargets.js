@@ -27,17 +27,23 @@ export function availableForAds(netMargin, netRevenue, thresholdPct = 0) {
 export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null } = {}) {
   const byProduct = agg?.byProduct ?? [];
 
-  // Par produit : marge disponible / unité. null si devise mixte (somme cross-devise interdite)
-  // ou quantité nulle (pas de division par zéro).
+  // Par produit : marge disponible / unité. margeDispoUnite null ⇒ unavailableReason DIT pourquoi
+  // (l'UI rend un "—" explicite + tooltip, jamais une cellule vide ambiguë) :
+  //   "mixed_currency" → produit multi-devises (somme cross-devise interdite) ;
+  //   "no_units"       → effective_qty ≤ 0 (produit entièrement remboursé : rien à acquérir —
+  //                      son éventuel saignement reste porté par la colonne Marge nette / badge « À perte »).
   const perProduct = byProduct.map((p) => {
     const qty = num(p.effective_qty);
-    const margeDispoUnite = (p.currency === "MIXED" || qty <= 0)
-      ? null
-      : availableForAds(p.net_margin, p.net_revenue, thresholdPct) / qty;
+    let margeDispoUnite = null;
+    let unavailableReason = null;
+    if (p.currency === "MIXED")      unavailableReason = "mixed_currency";
+    else if (qty <= 0)               unavailableReason = "no_units";
+    else margeDispoUnite = availableForAds(p.net_margin, p.net_revenue, thresholdPct) / qty;
     return {
       product_id: p.product_id ?? null,
       currency: p.currency ?? null,
       margeDispoUnite,
+      unavailableReason,
       exhausted: margeDispoUnite != null && margeDispoUnite <= 0,
     };
   });
