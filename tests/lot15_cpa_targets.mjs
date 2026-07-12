@@ -6,7 +6,7 @@
 //  hors liste. engine.js intouché. Pour lancer : node tests/lot15_cpa_targets.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { computeCpaTargets, availableForAds, CPA_STALE_DAYS } from "../app/lib/cpaTargets.js";
+import { computeCpaTargets, availableForAds, CPA_STALE_DAYS, BLENDED_MIN_ORDERS } from "../app/lib/cpaTargets.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -134,6 +134,23 @@ console.log("\n── écart : gapLabel/gapAmount serveur, 0 ≠ null ──");
   const zero = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 0 });
   ok(zero.ecart !== null && near(zero.ecart.gapAmount, 30), "A4 : currentCpa=0 (déclaré) → écart plein (30)");
   ok(computeCpaTargets(a, { thresholdPct: 0, currentCpa: null }).ecart === null, "A4 : currentCpa=null (jamais saisi) → écart null (l'action DOIT mapper '' → null)");
+}
+
+// ── FIABILITÉ du blended : base (orders, panier) + petit échantillon (lowSample) ──
+console.log("\n── blended : base exposée + lowSample (< 30 commandes) ──");
+{
+  // Cas true-cost-dev : 1 commande, 2 unités → plafond = artefact.
+  const dev = computeCpaTargets(agg([P({ id: "S", m: 729.27, r: 1200, q: 2 })], { net_margin: 729.27, net_revenue: 1200, orders: 1 }), { thresholdPct: 0 });
+  ok(dev.blended.orders === 1, "orders exposé (1)");
+  ok(dev.blended.avgBasket === 2, "avgBasket = 2 unités/commande (le plafond par commande en dépend)");
+  ok(dev.blended.lowSample === true, "1 commande < 30 → lowSample (plafond indicatif, pas fiable)");
+  // Panier fractionnaire arrondi serveur (pas de format JSX).
+  const frac = computeCpaTargets(agg([P({ id: "A", m: 100, r: 500, q: 5 }), P({ id: "B", m: 50, r: 300, q: 12 })], { net_margin: 150, net_revenue: 800, orders: 10 }), {});
+  ok(frac.blended.avgBasket === 1.7, "avgBasket = 17 unités / 10 commandes = 1,7 (arrondi serveur)");
+  ok(frac.blended.lowSample === true, "10 < 30 → lowSample");
+  // Seuil atteint → fiable.
+  const big = computeCpaTargets(agg([P({ id: "A", m: 300, r: 1000, q: 60 })], { net_margin: 300, net_revenue: 1000, orders: BLENDED_MIN_ORDERS }), {});
+  ok(big.blended.lowSample === false, `pile ${BLENDED_MIN_ORDERS} commandes → fiable (lowSample false)`);
 }
 
 // ── DEVISE ABSENTE/AMBIGUË → écart DISPARAÎT (jamais de calcul sur hypothèse tacite) ──

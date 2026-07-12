@@ -27,6 +27,11 @@ const DAY_MS = 86_400_000;
 // « validé » trompeur. Le wording UI DOIT assumer l'approximation, jamais prétendre l'inverse.
 export const CPA_STALE_DAYS = 30;
 
+// Fiabilité statistique du blended : c'est une MOYENNE (Σmarge / commandes distinctes). Sous ce
+// nombre de commandes, la moyenne est un artefact (à n=1, le « panier moyen » et la marge/commande
+// sont du bruit) → l'UI marque le plafond « indicatif, pas encore fiable ». Règle de robustesse usuelle.
+export const BLENDED_MIN_ORDERS = 30;
+
 // Budget disponible pour l'acquisition (avant pub), après réserve de seuil. Pure soustraction
 // de sommes serveur : net_margin − (seuil/100)×CA. Seuil 0 → = net_margin (break-even).
 export function availableForAds(netMargin, netRevenue, thresholdPct = 0) {
@@ -59,11 +64,18 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, cu
   });
 
   // Blended : uniquement mono-devise et s'il existe au moins une commande distincte.
+  // On expose la BASE du plafond (orders, panier moyen) et sa FIABILITÉ (lowSample) : le plafond
+  // est PAR COMMANDE et suppose un panier stable ; sur petit échantillon, c'est un artefact.
   let blended = null;
   if (!agg?.multiCurrency && num(agg?.totals?.orders) > 0) {
+    const orders = num(agg.totals.orders);
+    const units  = byProduct.reduce((s, p) => s + num(p.effective_qty), 0); // unités totales (comptage, sans devise)
     blended = {
-      cpaMax: availableForAds(agg.totals.net_margin, agg.totals.net_revenue, thresholdPct) / num(agg.totals.orders),
+      cpaMax: availableForAds(agg.totals.net_margin, agg.totals.net_revenue, thresholdPct) / orders,
       currency: agg.currencies?.[0] ?? null,
+      orders,
+      avgBasket: Math.round((units / orders) * 10) / 10, // unités/commande (arrondi serveur → pas de format JSX)
+      lowSample: orders < BLENDED_MIN_ORDERS,
     };
   }
 
