@@ -591,7 +591,7 @@ export const loader = async ({ request }) => {
     `),
     admin.graphql(`
       query ProductsPage1 {
-        shop { taxesIncluded }
+        shop { taxesIncluded ianaTimezone }
         products(first: 250, sortKey: TITLE) {
           edges {
             node {
@@ -633,12 +633,14 @@ export const loader = async ({ request }) => {
   // Default true: French B2C Shopify stores almost always include taxes in displayed price.
   // Overridden below if shop.taxesIncluded is explicitly false.
   let shopTaxesIncluded = true;
+  let shopTimezone = null; // IANA de la boutique (Shopify) → date de déclaration dans SON fuseau
   if (productsResp1.status === "fulfilled") {
     try {
       const json1 = await productsResp1.value.json();
       if (typeof json1.data?.shop?.taxesIncluded === "boolean") {
         shopTaxesIncluded = json1.data.shop.taxesIncluded;
       }
+      if (typeof json1.data?.shop?.ianaTimezone === "string") shopTimezone = json1.data.shop.ianaTimezone;
       const page1 = json1.data?.products;
       if (page1) {
         products = page1.edges.map(({ node }) => ({
@@ -751,11 +753,23 @@ export const loader = async ({ request }) => {
   // CPA prescriptif — CPA déclaré (null = jamais renseigné, distinct de 0) + date.
   const currentCpa = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa ?? null) : null;
   const currentCpaUpdatedAt = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa_updated_at ?? null) : null;
-  // Date de déclaration formatée SERVEUR en JJ/MM/AAAA (UTC, manuel) → aucune dépendance à la
-  // locale du runtime, aucun mismatch d'hydratation. Le JSX ne fait que rendre la chaîne.
+  // Date de déclaration formatée SERVEUR en JJ/MM/AAAA, dans le fuseau RÉEL de la boutique
+  // (Shopify ianaTimezone) → correct pour tout marchand (DE/ES/PT inclus), pas d'hypothèse de
+  // fuseau ni de faille UTC (saisie à 01:00 Paris ≠ la veille). formatToParts + assemblage manuel
+  // → sortie déterministe (la locale ne sert qu'au découpage interne, jamais à l'ordre affiché),
+  // aucune dépendance à la locale du runtime, aucun mismatch d'hydratation (chaîne passée telle quelle).
+  // Repli UTC UNIQUEMENT si le fuseau n'a pas pu être lu (chemin dégradé rare).
   const currentCpaDeclaredLabel = currentCpaUpdatedAt ? (() => {
-    const d = new Date(currentCpaUpdatedAt); const pad = (n) => String(n).padStart(2, "0");
-    return Number.isNaN(d.getTime()) ? null : `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+    const d = new Date(currentCpaUpdatedAt);
+    if (Number.isNaN(d.getTime())) return null;
+    try {
+      const parts = new Intl.DateTimeFormat("en-GB", { timeZone: shopTimezone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+      const get = (t) => parts.find((p) => p.type === t)?.value;
+      return `${get("day")}/${get("month")}/${get("year")}`;
+    } catch {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+    }
   })() : null;
   // BUG 1 : toute la dérivation CPA vit ICI (serveur), pas dans le JSX. computeCpaTargets consomme
   // l'agrégat (net_margin = marge avant pub) ; le client n'affichera que formatMoney(...).

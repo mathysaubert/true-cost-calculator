@@ -27,9 +27,11 @@ const DAY_MS = 86_400_000;
 // « validé » trompeur. Le wording UI DOIT assumer l'approximation, jamais prétendre l'inverse.
 export const CPA_STALE_DAYS = 30;
 
-// Fiabilité statistique du blended : c'est une MOYENNE (Σmarge / commandes distinctes). Sous ce
-// nombre de commandes, la moyenne est un artefact (à n=1, le « panier moyen » et la marge/commande
-// sont du bruit) → l'UI marque le plafond « indicatif, pas encore fiable ». Règle de robustesse usuelle.
+// Le blended est un RATIO agrégé (Σmarge / commandes distinctes), PAS une moyenne d'échantillon
+// avec intervalle de confiance — donc pas de « significativité statistique » à invoquer. 30 est
+// une CONVENTION pragmatique (pas un résultat) : en dessous, le ratio repose sur trop peu de
+// commandes pour servir de plafond → l'UI le marque « indicatif ». Le vrai gain n'est pas le seuil,
+// c'est de rendre l'HYPOTHÈSE visible (nb de commandes + panier moyen affichés), pas tacite.
 export const BLENDED_MIN_ORDERS = 30;
 
 // Budget disponible pour l'acquisition (avant pub), après réserve de seuil. Pure soustraction
