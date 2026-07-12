@@ -1,9 +1,9 @@
 // ════════════════════════════════════════════════════════════════════════════════
 //  GARDE-FOU CPA prescriptif — dérivation PURE (app/lib/cpaTargets.js). AUCUNE marge
 //  recalculée : on soustrait la réserve de seuil et on divise des agrégats serveur.
-//  Réconcilié avec l'invariant lot3 : à seuil=0, marge dispo/unité == net_margin / qty
-//  (= marge AVANT pub, car ads=0 à l'ingestion). engine.js intouché.
-//  Pour lancer : node tests/lot15_cpa_targets.mjs
+//  Réconcilié lot3 (seuil=0 → marge dispo/unité == net_margin/qty = marge AVANT pub).
+//  VERROU machine à états : les 5 états sont couverts, et aucune entrée ne produit d'état
+//  hors liste. engine.js intouché. Pour lancer : node tests/lot15_cpa_targets.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
 import { computeCpaTargets, availableForAds, CPA_STALE_DAYS } from "../app/lib/cpaTargets.js";
@@ -12,7 +12,6 @@ let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
 const near = (a, b) => Math.abs(a - b) < 0.005; // au centime
 
-// Fabrique un agg minimal (forme aggregateOrderMargins).
 const P = (o) => ({ product_id: o.id, net_margin: o.m, net_revenue: o.r, effective_qty: o.q, currency: o.cur ?? "USD" });
 const agg = (products, totals, opts = {}) => ({
   byProduct: products,
@@ -20,197 +19,133 @@ const agg = (products, totals, opts = {}) => ({
   multiCurrency: opts.multiCurrency ?? false,
   currencies: opts.currencies ?? ["USD"],
 });
+const state1 = (p, opts = {}) => computeCpaTargets(agg([p]), opts).perProduct[0];
 
-// ── RÉCONCILIATION lot3 : seuil=0 → marge dispo/unité == net_margin / qty ──
-console.log("\n── seuil=0 : marge dispo/unité = net_margin/qty (avant pub) ──");
+// ── RÉCONCILIATION lot3 : seuil=0 → marge dispo/unité == net_margin/qty (avant pub) ──
+console.log("\n── seuil=0 : marge dispo/unité = net_margin/qty ──");
 {
-  const r = computeCpaTargets(agg([P({ id: "A", m: 100, r: 400, q: 4 })]), { thresholdPct: 0 });
-  ok(near(r.perProduct[0].margeDispoUnite, 25), "net_margin 100 / 4 unités = 25,00 (== net_margin/qty)");
-  ok(r.perProduct[0].exhausted === false, "marge dispo > 0 → non épuisé");
-  // availableForAds à seuil 0 = net_margin exactement.
+  const r = state1(P({ id: "A", m: 100, r: 400, q: 4 }), { thresholdPct: 0 });
+  ok(near(r.margeDispoUnite, 25) && r.state === "ok", "100/4 = 25,00, state 'ok'");
   ok(near(availableForAds(100, 400, 0), 100), "availableForAds(seuil=0) == net_margin");
 }
 
-// ── SEUIL : réserve = (seuil/100)×CA soustraite avant division ──
-console.log("\n── seuil 10 % : réserve retirée puis /qty ──");
-{
-  const r = computeCpaTargets(agg([P({ id: "A", m: 100, r: 200, q: 4 })]), { thresholdPct: 10 });
-  // available = 100 − 0.10×200 = 80 ; /4 = 20
-  ok(near(r.perProduct[0].margeDispoUnite, 20), "(100 − 10%×200)/4 = 20,00");
-}
-
-// ── DURCISSEMENT 2 : marge dispo/unité ≤ 0 → exhausted ──
-console.log("\n── exhausted (aucune acquisition payante possible) ──");
-{
-  // Rentable (net_margin>0) mais SOUS le seuil → dispo négative → exhausted (distinct de 'à perte').
-  const thin = computeCpaTargets(agg([P({ id: "A", m: 10, r: 200, q: 2 })]), { thresholdPct: 10 });
-  ok(thin.perProduct[0].margeDispoUnite < 0 && thin.perProduct[0].exhausted === true, "marge>0 mais sous seuil → dispo<0, exhausted (≠ à perte)");
-  // À perte pur (seuil 0) → exhausted aussi.
-  const loss = computeCpaTargets(agg([P({ id: "A", m: -4, r: 50, q: 2 })]), { thresholdPct: 0 });
-  ok(loss.perProduct[0].exhausted === true, "marge nette négative → exhausted");
-  // Pile 0 → exhausted (≤ 0).
-  const zero = computeCpaTargets(agg([P({ id: "A", m: 0, r: 50, q: 2 })]), { thresholdPct: 0 });
-  ok(zero.perProduct[0].margeDispoUnite === 0 && zero.perProduct[0].exhausted === true, "dispo pile 0 → exhausted");
-}
-
-// ── GARDES : qty 0 (pas de /0) et devise MIXED (pas de somme cross-devise) ──
-console.log("\n── qty=0 et MIXED → margeDispoUnite null ──");
-{
-  const r = computeCpaTargets(agg([
-    P({ id: "Z", m: 50, r: 100, q: 0 }),
-    { product_id: "M", net_margin: 30, net_revenue: 90, effective_qty: 3, currency: "MIXED" },
-  ]), { thresholdPct: 0 });
-  ok(r.perProduct[0].margeDispoUnite === null && r.perProduct[0].exhausted === false, "qty=0 → null, jamais exhausted par défaut");
-  ok(r.perProduct[1].margeDispoUnite === null, "produit MIXED → null (pas de montant cross-devise)");
-}
-
-// ── BLENDED : vrai CPA max = (Σmarge − seuil×ΣCA) / commandes DISTINCTES ──
-console.log("\n── blended : /totals.orders (commandes distinctes) ──");
-{
-  const a = agg(
-    [P({ id: "A", m: 200, r: 500, q: 5 }), P({ id: "B", m: 100, r: 500, q: 20 })],
-    { net_margin: 300, net_revenue: 1000, orders: 10 });
-  const r0 = computeCpaTargets(a, { thresholdPct: 0 });
-  ok(near(r0.blended.cpaMax, 30), "seuil 0 : 300/10 commandes = 30,00");
-  ok(r0.blended.currency === "USD", "devise blended portée");
-  const r15 = computeCpaTargets(a, { thresholdPct: 15 });
-  ok(near(r15.blended.cpaMax, 15), "seuil 15 : (300 − 15%×1000)/10 = 15,00");
-}
-
-// ── BLENDED désactivé : multi-devises OU zéro commande ──
-console.log("\n── blended null si multi-devises / zéro commande ──");
-{
-  const multi = computeCpaTargets(agg([P({ id: "A", m: 200, r: 500, q: 5 })],
-    { net_margin: 200, net_revenue: 500, orders: 5 }, { multiCurrency: true, currencies: ["USD", "EUR"] }), {});
-  ok(multi.blended === null, "multi-devises → blended null (jamais de somme cross-devise)");
-  const noOrders = computeCpaTargets(agg([], { net_margin: 0, net_revenue: 0, orders: 0 }), {});
-  ok(noOrders.blended === null, "zéro commande → blended null (pas de /0)");
-}
-
-// ── ÉCART vs CPA déclaré (durcissement 1) : marge de manœuvre / dépassement ──
-console.log("\n── écart CPA max blended − CPA déclaré ──");
-{
-  const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
-  const under = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20 }); // cpaMax=30
-  ok(near(under.ecart.value, 10) && under.ecart.overspend === false, "CPA déclaré 20 < max 30 → marge de manœuvre +10");
-  const over = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 40 });
-  ok(near(over.ecart.value, -10) && over.ecart.overspend === true, "CPA déclaré 40 > max 30 → dépassement −10");
-  ok(computeCpaTargets(a, { thresholdPct: 0 }).ecart === null, "pas de CPA déclaré → écart null");
-  const multi = computeCpaTargets(agg([], { net_margin: 0, net_revenue: 0, orders: 0 }, { multiCurrency: true }), { currentCpa: 20 });
-  ok(multi.ecart === null, "pas de blended (multi-devises) → écart null même avec CPA déclaré");
-}
+// ── SEUIL : réserve (seuil/100)×CA retirée avant division ──
+console.log("\n── seuil 10 % : réserve retirée ──");
+ok(near(state1(P({ id: "A", m: 100, r: 200, q: 4 }), { thresholdPct: 10 }).margeDispoUnite, 20), "(100 − 10%×200)/4 = 20,00");
 
 // ════════════════════════════════════════════════════════════════════════════════
-//  A. TROUS DE COUVERTURE — cas RÉELS (pas juste la formule).
+//  VERROU — les 5 états, un cas nommé chacun, + aucune entrée hors liste.
 // ════════════════════════════════════════════════════════════════════════════════
-
-// ── A1 : produit entièrement remboursé (net_revenue=0 ET qty=0) → null EXPLIQUÉ ──
-console.log("\n── A1 : entièrement remboursé → 'refunded_loss' (perte) vs 'no_units' (neutre) ──");
+console.log("\n── machine à 5 états : un cas nommé chacun ──");
 {
-  // (a) résidu de frais → net_margin < 0 : le produit a DÉTRUIT de la valeur → refunded_loss (visible).
-  const loss = computeCpaTargets(agg([P({ id: "R", m: -0.5, r: 0, q: 0 })]), { thresholdPct: 0 });
-  ok(loss.perProduct[0].margeDispoUnite === null, "margeDispoUnite null (aucune unité → 'par unité' indéfini)");
-  ok(loss.perProduct[0].unavailableReason === "refunded_loss", "net_margin<0 & qty=0 → 'refunded_loss' (traité visuellement, pas un '—' muet)");
-  ok(loss.perProduct[0].exhausted === false, "PAS exhausted (le saignement est un fait passé, pas un plafond d'acquisition)");
-  // (b) remboursement neutre → net_margin ≥ 0 : "—" neutre légitime.
-  const neutral = computeCpaTargets(agg([P({ id: "N", m: 0, r: 0, q: 0 })]), { thresholdPct: 0 });
-  ok(neutral.perProduct[0].unavailableReason === "no_units", "net_margin≥0 & qty=0 → 'no_units' (— neutre)");
+  ok(state1(P({ id: "A", m: 100, r: 400, q: 4 })).state === "ok", "ok : margeDispoUnite > 0");
+  ok(state1(P({ id: "A", m: -8, r: 100, q: 2 })).state === "no_acquisition", "no_acquisition : margeDispoUnite < 0 (vend mais marge ≤ 0)");
+  ok(state1(P({ id: "A", m: -0.5, r: 0, q: 0 })).state === "value_destroyed", "value_destroyed : qty=0 & net_margin<0 (remboursé à perte)");
+  ok(state1(P({ id: "A", m: 0, r: 0, q: 0 })).state === "no_units", "no_units : qty=0 & net_margin≥0 (remboursement neutre)");
+  ok(state1({ product_id: "M", net_margin: 30, net_revenue: 90, effective_qty: 3, currency: "MIXED" }).state === "mixed_currency", "mixed_currency : devise MIXED");
 }
 
-// ── A2 : net_revenue=0 mais qty>0 → seuil ne mord pas, mais ≤0 capte quand même ──
-console.log("\n── A2 : CA=0 & qty>0 → seuil inopérant, capté par ≤0 ──");
+// ── CAS-LIMITE OBLIGATOIRE : net_margin EXACTEMENT = requiredProfit → availableUnit === 0 ──
+console.log("\n── frontière : availableUnit == 0 → no_acquisition (verrou anti-refactor ≤/<) ──");
 {
-  const r50 = computeCpaTargets(agg([P({ id: "X", m: -6, r: 0, q: 2 })]), { thresholdPct: 50 });
-  // requiredProfit = 50% × 0 = 0 → seuil n'a AUCUN effet ; available = net_margin = −6 ; /2 = −3.
-  ok(near(r50.perProduct[0].margeDispoUnite, -3), "CA=0 → requiredProfit=0 (seuil inopérant) ; −6/2 = −3");
-  ok(r50.perProduct[0].exhausted === true, "capté par ≤0 (verrou explicite : une refonte future ne doit pas le casser en silence)");
+  // seuil 10 %, CA 200 → requiredProfit = 20 ; net_margin = 20 → available = 0 ; /5 = 0.
+  const r = state1(P({ id: "A", m: 20, r: 200, q: 5 }), { thresholdPct: 10 });
+  ok(r.margeDispoUnite === 0, "marge dispo/unité pile 0,00 (net_margin == requiredProfit)");
+  ok(r.state === "no_acquisition", "0 € de budget = AUCUNE acquisition possible → no_acquisition (≤ 0, pas 'ok')");
 }
 
-// ── A3 : mix avec produit à marge NÉGATIVE → blended positif TROMPEUR ──
-console.log("\n── A3 : mix A(−) B(+) → blended positif mais A saigne ──");
+// ── AUCUNE entrée ne produit un état hors des 5 prévus ──
+console.log("\n── exhaustivité : aucun état inattendu ──");
 {
-  const a = agg(
-    [P({ id: "A", m: -500, r: 1000, q: 5 }), P({ id: "B", m: 600, r: 1000, q: 10 })],
+  const ALLOWED = new Set(["ok", "no_acquisition", "value_destroyed", "no_units", "mixed_currency"]);
+  const zoo = [
+    P({ id: "a", m: 100, r: 400, q: 4 }), P({ id: "b", m: -8, r: 100, q: 2 }),
+    P({ id: "c", m: -1, r: 0, q: 0 }), P({ id: "d", m: 5, r: 0, q: 0 }), P({ id: "e", m: 0, r: 0, q: 0 }),
+    { product_id: "f", net_margin: 1, net_revenue: 2, effective_qty: 1, currency: "MIXED" },
+    P({ id: "g", m: -3, r: 50, q: -2 }), // qty négative (remboursements > ventes)
+    { product_id: null, net_margin: 4, net_revenue: 10, effective_qty: 1, currency: "USD" },
+  ];
+  for (const th of [0, 10, 50, 100]) {
+    const r = computeCpaTargets(agg(zoo, { net_margin: 0, net_revenue: 0, orders: 3 }), { thresholdPct: th });
+    ok(r.perProduct.every((x) => ALLOWED.has(x.state)), `seuil ${th}% : tous les états ∈ {5 prévus}`);
+    ok(r.perProduct.every((x) => (x.margeDispoUnite == null) === !(x.state === "ok" || x.state === "no_acquisition")), `seuil ${th}% : montant ⇔ (ok|no_acquisition), null sinon`);
+  }
+}
+
+// ── COMPTEURS séparés : noAcqCount vs valueDestroyedCount (point 2) ──
+console.log("\n── compteurs inconditionnels : deux réalités, deux compteurs ──");
+{
+  const a = agg([
+    P({ id: "A", m: -500, r: 1000, q: 5 }),   // no_acquisition
+    P({ id: "B", m: 600, r: 1000, q: 10 }),   // ok
+    P({ id: "C", m: -2, r: 0, q: 0 }),        // value_destroyed
+    P({ id: "D", m: -3, r: 0, q: 0 }),        // value_destroyed
+  ], { net_margin: 95, net_revenue: 2000, orders: 10 });
+  const r = computeCpaTargets(a, { thresholdPct: 0 });
+  ok(r.noAcqCount === 1, "noAcqCount = 1 (A) — ne compte QUE les no_acquisition");
+  ok(r.valueDestroyedCount === 2, "valueDestroyedCount = 2 (C, D) — comptés à part, PAS dans noAcqCount");
+  const clean = computeCpaTargets(agg([P({ id: "B", m: 600, r: 1000, q: 10 })], { net_margin: 600, net_revenue: 1000, orders: 10 }), {});
+  ok(clean.noAcqCount === 0 && clean.valueDestroyedCount === 0, "catalogue sain → deux compteurs à 0 (aucune bannière)");
+}
+
+// ── A2 : CA=0 & qty>0 → seuil inopérant, no_acquisition quand même ──
+console.log("\n── A2 : CA=0 & qty>0 → seuil inopérant, capté ──");
+{
+  const r = state1(P({ id: "X", m: -6, r: 0, q: 2 }), { thresholdPct: 50 });
+  ok(near(r.margeDispoUnite, -3) && r.state === "no_acquisition", "requiredProfit=50%×0=0 (inopérant) ; −6/2=−3 → no_acquisition");
+}
+
+// ── A3 : mix A(−)/B(+) → blended positif TROMPEUR, A en no_acquisition ──
+console.log("\n── A3 : blended positif mais A saigne ──");
+{
+  const a = agg([P({ id: "A", m: -500, r: 1000, q: 5 }), P({ id: "B", m: 600, r: 1000, q: 10 })],
     { net_margin: 100, net_revenue: 2000, orders: 10 });
   const r = computeCpaTargets(a, { thresholdPct: 0 });
-  ok(near(r.blended.cpaMax, 10), "blended = 100/10 = 10,00 (positif, TENTANT)");
-  ok(r.perProduct[0].exhausted === true, "A (marge −500) → exhausted : enchérir au plafond blended sur A aggrave la perte");
-  ok(r.perProduct[1].exhausted === false, "B (marge +600) → sain");
+  ok(near(r.blended.cpaMax, 10), "blended = 100/10 = 10,00 (positif, tentant)");
+  ok(r.perProduct[0].state === "no_acquisition" && r.noAcqCount === 1, "A en no_acquisition, compté → bannière inconditionnelle");
 }
 
-// ── A4 : currentCpa = 0 (déclaré) VS null (jamais renseigné) — DISTINCTS ──
-console.log("\n── A4 : currentCpa 0 (déclaré) ≠ null (jamais saisi) ──");
+// ── BLENDED : /commandes DISTINCTES, désactivé si multi-devises / zéro commande ──
+console.log("\n── blended ──");
 {
   const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
-  const declaredZero = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 0 });
-  ok(declaredZero.ecart !== null && near(declaredZero.ecart.value, 30) && declaredZero.ecart.overspend === false,
-     "currentCpa=0 (marchand qui ne dépense rien) → écart = cpaMax (30), manœuvre pleine");
-  const neverSet = computeCpaTargets(a, { thresholdPct: 0, currentCpa: null });
-  ok(neverSet.ecart === null, "currentCpa=null (jamais saisi) → écart null (⚠ l'action DOIT mapper '' → null, pas 0)");
+  ok(near(computeCpaTargets(a, { thresholdPct: 0 }).blended.cpaMax, 30), "300/10 = 30,00");
+  ok(near(computeCpaTargets(a, { thresholdPct: 15 }).blended.cpaMax, 15), "(300 − 15%×1000)/10 = 15,00");
+  ok(computeCpaTargets(agg([P({ id: "A", m: 200, r: 500, q: 5 })], { net_margin: 200, net_revenue: 500, orders: 5 }, { multiCurrency: true, currencies: ["USD", "EUR"] }), {}).blended === null, "multi-devises → null");
+  ok(computeCpaTargets(agg([P({ id: "A", m: 50, r: 100, q: 2 })], { net_margin: 50, net_revenue: 100, orders: 0 }), {}).blended === null, "A6 : orders=0 → null (pas de NaN)");
 }
 
-// ── A5 : dépassement (currentCpa > cpaMax) → le cas le plus actionnable ──
-console.log("\n── A5 : dépassement → overspend true (à rendre le plus visible) ──");
+// ── A7 : seuil 100 % → available ≤ 0 partout (logique, pas un bug) ──
+console.log("\n── A7 : seuil 100 % → no_acquisition partout ──");
 {
-  const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
-  const over = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 45 }); // cpaMax=30
-  ok(near(over.ecart.value, -15) && over.ecart.overspend === true, "CPA déclaré 45 > max 30 → écart −15, overspend (vente à perte sur l'acquisition)");
-  // gap SERVEUR (label + magnitude absolue) → le JSX ne fait aucun Math.abs / comparaison.
-  ok(over.ecart.gapLabel === "Dépassement" && near(over.ecart.gapAmount, 15), "gapLabel='Dépassement', gapAmount=15 (magnitude positive, calculée serveur)");
-  const under = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20 }); // cpaMax=30
-  ok(under.ecart.gapLabel === "Marge de manœuvre" && near(under.ecart.gapAmount, 10), "gapLabel='Marge de manœuvre', gapAmount=10");
+  const r = state1(P({ id: "A", m: 50, r: 200, q: 5 }), { thresholdPct: 100 });
+  ok(near(r.margeDispoUnite, -30) && r.state === "no_acquisition", "(50 − 100%×200)/5 = −30 : conséquence logique d'un seuil absurde");
 }
 
-// ── A6 : totals.orders=0 mais des produits existent → blended disparaît proprement ──
-console.log("\n── A6 : orders=0 (dégénéré) → blended null, jamais NaN ──");
+// ── ÉCART : gap SERVEUR (label + magnitude absolue), 0 vs null, dépassement ──
+console.log("\n── écart : gapLabel/gapAmount serveur, 0 ≠ null ──");
 {
-  const r = computeCpaTargets(agg([P({ id: "A", m: 50, r: 100, q: 2 })], { net_margin: 50, net_revenue: 100, orders: 0 }), {});
-  ok(r.blended === null, "orders=0 → blended null (pas de NaN, pas de /0)");
-  ok(r.perProduct[0].margeDispoUnite !== null, "la marge dispo/unité par produit, elle, reste calculable (qty>0)");
+  const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 }); // cpaMax=30
+  const under = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20 });
+  ok(under.ecart.gapLabel === "Marge de manœuvre" && near(under.ecart.gapAmount, 10) && under.ecart.overspend === false, "déclaré 20 < 30 → 'Marge de manœuvre' 10 (magnitude serveur)");
+  const over = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 45 });
+  ok(over.ecart.gapLabel === "Dépassement" && near(over.ecart.gapAmount, 15) && over.ecart.overspend === true, "déclaré 45 > 30 → 'Dépassement' 15 (magnitude POSITIVE, aucun Math.abs client)");
+  const zero = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 0 });
+  ok(zero.ecart !== null && near(zero.ecart.gapAmount, 30), "A4 : currentCpa=0 (déclaré) → écart plein (30)");
+  ok(computeCpaTargets(a, { thresholdPct: 0, currentCpa: null }).ecart === null, "A4 : currentCpa=null (jamais saisi) → écart null (l'action DOIT mapper '' → null)");
 }
 
-// ── A7 : seuil = 100 % (borne haute) → available ≤ 0 partout, LOGIQUE (pas un bug) ──
-console.log("\n── A7 : seuil 100 % → tout exhausted (conséquence logique) ──");
-{
-  // requiredProfit = 100% × CA = CA entier → available = net_margin − CA = −(coûts) ≤ 0 toujours.
-  const r = computeCpaTargets(agg([P({ id: "A", m: 50, r: 200, q: 5 })], { net_margin: 50, net_revenue: 200, orders: 5 }), { thresholdPct: 100 });
-  ok(near(r.perProduct[0].margeDispoUnite, -30), "(50 − 100%×200)/5 = −30 : seuil 100% réclame 100% du CA en profit");
-  ok(r.perProduct[0].exhausted === true, "exhausted : conséquence logique d'un seuil absurde, pas un bug moteur");
-  ok(near(r.blended.cpaMax, -30), "blended aussi négatif : (50 − 200)/5 = −30 (cohérent)");
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-//  B. SIGNAL INCONDITIONNEL + OBSOLESCENCE (durcissements point 1 & 2).
-// ════════════════════════════════════════════════════════════════════════════════
-
-// ── Point 1 : exhaustedCount indépendant du tri (compté serveur) ──
-console.log("\n── exhaustedCount : signal inconditionnel ──");
-{
-  const a = agg(
-    [P({ id: "A", m: -500, r: 1000, q: 5 }), P({ id: "B", m: 600, r: 1000, q: 10 }), P({ id: "C", m: -1, r: 10, q: 1 })],
-    { net_margin: 99, net_revenue: 2010, orders: 10 });
-  const r = computeCpaTargets(a, { thresholdPct: 0 });
-  ok(r.exhaustedCount === 2, "2 produits exhausted (A et C) comptés serveur — le tri UI n'y change rien");
-  const none = computeCpaTargets(agg([P({ id: "B", m: 600, r: 1000, q: 10 })], { net_margin: 600, net_revenue: 1000, orders: 10 }), {});
-  ok(none.exhaustedCount === 0, "aucun exhausted → 0 (pas de bannière)");
-  // qty=0 / MIXED ne comptent PAS comme exhausted (ce ne sont pas des availableUnit ≤ 0).
-  const refunded = computeCpaTargets(agg([P({ id: "R", m: -0.5, r: 0, q: 0 })], { net_margin: -0.5, net_revenue: 0, orders: 1 }), {});
-  ok(refunded.exhaustedCount === 0, "produit remboursé (null) NON compté exhausted (porté par 'À perte', pas ici)");
-}
-
-// ── Point 2 : obsolescence de l'écart (stale) ──
-console.log("\n── ecart.stale : fraîcheur du CPA déclaré ──");
+// ── OBSOLESCENCE : ecart.stale (point 2) ──
+console.log("\n── écart.stale : fraîcheur du CPA déclaré ──");
 {
   const NOW = Date.parse("2026-07-12T12:00:00Z");
   const a = agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 });
-  const fresh = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - 5 * 86400000).toISOString(), now: NOW });
-  ok(fresh.ecart.stale === false, "déclaré il y a 5 j (< 30) → frais (écart vert/rouge actionnable)");
-  const old = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - 40 * 86400000).toISOString(), now: NOW });
-  ok(old.ecart.stale === true, "déclaré il y a 40 j (≥ 30) → stale (écart grisé, à remettre à jour)");
-  const exact = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: new Date(NOW - CPA_STALE_DAYS * 86400000).toISOString(), now: NOW });
-  ok(exact.ecart.stale === true, `pile ${CPA_STALE_DAYS} j → stale (≥)`);
-  const noDate = computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, currentCpaUpdatedAt: null, now: NOW });
-  ok(noDate.ecart.stale === true, "date de déclaration absente → stale (on ne peut pas vérifier la fraîcheur)");
+  const mk = (daysOld, dateNull = false) => computeCpaTargets(a, { thresholdPct: 0, currentCpa: 20, now: NOW,
+    currentCpaUpdatedAt: dateNull ? null : new Date(NOW - daysOld * 86400000).toISOString() });
+  ok(mk(5).ecart.stale === false, "déclaré il y a 5 j (< 30) → frais");
+  ok(mk(40).ecart.stale === true, "déclaré il y a 40 j (≥ 30) → stale (grisé)");
+  ok(mk(CPA_STALE_DAYS).ecart.stale === true, `pile ${CPA_STALE_DAYS} j → stale (≥)`);
+  ok(mk(0, true).ecart.stale === true, "date absente → stale (fraîcheur invérifiable)");
 }
 
 console.log("\n" + "═".repeat(66));

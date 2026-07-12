@@ -36,26 +36,26 @@ export function availableForAds(netMargin, netRevenue, thresholdPct = 0) {
 export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, currentCpaUpdatedAt = null, now = Date.now(), staleDays = CPA_STALE_DAYS } = {}) {
   const byProduct = agg?.byProduct ?? [];
 
-  // Par produit : marge disponible / unité. margeDispoUnite null ⇒ unavailableReason DIT pourquoi,
-  // pour que l'UI rende un état EXPLICITE (jamais un "—" muet ambigu) :
-  //   "mixed_currency" → multi-devises (somme cross-devise interdite) → "—" neutre ;
-  //   "refunded_loss"  → 0 unité vendue ET net_margin < 0 : le produit a DÉTRUIT de la valeur
-  //                      (tout remboursé, résidu de frais/retours) → traitement VISIBLE, pas un tiret ;
-  //   "no_units"       → 0 unité vendue, net_margin ≥ 0 (remboursement neutre) → "—" neutre.
+  // MACHINE À ÉTATS explicite (un seul point de vérité ; l'UI ne fait que switcher sur state).
+  // Exactement 5 états, mutuellement exclusifs :
+  //   "ok"              → margeDispoUnite > 0 (montant affichable) ;
+  //   "no_acquisition"  → margeDispoUnite ≤ 0 : vend mais ne peut financer AUCUNE acquisition
+  //                        (0 € de budget = déjà aucune acquisition possible → frontière ≤ 0) ;
+  //   "value_destroyed" → 0 unité vendue ET net_margin < 0 : tout remboursé À PERTE (frais/retours) ;
+  //   "no_units"        → 0 unité vendue, net_margin ≥ 0 : remboursement neutre → "—" neutre ;
+  //   "mixed_currency"  → multi-devises : somme cross-devise interdite → "—" neutre.
   const perProduct = byProduct.map((p) => {
     const qty = num(p.effective_qty);
-    let margeDispoUnite = null;
-    let unavailableReason = null;
-    if (p.currency === "MIXED")      unavailableReason = "mixed_currency";
-    else if (qty <= 0)               unavailableReason = num(p.net_margin) < 0 ? "refunded_loss" : "no_units";
-    else margeDispoUnite = availableForAds(p.net_margin, p.net_revenue, thresholdPct) / qty;
-    return {
-      product_id: p.product_id ?? null,
-      currency: p.currency ?? null,
-      margeDispoUnite,
-      unavailableReason,
-      exhausted: margeDispoUnite != null && margeDispoUnite <= 0,
-    };
+    let state, margeDispoUnite = null;
+    if (p.currency === "MIXED") {
+      state = "mixed_currency";
+    } else if (qty <= 0) {
+      state = num(p.net_margin) < 0 ? "value_destroyed" : "no_units";
+    } else {
+      margeDispoUnite = availableForAds(p.net_margin, p.net_revenue, thresholdPct) / qty;
+      state = margeDispoUnite <= 0 ? "no_acquisition" : "ok"; // === 0 → no_acquisition (frontière ≤ 0)
+    }
+    return { product_id: p.product_id ?? null, currency: p.currency ?? null, margeDispoUnite, state };
   });
 
   // Blended : uniquement mono-devise et s'il existe au moins une commande distincte.
@@ -85,9 +85,12 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, cu
     };
   }
 
-  // Signal INCONDITIONNEL (indépendant du tri UI) : combien de produits ne supportent AUCUNE
-  // acquisition payante (marge dispo/unité ≤ 0). L'UI l'affiche dès que > 0, à côté du blended.
-  const exhaustedCount = perProduct.filter((x) => x.exhausted).length;
+  // Signaux INCONDITIONNELS (indépendants du tri UI) — comptés SÉPARÉMENT (deux problèmes, deux
+  // remèdes ; on ne conflate pas « marge ≤ 0 » et « CA détruit », mais on n'en cache aucun) :
+  //   noAcqCount        → vend mais ne peut financer aucune acquisition (state no_acquisition) ;
+  //   valueDestroyedCount → entièrement remboursé à perte (state value_destroyed).
+  const noAcqCount          = perProduct.filter((x) => x.state === "no_acquisition").length;
+  const valueDestroyedCount = perProduct.filter((x) => x.state === "value_destroyed").length;
 
-  return { perProduct, blended, ecart, exhaustedCount };
+  return { perProduct, blended, ecart, noAcqCount, valueDestroyedCount };
 }
