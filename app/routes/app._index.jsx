@@ -1717,31 +1717,50 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   produit(s) ne supportent aucune acquisition payante — marge épuisée ou entièrement remboursés à perte. Voir la colonne « Marge dispo/unité », qui distingue les deux cas.
                 </div>
               )}
-              {cpaTargets?.blended && (
-                <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "8px" }}>
+              {cpaTargets?.blended && (() => {
+                const ec = cpaTargets.ecart;
+                // overspend = flag SERVEUR (présence + non-obsolète + dépassement). Aucun calcul JSX.
+                const overspend = !!(ec && !ec.stale && ec.overspend);
+                return (
+                <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: overspend ? "2px solid #D72C0D" : "1px solid #E4E5E7", marginBottom: "8px" }}>
+                  {/* PRIORITÉ 1 — vente à perte sur l'acquisition : EN TÊTE, en GRAND, avant le plafond. */}
+                  {overspend && (
+                    <div style={{ marginBottom: "12px", padding: "12px 14px", borderRadius: "8px", background: "#D72C0D", color: "#fff" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.95 }}>⚠ Vous vendez à perte sur l'acquisition</div>
+                      <div style={{ fontSize: "24px", fontWeight: "800", marginTop: "2px" }}>Dépassement : {formatMoney(ec.gapAmount, cpaTargets.blended.currency)}</div>
+                      <div style={{ fontSize: "12px", marginTop: "4px", opacity: 0.95 }}>Votre CPA déclaré dépasse votre plafond — chaque acquisition coûte plus que ce que la marge permet.</div>
+                    </div>
+                  )}
+
                   <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
                   <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
                   <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
-                  {cpaTargets.blended.lowSample && (
+
+                  {/* Échantillon faible : SUBORDONNÉ (texte simple, sans fond) quand l'alerte rouge est présente. */}
+                  {cpaTargets.blended.lowSample && (overspend ? (
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px" }}>Plafond sur {cpaTargets.blended.orders} commande(s) — indicatif ; la colonne « Marge dispo/unité » ne dépend pas du volume.</div>
+                  ) : (
                     <div style={{ fontSize: "12px", color: "#B98900", marginTop: "6px", padding: "8px 10px", background: "#FFF9EC", borderRadius: "6px" }}>
                       Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable — chiffre <strong>indicatif</strong>, il se stabilisera avec le volume. La colonne « Marge dispo/unité » ci-dessous, elle, ne dépend pas du nombre de commandes : c'est le niveau fiable pour décider.
                     </div>
-                  )}
-                  {cpaTargets.ecart == null ? (
+                  ))}
+
+                  {/* Écart : en overspend, l'info critique est DÉJÀ en tête → on ne la répète pas ici. */}
+                  {ec == null ? (
                     <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "6px" }}>Renseignez votre CPA actuel (dans les réglages plus haut) pour situer votre marge de manœuvre.</div>
-                  ) : cpaTargets.ecart.stale ? (
+                  ) : ec.stale ? (
                     <div style={{ fontSize: "12px", color: "#8C9196", marginTop: "6px", fontStyle: "italic" }}>Écart non affiché : votre CPA déclaré date de plus de 30 jours. Remettez-le à jour pour une comparaison utile.</div>
-                  ) : (
-                    <div style={{ fontSize: "13px", fontWeight: cpaTargets.ecart.overspend ? "600" : "400", color: cpaTargets.ecart.overspend ? "#D72C0D" : "#008060", marginTop: "6px", padding: cpaTargets.ecart.overspend ? "8px 10px" : "0", background: cpaTargets.ecart.overspend ? "#FFF4F4" : "transparent", borderRadius: "6px" }}>
-                      {cpaTargets.ecart.overspend ? "⚠ " : ""}{cpaTargets.ecart.gapLabel} : {formatMoney(cpaTargets.ecart.gapAmount, cpaTargets.blended.currency)}{cpaTargets.ecart.overspend ? " — vous dépensez au-dessus de votre plafond (vente à perte sur l'acquisition)." : ""}
-                    </div>
+                  ) : overspend ? null : (
+                    <div style={{ fontSize: "13px", color: "#008060", marginTop: "6px" }}>Marge de manœuvre : {formatMoney(ec.gapAmount, cpaTargets.blended.currency)} (CPA déclaré {formatMoney(ec.currentCpa, cpaTargets.blended.currency)}).</div>
                   )}
+
                   {currentCpaDeclaredLabel && (
                     <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {currentCpaDeclaredLabel} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
                   )}
                   <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable — si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne catalogue : un mix de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Liste par produit */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 8px" }}>
