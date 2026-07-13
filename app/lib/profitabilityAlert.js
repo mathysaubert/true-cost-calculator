@@ -30,6 +30,30 @@ const num = (v) => { const n = +v; return Number.isFinite(n) ? n : 0; };
 // Nom lisible d'un produit : titre résolu par l'appelant (Admin API) sinon fin du gid.
 const productName = (b) => b.title ?? `Produit ${String(b.product_id ?? "").split("/").pop()}`;
 
+// ── Poste de coût dominant d'un produit — PUR (aucune re-dérivation, BUG 1) ───
+// Entrée : costPosts agrégés par aggregateOrderMargins (€ produit). On EXCLUT le coût d'achat+port
+// (structurel, connu = coutRendu − douane − TVA import) du classement et on l'expose à part ;
+// on classe les SURCHARGES (ce que le marchand ne voit pas venir) et on renvoie la plus lourde.
+// CONSTAT, jamais conseil : le libellé n'est qu'un nom de poste + un montant.
+const POST_LABELS = {
+  douane:      "la douane",
+  tvaNetCost:  "la TVA à l'import non récupérable",
+  shopifyCost: "les frais Shopify",
+  stripeCost:  "les frais de paiement",
+  retoursCost: "les retours",
+  fraisFixes:  "les frais fixes (emballage, retour)",
+};
+export function dominantCostPost(costPosts) {
+  if (!costPosts) return null;
+  const achatPort = num(costPosts.coutRendu) - num(costPosts.douane) - num(costPosts.tvaNetCost);
+  let top = null;
+  for (const k of Object.keys(POST_LABELS)) {
+    const v = num(costPosts[k]);
+    if (v > 0 && (!top || v > top.amount)) top = { label: POST_LABELS[k], amount: v };
+  }
+  return top ? { ...top, achatPort } : null;  // null si aucune surcharge > 0 → mail n'affiche rien
+}
+
 // ── Rendu PUR du mail d'alerte (digest) — aucun I/O, aucun envoi ────────────
 // Wording NEUTRE, basé sur l'ÉTAT, jamais causal ("votre dernière vente…") ni daté
 // ("30 derniers jours") : le cron ne connaît que l'agrégat, pas la cause.

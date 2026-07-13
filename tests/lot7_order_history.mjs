@@ -222,6 +222,27 @@ console.log("\n── [F9] graphe < 2 points (donnée) ──");
   ok(a.byDay.length === 1, `1 seule journée → byDay length 1 (déclenche le message F9) (${a.byDay.length})`);
 }
 
+// ── [K] Postes de coût agrégés par produit (poste_unité × effective_qty) + breakdownAvailable ──
+console.log("\n── [K] agrégation des postes de coût (BUG 1 : somme de valeurs stockées) ──");
+{
+  const bd = (o) => ({ coutRendu: o.cr ?? 0, douane: o.d ?? 0, tvaNetCost: o.tva ?? 0, shopifyCost: o.sh ?? 0, stripeCost: o.st ?? 0, retoursCost: o.re ?? 0, fraisFixes: o.ff ?? 0 });
+  const brow = (o) => ({ ...row(o), margin_breakdown_json: o.bd });
+  const a = aggregateOrderMargins([
+    // 2 unités × (douane 3 / shopify 1) + 1 unité × (douane 3 / shopify 1) = douane 9, shopify 3
+    brow({ order: "OK1", product: "PK", qty: 2, rev: 40, margin: -5, bd: bd({ cr: 20, d: 3, sh: 1 }) }),
+    brow({ order: "OK2", product: "PK", qty: 1, rev: 20, margin: -2, bd: bd({ cr: 20, d: 3, sh: 1 }) }),
+  ]);
+  const p = a.byProduct.find((x) => x.product_id === "PK");
+  ok(Math.abs(p.costPosts.douane - 9) < 0.001, "douane agrégée = 3×2 + 3×1 = 9 (poste_unité × effective_qty)");
+  ok(Math.abs(p.costPosts.shopifyCost - 3) < 0.001, "shopifyCost agrégé = 3");
+  ok(Math.abs(p.costPosts.coutRendu - 60) < 0.001, "coutRendu agrégé = 20×3 = 60");
+  ok(p.breakdownAvailable === true, "breakdownAvailable true (les lignes ont un détail)");
+  // Produit SANS aucun breakdown → costPosts à 0, breakdownAvailable false (fallback mail).
+  const b = aggregateOrderMargins([row({ order: "ON1", product: "PN", qty: 1, rev: 10, margin: -4 })]);
+  const pn = b.byProduct.find((x) => x.product_id === "PN");
+  ok(pn.breakdownAvailable === false && pn.costPosts.douane === 0, "aucun breakdown → breakdownAvailable false, postes à 0");
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 7 (historique monitor) : ✓ Tous les tests passent"

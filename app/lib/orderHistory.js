@@ -129,17 +129,24 @@ export function aggregateOrderMargins(rows = []) {
   // F2 : le dépli vit au niveau LIGNE DE COMMANDE (chaque ligne a SON snapshot figé, sa
   // cible line_net_margin). On collecte donc les lignes brutes par produit (`lines`),
   // sans jamais fondre plusieurs snapshots en un seul breakdown.
+  // Postes de coût agrégés PAR PRODUIT (poste_unité × effective_qty, sommés). On agrège des
+  // NOMBRES déjà calculés par le moteur (margin_breakdown_json), on ne fond jamais les snapshots
+  // en un seul breakdown (règle F2) et on ne re-dérive aucune marge (BUG 1). breakdownLines
+  // compte les lignes qui ont un détail → l'alerte sait si le poste dominant est calculable.
+  const POST_KEYS = ["coutRendu", "douane", "tvaNetCost", "shopifyCost", "stripeCost", "retoursCost", "fraisFixes"];
   const prodMap = new Map();
   for (const r of valid) {
     const key = r.product_id ?? "__unknown__";
     let p = prodMap.get(key);
-    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [] }; prodMap.set(key, p); }
+    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [], costPosts: Object.fromEntries(POST_KEYS.map((k) => [k, 0])), breakdownLines: 0 }; prodMap.set(key, p); }
     p.orderIds.add(r.order_id);
     p.effective_qty += num(r.effective_qty);
     p.net_revenue   += num(r.line_net_revenue);
     p.net_margin    += num(r.line_net_margin);
     if (r.currency_code) p.currencySet.add(r.currency_code);
     p.lines.push(lineBreakdown(r));
+    const bd = r.margin_breakdown_json;
+    if (bd) { const q = num(r.effective_qty); for (const k of POST_KEYS) p.costPosts[k] += num(bd[k]) * q; p.breakdownLines++; }
   }
   const byProduct = [...prodMap.values()].map((p) => ({
     product_id:    p.product_id,
@@ -150,6 +157,9 @@ export function aggregateOrderMargins(rows = []) {
     marginPct:     p.net_revenue > 0 ? (p.net_margin / p.net_revenue) * 100 : null, // CA=0 → null (pas de /0)
     unprofitable:  p.net_margin < 0,
     currency:      p.currencySet.size === 1 ? [...p.currencySet][0] : (p.currencySet.size === 0 ? null : "MIXED"),
+    // postes de coût agrégés (€ produit) + dispo du détail (pour le poste dominant de l'alerte)
+    costPosts:          p.costPosts,
+    breakdownAvailable: p.breakdownLines > 0,
     // lignes les plus récentes d'abord (order_created_at desc), chacune son dépli
     lines:         p.lines.sort((a, b) => (a.order_created_at < b.order_created_at ? 1 : a.order_created_at > b.order_created_at ? -1 : 0)),
   }));
