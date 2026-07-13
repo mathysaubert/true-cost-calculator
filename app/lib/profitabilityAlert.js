@@ -55,46 +55,65 @@ export function dominantCostPost(costPosts) {
 }
 
 // ── Rendu PUR du mail d'alerte (digest) — aucun I/O, aucun envoi ────────────
-// Wording NEUTRE, basé sur l'ÉTAT, jamais causal ("votre dernière vente…") ni daté
-// ("30 derniers jours") : le cron ne connaît que l'agrégat, pas la cause.
-// SOUS-GROUPAGE (apport du seuil) : un basculement 'loss' distingue deux niveaux d'urgence —
-//   • marge < 0          → "Passés à perte" (perte réelle d'argent)
-//   • 0 ≤ marge < seuil  → "Sous votre seuil" (encore rentable, mais sous l'objectif)
-// Cette distinction se dérive AU RENDU du signe de la marge — aucun 3ᵉ état stocké.
-// Entrée : { shop, thresholdPct, basculements:[{ to:'loss'|'profitable', margin, marginPct, currency, title? }] }.
-// Sortie : { subject, html, text } prêts pour Resend.
+// Écrit pour un marchand NOVICE : ce qu'il perd (en €), et où part son argent (poste de coût
+// dominant, factuel — CONSTAT jamais conseil). Aucune causalité inventée, aucune date, aucun
+// jargon ("marge nette cumulée" → "vous perdez X"). Trois niveaux :
+//   • marge < 0          → "Vous perdez de l'argent sur"      (+ poste dominant si dispo)
+//   • 0 ≤ marge < seuil  → "Rentables, mais sous votre objectif"
+//   • repassé rentable   → "Repassés au-dessus de votre objectif"
+// Entrée basculement : { to, margin, marginPct, currency, title?, topCost?:{label,amount,achatPort}, breakdownAvailable? }.
+// topCost/breakdownAvailable sont fournis SERVEUR (cron) — le template ne fait que rendre (BUG 1).
 export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = [] }) {
   const losses     = basculements.filter((b) => b.to === "loss");
-  const realLosses = losses.filter((b) => num(b.margin) < 0);   // perte réelle
-  const thin       = losses.filter((b) => num(b.margin) >= 0);  // sous le seuil mais rentable
+  const realLosses = losses.filter((b) => num(b.margin) < 0);
+  const thin       = losses.filter((b) => num(b.margin) >= 0);
   const recoveries = basculements.filter((b) => b.to === "profitable");
-  const subject = `⚠️ ${shop} — ${basculements.length} produit(s) ont changé de rentabilité`;
 
-  const seuilLabel = num(thresholdPct) > 0
+  const objLabel = num(thresholdPct) > 0
     ? ` de ${num(thresholdPct).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %` : "";
-  const fmtPct = (p) => p == null ? null
-    : `${num(p).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
-  // Montant au centime + % à côté (le % est null si CA = 0 → on n'affiche que le montant).
-  const amount = (b) => { const pct = fmtPct(b.marginPct); const m = formatMoney(b.margin, b.currency); return pct ? `${m} · ${pct}` : m; };
+  const money = (v, cur) => formatMoney(v, cur);
+  const signed = (b) => (num(b.margin) > 0 ? "+" : "") + money(b.margin, b.currency);
+  const pct = (b) => b.marginPct == null ? "" : ` (${num(b.marginPct).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
 
-  const lossLine = (b) => `${productName(b)} — marge nette cumulée négative (${amount(b)}) sur vos commandes suivies.`;
-  const thinLine = (b) => `${productName(b)} — marge nette sous votre seuil${seuilLabel} (${amount(b)}).`;
-  const recoLine = (b) => `${productName(b)} — repassé au-dessus du seuil${seuilLabel} (${amount(b)}).`;
+  // Ligne perte : montant total + (si dispo) coût d'achat exposé à part + poste annexe dominant.
+  const lossLine = (b) => {
+    let s = `${productName(b)} : ${money(b.margin, b.currency)} (tout compris).`;
+    if (b.topCost) s += ` Coût d'achat + port : ${money(b.topCost.achatPort, b.currency)} ; au-delà, le poste le plus lourd : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
+    return s;
+  };
+  const thinLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}. Il rapporte, mais moins que la marge que vous visez.`;
+  const recoLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}.`;
 
-  const lines = [];
-  if (realLosses.length) lines.push("Passés à perte :", ...realLosses.map(lossLine));
-  if (thin.length)       lines.push("Sous votre seuil :", ...thin.map(thinLine));
-  if (recoveries.length) lines.push("Repassés au-dessus du seuil :", ...recoveries.map(recoLine));
-  const text = lines.join("\n");
+  // Objet adaptatif : mène avec le plus grave présent.
+  const subject = realLosses.length
+    ? `⚠️ ${shop} — ${realLosses.length} produit(s) vendus à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
+    : thin.length
+    ? `${shop} — ${thin.length} produit(s) sous votre objectif de marge`
+    : `${shop} — ${recoveries.length} produit(s) repassés rentables`;
+
+  // Note fallback : au moins un produit à perte sans détail de coûts (commandes pré-Brique B).
+  const missingDetail = realLosses.some((b) => b.breakdownAvailable === false);
+  const noteText = "Le détail des coûts n'apparaît pas pour certains produits : leurs commandes ont été analysées avant cette fonctionnalité. Complétez-le depuis l'onglet « Suivi des coûts ».";
+  const closing = (realLosses.length || thin.length) ? "À vous de décider quoi ajuster — vous seul connaissez votre marché." : "";
+
+  const lines = ["D'après les commandes que True Cost Calculator suit pour vous :", ""];
+  if (realLosses.length) lines.push("Vous perdez de l'argent sur :", ...realLosses.map((b) => `• ${lossLine(b)}`), "");
+  if (thin.length)       lines.push(`Rentables, mais sous votre objectif${objLabel} :`, ...thin.map((b) => `• ${thinLine(b)}`), "");
+  if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoLine(b)}`), "");
+  if (closing) lines.push(closing);
+  if (missingDetail) lines.push("", `— ${noteText}`);
+  const text = lines.join("\n").trim();
 
   const section = (titre, items, render) => items.length
     ? `<h3 style="margin:16px 0 6px;font-size:14px">${titre}</h3><ul style="margin:0;padding-left:18px">${items.map((b) => `<li style="margin:4px 0">${render(b)}</li>`).join("")}</ul>`
     : "";
   const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.5">
-    <p>Changement de rentabilité détecté sur <strong>${shop}</strong>.</p>
-    ${section("Passés à perte", realLosses, lossLine)}
-    ${section("Sous votre seuil", thin, thinLine)}
-    ${section("Repassés au-dessus du seuil", recoveries, recoLine)}
+    <p>D'après les commandes que True Cost Calculator suit pour vous :</p>
+    ${section("Vous perdez de l'argent sur", realLosses, lossLine)}
+    ${section(`Rentables, mais sous votre objectif${objLabel}`, thin, thinLine)}
+    ${section("Repassés au-dessus de votre objectif", recoveries, recoLine)}
+    ${closing ? `<p>${closing}</p>` : ""}
+    ${missingDetail ? `<p style="font-size:12px;color:#6D7175">${noteText}</p>` : ""}
   </div>`;
 
   return { subject, html, text };

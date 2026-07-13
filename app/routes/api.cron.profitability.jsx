@@ -9,7 +9,7 @@ import { supabase } from "../supabase.server";
 import prisma from "../db.server";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins } from "../lib/orderHistory.js";
-import { computeProfitabilityChanges } from "../lib/profitabilityAlert.js";
+import { computeProfitabilityChanges, dominantCostPost } from "../lib/profitabilityAlert.js";
 import { sendLossAlert } from "../lib/email.server.js";
 
 // @vercel/react-router : durée max de la fonction servant cette route. INDISPENSABLE —
@@ -83,7 +83,15 @@ async function runForShop(shop) {
   if (basculements.length) {
     r.basculements = basculements.length;
     const titles = await resolveTitles(admin, basculements.map((b) => b.product_id));
-    for (const b of basculements) b.title = titles.get(b.product_id);
+    // Enrichissement pour le mail : titre + poste de coût dominant (SERVEUR, agrégat déjà calculé
+    // par aggregateOrderMargins ; dominantCostPost est pur). Le template ne fait que rendre (BUG 1).
+    const byId = new Map(agg.byProduct.map((p) => [p.product_id, p]));
+    for (const b of basculements) {
+      b.title = titles.get(b.product_id);
+      const p = byId.get(b.product_id);
+      b.topCost = dominantCostPost(p?.costPosts);
+      b.breakdownAvailable = p?.breakdownAvailable ?? false;
+    }
     const to = await resolveEmail(admin);
 
     if (!to) {
