@@ -82,46 +82,54 @@ export function decideDunningAction({
 const planLabel = (plan) => (plan ? `votre abonnement ${plan}` : "votre abonnement");
 
 // Mail de relance (épisode frozen). Entrée : { shop, plan, confirmationUrl }.
+// ATTRIBUTION EXACTE : en frozen, Shopify GÈLE la facturation (il n'a pas coupé l'accès ni
+// résilié) ; c'est NOTRE app qui, voyant l'abonnement non-actif, verrouille les fonctions payantes.
+// ÉCHÉANCE : aucun délai fixe garanti par Shopify pour un abonnement d'app → on le dit honnêtement,
+// on n'invente pas de date. Lien de régularisation TOUJOURS présent.
 export function renderDunningEmail({ shop, plan, confirmationUrl }) {
-  const subject = "Paiement en échec — votre abonnement True Cost Calculator est suspendu";
+  const subject = "Votre abonnement True Cost Calculator n'est plus actif (paiement échoué)";
   const lien = confirmationUrl;
 
   const text = [
-    `Le dernier paiement de ${planLabel(plan)} n'a pas abouti.`,
-    `Shopify a suspendu l'abonnement : les fonctionnalités payantes de True Cost Calculator`,
-    `resteront indisponibles tant que le paiement n'est pas régularisé.`,
+    `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Votre abonnement n'est donc plus`,
+    `actif : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes,`,
+    `audit) est verrouillé jusqu'à régularisation. Vos données sont conservées.`,
     ``,
-    `Pour rétablir votre accès, régularisez votre paiement ici :`,
+    `Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira`,
+    `par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès`,
+    `que possible pour ne pas perdre l'accès.`,
+    ``,
+    `Régulariser votre paiement :`,
     lien,
     ``,
-    `Si vous avez déjà régularisé, vous pouvez ignorer ce message.`,
+    `Déjà régularisé ? Vous pouvez ignorer ce message.`,
   ].join("\n");
 
   const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
-    <p>Le dernier paiement de <strong>${planLabel(plan)}</strong> n'a pas abouti.</p>
-    <p>Shopify a suspendu l'abonnement : les fonctionnalités payantes de True Cost Calculator resteront indisponibles tant que le paiement n'est pas régularisé.</p>
+    <p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Votre abonnement n'est donc <strong>plus actif</strong> : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes, audit) est verrouillé jusqu'à régularisation. <strong>Vos données sont conservées.</strong></p>
+    <p>Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès que possible pour ne pas perdre l'accès.</p>
     <p style="margin:20px 0">
       <a href="${lien}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Régulariser mon paiement</a>
     </p>
     <p style="font-size:12px;color:#6D7175">Ou copiez ce lien : <a href="${lien}">${lien}</a></p>
-    <p style="font-size:12px;color:#6D7175">Si vous avez déjà régularisé, vous pouvez ignorer ce message.</p>
+    <p style="font-size:12px;color:#6D7175">Déjà régularisé ? Vous pouvez ignorer ce message.</p>
   </div>`;
 
   return { subject, html, text };
 }
 
-// Mail de confirmation (retour à active après relances). Entrée : { shop, plan }.
+// Mail de confirmation (retour à active après relances). Entrée : { shop, plan }. Sobre.
 export function renderDunningResolvedEmail({ shop, plan }) {
-  const subject = "Paiement à jour — accès rétabli";
+  const subject = "C'est réglé — votre accès est rétabli";
   const text = [
-    `Votre paiement a été régularisé et ${planLabel(plan)} est de nouveau actif.`,
-    `L'accès complet à True Cost Calculator est rétabli.`,
-    `Merci.`,
+    `Votre paiement est passé et ${planLabel(plan)} est réactivé.`,
+    `Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.`,
+    `Merci !`,
   ].join("\n");
   const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
-    <p>Votre paiement a été régularisé et <strong>${planLabel(plan)}</strong> est de nouveau actif.</p>
-    <p>L'accès complet à True Cost Calculator est rétabli.</p>
-    <p>Merci.</p>
+    <p>Votre paiement est passé et <strong>${planLabel(plan)}</strong> est réactivé.</p>
+    <p>Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.</p>
+    <p>Merci !</p>
   </div>`;
   return { subject, html, text };
 }
