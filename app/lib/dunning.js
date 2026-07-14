@@ -90,14 +90,12 @@ export function renderDunningEmail({ shop, plan, confirmationUrl }) {
   const subject = "Votre abonnement True Cost Calculator n'est plus actif (paiement échoué)";
   const lien = confirmationUrl;
 
+  // Une ligne par paragraphe (jamais de coupure au milieu d'une phrase → meilleur rendu plain-text
+  // et parité HTML/texte : les mêmes expressions restent intactes). Le client mail gère le wrapping.
   const text = [
-    `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Votre abonnement n'est donc plus`,
-    `actif : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes,`,
-    `audit) est verrouillé jusqu'à régularisation. Vos données sont conservées.`,
+    `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Votre abonnement n'est donc plus actif : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes, audit) est verrouillé jusqu'à régularisation. Vos données sont conservées.`,
     ``,
-    `Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira`,
-    `par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès`,
-    `que possible pour ne pas perdre l'accès.`,
+    `Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès que possible pour ne pas perdre l'accès.`,
     ``,
     `Régulariser votre paiement :`,
     lien,

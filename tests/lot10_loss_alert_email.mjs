@@ -106,6 +106,23 @@ console.log("\n── seuil=0 : pas de bande 'sous l'objectif' ──");
   ok(/Vous perdez/.test(html) && !/sous votre objectif/i.test(html), "seuil 0 : perte seule");
 }
 
+// ── DÉLIVRABILITÉ : texte brut ≡ HTML (mêmes chiffres) — jamais de mail HTML-only ──
+console.log("\n── texte brut ≡ HTML : mêmes chiffres ──");
+{
+  const { html, text } = renderLossAlertEmail({
+    shop: "s", thresholdPct: 80,
+    basculements: [
+      b({ id: "gid://shopify/Product/1", to: "loss", margin: -4.05, cur: "USD", title: "Coque",
+        topCost: { label: "la TVA à l'import non récupérable", amount: 9.2, achatPort: 40 }, bdAvail: true }),
+      b({ id: "gid://shopify/Product/2", to: "loss", margin: 729.27, pct: 60.8, cur: "USD", title: "Snow" }),
+    ],
+  });
+  ok(html.length > 0 && text.length > 0, "html ET texte non vides (jamais HTML-only)");
+  for (const fig of ["-4,05", "40,00", "9,20", "TVA à l'import non récupérable", "+729,27", "60,8"]) {
+    ok(html.includes(fig) && text.includes(fig), `« ${fig} » présent dans le HTML ET le texte`);
+  }
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 10 (mail alerte) : ✓ Tous les tests passent"

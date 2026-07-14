@@ -59,6 +59,18 @@ console.log("\n── plan absent (fallback neutre) ──");
   ok(text.includes("votre abonnement") && html.includes(URL), "fallback 'votre abonnement' + lien conservé");
 }
 
+// ── DÉLIVRABILITÉ : texte brut ≡ HTML (lien, plan, conséquence dans les DEUX) ──
+console.log("\n── texte brut ≡ HTML ──");
+{
+  const { html, text } = renderDunningEmail({ shop: "s", plan: "True Cost Calculator Pro", confirmationUrl: URL });
+  ok(html.length > 0 && text.length > 0, "relance : html ET texte non vides (jamais HTML-only)");
+  for (const frag of [URL, "True Cost Calculator Pro", "plus actif", "verrouillé"]) {
+    ok(html.includes(frag) && text.includes(frag), `« ${frag.slice(0, 28)}… » dans le HTML ET le texte`);
+  }
+  const r = renderDunningResolvedEmail({ shop: "s", plan: "True Cost Calculator Pro" });
+  ok(r.html.length > 0 && r.text.length > 0 && r.html.includes("réactivé") && r.text.includes("réactivé"), "resolved : html ET texte non vides, 'réactivé' dans les deux");
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 12 (mail dunning) : ✓ Tous les tests passent"
