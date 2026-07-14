@@ -22,6 +22,8 @@ console.log("\n── digest mixte ──");
     ],
   });
   ok(subject.includes("demo.myshopify.com") && /à perte/.test(subject), `sujet mène avec la perte (${subject})`);
+  ok(!/[\u{2600}-\u{27BF}\u{1F000}-\u{1FAFF}️]/u.test(subject), "objet FACTUEL sans emoji (signal anti-spam)");
+  ok(/1 produit vendu à perte/.test(subject) && !/produits vendus/.test(subject), "singulier correct (1 produit vendu)");
   ok(/Vous perdez de l'argent/.test(html) && /Repassés au-dessus de votre objectif/.test(html), "html : 2 sections (perte / rétabli)");
   ok(html.includes("Snowboard Hydrogen") && html.includes("Bonnet"), "titres produits affichés");
   ok(text.includes("-12,40") && text.includes("+8,10"), "montants : perte signée, rétabli avec +");

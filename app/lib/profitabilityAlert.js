@@ -84,12 +84,13 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const thinLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}. Il rapporte, mais moins que la marge que vous visez.`;
   const recoLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}.`;
 
-  // Objet adaptatif : mène avec le plus grave présent.
+  // Objet adaptatif : mène avec le plus grave présent. FACTUEL, aucun emoji (un pictogramme
+  // d'avertissement dans l'objet est un signal de spam ; la gravité est dans le contenu).
   const subject = realLosses.length
-    ? `⚠️ ${shop} — ${realLosses.length} produit(s) vendus à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
+    ? `${shop} — ${realLosses.length} produit${realLosses.length > 1 ? "s" : ""} vendu${realLosses.length > 1 ? "s" : ""} à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
     : thin.length
-    ? `${shop} — ${thin.length} produit(s) sous votre objectif de marge`
-    : `${shop} — ${recoveries.length} produit(s) repassés rentables`;
+    ? `${shop} — ${thin.length} produit${thin.length > 1 ? "s" : ""} sous votre objectif de marge`
+    : `${shop} — ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} repassé${recoveries.length > 1 ? "s" : ""} rentable${recoveries.length > 1 ? "s" : ""}`;
 
   // Note fallback : au moins un produit à perte sans détail de coûts (commandes pré-Brique B).
   const missingDetail = realLosses.some((b) => b.breakdownAvailable === false);
