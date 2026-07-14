@@ -24,6 +24,7 @@ import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
+import { planEntitlement } from "../lib/plan.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -583,9 +584,9 @@ export const loader = async ({ request }) => {
   // excludes dev-store subscriptions when NODE_ENV=production on Vercel.
   const [subResp, productsResp1] = await Promise.allSettled([
     admin.graphql(`
-      query ActiveSubscriptions {
+      query AllSubscriptions {
         currentAppInstallation {
-          activeSubscriptions { id name status }
+          allSubscriptions(first: 25) { edges { node { id name status } } }
         }
       }
     `),
@@ -612,9 +613,9 @@ export const loader = async ({ request }) => {
   if (subResp.status === "fulfilled") {
     try {
       const subJson = await subResp.value.json();
-      const subs = subJson.data?.currentAppInstallation?.activeSubscriptions ?? [];
-      isExpert = subs.some(s => s.name === PLAN_EXPERT && s.status === "ACTIVE");
-      isPro = isExpert || subs.some(s => s.name === PLAN_PRO && s.status === "ACTIVE");
+      // allSubscriptions (voit les FROZEN) → droit au plan via la fonction pure UNIQUE (ACTIVE ∪ FROZEN).
+      const nodes = (subJson.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map(e => e.node);
+      ({ isPro, isExpert } = planEntitlement(nodes, PLAN_PRO, PLAN_EXPERT));
     } catch (e) {
       console.error("[Billing] subscription parse failed:", e?.message);
     }
@@ -842,16 +843,16 @@ export const action = async ({ request }) => {
   let billingIsPro = false, billingIsExpert = false;
   try {
     const subResp = await admin.graphql(`
-      query ActiveSubscriptions {
+      query AllSubscriptions {
         currentAppInstallation {
-          activeSubscriptions { id name status }
+          allSubscriptions(first: 25) { edges { node { id name status } } }
         }
       }
     `);
     const subJson = await subResp.json();
-    const subs = subJson.data?.currentAppInstallation?.activeSubscriptions ?? [];
-    billingIsExpert = subs.some(s => s.name === PLAN_EXPERT && s.status === "ACTIVE");
-    billingIsPro = billingIsExpert || subs.some(s => s.name === PLAN_PRO && s.status === "ACTIVE");
+    // Même source de vérité que le loader : allSubscriptions (voit les FROZEN) → planEntitlement.
+    const nodes = (subJson.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map(e => e.node);
+    ({ isPro: billingIsPro, isExpert: billingIsExpert } = planEntitlement(nodes, PLAN_PRO, PLAN_EXPERT));
   } catch (e) { console.error("[Billing] action check:", e?.message); }
 
   // ── Set VAT regime ────────────────────────────────────────────────────────
