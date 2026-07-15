@@ -12,6 +12,11 @@
 // Cadence : ~2 relances/semaine = espacement minimal de 3 jours (la cadence vit dans la
 // DONNÉE — last_dunning_at —, pas dans le schedule du cron, qui tourne quotidiennement).
 
+// FROZEN_GRACE_DAYS est IMPORTÉ de plan.js (la borne d'entitlement, planEntitlement) — jamais
+// redéfini ici : le mail conditionnel et le gating partagent ainsi UNE seule source de vérité et ne
+// peuvent structurellement pas diverger (une modif future de la grâce s'applique aux deux d'un coup).
+import { FROZEN_GRACE_DAYS } from "./plan.js";
+
 export const DUNNING_MAX = 5;            // plafond de relances par épisode frozen
 export const DUNNING_INTERVAL_DAYS = 3;  // espacement minimal entre deux relances
 const DAY_MS = 86_400_000;
@@ -74,28 +79,54 @@ export function decideDunningAction({
 }
 
 // ── Rendus PURS des mails de dunning — aucun I/O, aucun envoi ────────────────
-// Ton FACTUEL : on énonce la conséquence RÉELLE (paiement échoué → accès suspendu tant que
-// non régularisé), jamais de fausse urgence / dark pattern ("DERNIÈRE CHANCE", compte à
-// rebours, rareté factice). L'incitation vient du fait, pas de l'emphase. Le LIEN de
-// régularisation est TOUJOURS présent (le cron ne déclenche l'envoi qu'avec une URL valide).
+// Ton FACTUEL et AIDANT : on énonce le FAIT (paiement échoué) et la conséquence À VENIR
+// (résiliation possible par Shopify si rien n'est régularisé), JAMAIS un verrouillage ACTUEL faux
+// (l'accès continue pendant la grâce, cf. renderDunningEmail), ni de fausse urgence / dark pattern
+// ("DERNIÈRE CHANCE", compte à rebours, rareté factice). L'incitation vient du fait, pas de
+// l'emphase. Le LIEN de régularisation est TOUJOURS présent (le cron n'envoie qu'avec une URL valide).
 
 const planLabel = (plan) => (plan ? `votre abonnement ${plan}` : "votre abonnement");
 
-// Mail de relance (épisode frozen). Entrée : { shop, plan, confirmationUrl }.
-// ATTRIBUTION EXACTE : en frozen, Shopify GÈLE la facturation (il n'a pas coupé l'accès ni
-// résilié) ; c'est NOTRE app qui, voyant l'abonnement non-actif, verrouille les fonctions payantes.
-// ÉCHÉANCE : aucun délai fixe garanti par Shopify pour un abonnement d'app → on le dit honnêtement,
-// on n'invente pas de date. Lien de régularisation TOUJOURS présent.
-export function renderDunningEmail({ shop, plan, confirmationUrl }) {
-  const subject = "Votre abonnement True Cost Calculator n'est plus actif (paiement échoué)";
+// Mail de relance (épisode frozen). Entrée : { shop, plan, confirmationUrl, frozenSince, now }.
+// VÉRITÉ DE L'ÉTAT conditionnelle à l'ÂGE DU GEL — mesuré avec le MÊME frozen_since et la MÊME
+// constante FROZEN_GRACE_DAYS (importée de plan.js) que la borne d'entitlement planEntitlement :
+//   • grâce EN COURS  (now - frozenSince <= FROZEN_GRACE_DAYS) : l'accès CONTINUE (Shopify maintient,
+//     et notre app entitle FROZEN) → coupure seulement À VENIR. Les fonctions payantes (suivi de
+//     marge, alertes sans garde de plan ; audit Expert ouvert via la grâce) sont bien disponibles.
+//   • grâce EXPIRÉE   (now - frozenSince >  FROZEN_GRACE_DAYS) : la borne d'entitlement a coupé →
+//     l'accès aux fonctions payantes EST suspendu, rétabli dès régularisation. Le mail le dit alors.
+// Comparaison INCLUSIVE (<=), IDENTIQUE à plan.js:61-65 : mail et gating partagent la borne exacte,
+// impossible de diverger. DÉFAUT SÛR : frozenSince absent/illisible (edge — rendu hors épisode, ou
+// R1 dont frozen_since n'est pas encore stampé) → withinGrace = true (branche "accès continue").
+// On n'annonce JAMAIS une suspension à tort ; au pire on dit "continue" à un déjà-suspendu, jamais
+// l'inverse. Même règle null→grâce que planEntitlement. Lien de régularisation TOUJOURS présent.
+export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = null, now = Date.now() }) {
+  const subject = "Le paiement de votre abonnement True Cost Calculator a échoué";
   const lien = confirmationUrl;
+
+  const toMs = (t) => (t instanceof Date ? t.getTime() : typeof t === "number" ? t : Date.parse(t));
+  const frozenSinceMs = frozenSince == null ? null : toMs(frozenSince);
+  const withinGrace =
+    frozenSinceMs == null || !Number.isFinite(frozenSinceMs)
+      ? true
+      : toMs(now) - frozenSinceMs <= FROZEN_GRACE_DAYS * DAY_MS;
 
   // Une ligne par paragraphe (jamais de coupure au milieu d'une phrase → meilleur rendu plain-text
   // et parité HTML/texte : les mêmes expressions restent intactes). Le client mail gère le wrapping.
+  const bodyText = withinGrace
+    ? [
+        `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, votre accès à True Cost Calculator continue — vos fonctionnalités restent disponibles pour le moment.`,
+        ``,
+        `Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. Vos données sont conservées dans tous les cas.`,
+      ]
+    : [
+        `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé, et l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu. Il est rétabli dès que votre paiement est régularisé. Vos données sont conservées.`,
+        ``,
+        `Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.`,
+      ];
+
   const text = [
-    `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Votre abonnement n'est donc plus actif : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes, audit) est verrouillé jusqu'à régularisation. Vos données sont conservées.`,
-    ``,
-    `Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès que possible pour ne pas perdre l'accès.`,
+    ...bodyText,
     ``,
     `Régulariser votre paiement :`,
     lien,
@@ -103,9 +134,14 @@ export function renderDunningEmail({ shop, plan, confirmationUrl }) {
     `Déjà régularisé ? Vous pouvez ignorer ce message.`,
   ].join("\n");
 
+  const bodyHtml = withinGrace
+    ? `<p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, <strong>votre accès à True Cost Calculator continue</strong> — vos fonctionnalités restent disponibles pour le moment.</p>
+    <p>Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. <strong>Vos données sont conservées dans tous les cas.</strong></p>`
+    : `<p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé, et <strong>l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu</strong>. Il est rétabli dès que votre paiement est régularisé. <strong>Vos données sont conservées.</strong></p>
+    <p>Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.</p>`;
+
   const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
-    <p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Votre abonnement n'est donc <strong>plus actif</strong> : l'accès aux fonctionnalités payantes de True Cost Calculator (suivi de marge, alertes, audit) est verrouillé jusqu'à régularisation. <strong>Vos données sont conservées.</strong></p>
-    <p>Shopify va réessayer le prélèvement. Tant qu'il n'est pas régularisé, votre abonnement finira par être résilié — le délai dépend de la politique de facturation de Shopify. Régularisez dès que possible pour ne pas perdre l'accès.</p>
+    ${bodyHtml}
     <p style="margin:20px 0">
       <a href="${lien}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Régulariser mon paiement</a>
     </p>

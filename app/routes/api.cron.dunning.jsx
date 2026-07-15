@@ -113,7 +113,11 @@ async function runForShop(shop, now) {
     if (!to) { console.warn(`[Dunning] email absent ${shop} — relance impossible`); r.noEmail = true; return r; }
 
     // 5c. ENVOI puis — G2 STRICT — n'avancer compteur/date qu'APRÈS un envoi réussi.
-    const ok = await sendDunningEmail({ to, shop, plan, confirmationUrl });
+    // frozenSince = âge du gel de l'épisode → le mail sait si la grâce court encore (accès maintenu)
+    // ou est expirée (accès suspendu). Donnée DÉJÀ en portée (state.frozen_since, lu plus haut) et
+    // MÊME colonne que la borne d'entitlement — aucune requête nouvelle. À R1, state.frozen_since est
+    // encore null (stampé seulement dans le writeState ci-dessous) → rendu en branche sûre "continue".
+    const ok = await sendDunningEmail({ to, shop, plan, confirmationUrl, frozenSince: state.frozen_since ?? null, now: Date.parse(now) });
     if (!ok) { r.mailFailed = true; return r; }      // état NON avancé → réessai au prochain run
     r.mailed = true;
     await writeState({

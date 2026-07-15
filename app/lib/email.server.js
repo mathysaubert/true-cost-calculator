@@ -31,14 +31,16 @@ export async function sendLossAlert({ to, shop, basculements, thresholdPct = 0 }
 // ── Dunning : relance d'un abonnement frozen ────────────────────────────────
 // Ne THROW JAMAIS (retourne bool) → le cron n'avance compteur/date qu'après un true (G2).
 // Refuse d'envoyer SANS lien de régularisation (un mail de relance sans lien est inutile).
-export async function sendDunningEmail({ to, shop, plan, confirmationUrl }) {
+// frozenSince/now : âge du gel → texte conditionnel (grâce en cours vs expirée). Simple passe-plat
+// vers renderDunningEmail ; now undefined → défaut Date.now() côté rendu (param par défaut).
+export async function sendDunningEmail({ to, shop, plan, confirmationUrl, frozenSince = null, now = undefined }) {
   if (!to) { console.warn(`[Dunning] email absent pour ${shop} — envoi ignoré`); return false; }
   if (!process.env.RESEND_API_KEY) { console.error("[Dunning] RESEND_API_KEY manquant — envoi ignoré"); return false; }
   if (!confirmationUrl) { console.error(`[Dunning] lien de régularisation absent pour ${shop} — envoi ignoré`); return false; }
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const { subject, html, text } = renderDunningEmail({ shop, plan, confirmationUrl });
+    const { subject, html, text } = renderDunningEmail({ shop, plan, confirmationUrl, frozenSince, now });
     const { error } = await resend.emails.send({ from: FROM, to, subject, html, text });
     if (error) { console.error(`[Dunning] envoi KO pour ${shop} :`, error?.message ?? error); return false; }
     return true;
