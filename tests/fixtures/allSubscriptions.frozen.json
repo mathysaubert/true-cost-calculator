@@ -1,0 +1,31 @@
+{
+  "data": {
+    "currentAppInstallation": {
+      "allSubscriptions": {
+        "edges": [
+          {
+            "node": {
+              "id": "gid://shopify/AppSubscription/1027384501",
+              "name": "True Cost Calculator Pro",
+              "status": "FROZEN"
+            }
+          },
+          {
+            "node": {
+              "id": "gid://shopify/AppSubscription/1013927744",
+              "name": "True Cost Calculator Pro",
+              "status": "CANCELLED"
+            }
+          },
+          {
+            "node": {
+              "id": "gid://shopify/AppSubscription/1001553210",
+              "name": "True Cost Calculator Expert",
+              "status": "CANCELLED"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

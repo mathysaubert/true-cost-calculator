@@ -23,7 +23,7 @@ const IS_TEST = process.env.NODE_ENV !== "production";
 const ALL_SUBS_QUERY = `
   query AllSubs {
     currentAppInstallation {
-      allSubscriptions(first: 25) {
+      allSubscriptions(first: 25, reverse: true) {
         edges { node {
           id name status createdAt
           lineItems {

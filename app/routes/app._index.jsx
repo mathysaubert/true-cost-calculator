@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo, Fragment } from "react";
-import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation } from "react-router";
+import { useFetcher, useLoaderData, useRouteError, useSubmit, useNavigation, isRouteErrorResponse } from "react-router";
 import { authenticate, PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { supabase } from "../supabase.server";
@@ -24,7 +24,7 @@ import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
-import { planEntitlement } from "../lib/plan.js";
+import { resolveEntitlement } from "../lib/plan.server";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,15 @@ const HISTORY_LIMIT_FREE = 0;
 // UI Monitor : plafond de lignes order_margins lues. Si le total dépasse, on lit les
 // plus récentes ET on le SIGNALE (jamais de troncature silencieuse → chiffres faux).
 const ORDER_MARGINS_CAP = 5000;
+// Requête d'abonnements — SOURCE UNIQUE (chargement loader, refetch de retry, action). reverse:true
+// → le sub courant (createdAt max) reste en 1re page malgré l'historique CANCELLED/EXPIRED (D4).
+const ALL_SUBS_QUERY = `
+  query AllSubscriptions {
+    currentAppInstallation {
+      allSubscriptions(first: 25, reverse: true) { edges { node { id name status } } }
+    }
+  }
+`;
 // Constantes réglementaires, barèmes (CUSTOMS_RATES, SHIPPING_ESTIMATES,
 // PAYMENT_PROCESSORS) et helpers de formatage : importés depuis ../lib/engine.js
 // (source unique partagée avec les tests).
@@ -583,13 +592,7 @@ export const loader = async ({ request }) => {
   // Direct GraphQL avoids billing.check()'s isTest filter, which silently
   // excludes dev-store subscriptions when NODE_ENV=production on Vercel.
   const [subResp, productsResp1] = await Promise.allSettled([
-    admin.graphql(`
-      query AllSubscriptions {
-        currentAppInstallation {
-          allSubscriptions(first: 25) { edges { node { id name status } } }
-        }
-      }
-    `),
+    admin.graphql(ALL_SUBS_QUERY),
     admin.graphql(`
       query ProductsPage1 {
         shop { taxesIncluded ianaTimezone }
@@ -609,25 +612,29 @@ export const loader = async ({ request }) => {
     `),
   ]);
 
-  let isPro = false, isExpert = false;
+  // Droit au plan : source de vérité UNIQUE (loader ET action → resolveEntitlement). On récupère
+  // le JSON (ou null si l'appel a échoué) ; resolveEntitlement gère le fail-safe (D1 : dernier plan
+  // connu, jamais de rétrogradation sur panne), la borne FROZEN (D2) et la persistance sur succès.
+  let subJson = null;
   if (subResp.status === "fulfilled") {
-    try {
-      const subJson = await subResp.value.json();
-      // allSubscriptions (voit les FROZEN) → droit au plan via la fonction pure UNIQUE (ACTIVE ∪ FROZEN).
-      const nodes = (subJson.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map(e => e.node);
-      ({ isPro, isExpert } = planEntitlement(nodes, PLAN_PRO, PLAN_EXPERT));
-    } catch (e) {
-      console.error("[Billing] subscription parse failed:", e?.message);
-    }
+    try { subJson = await subResp.value.json(); }
+    catch (e) { console.error("[Billing] subscription parse failed:", e?.message); }
   } else {
     console.error("[Billing] subscription query failed:", subResp.reason?.message);
   }
-
-  // Persist detected plan to Supabase — audit trail and fast read path.
-  supabase.from("shop_plans").upsert(
-    { shop_domain: session.shop, plan: isExpert ? "expert" : isPro ? "pro" : "free", updated_at: new Date().toISOString() },
-    { onConflict: "shop_domain" }
-  ).then(() => {}).catch(e => console.error("[Plans] upsert failed:", e?.message));
+  const ent = await resolveEntitlement({
+    shop: session.shop,
+    json: subJson,
+    refetch: async () => (await admin.graphql(ALL_SUBS_QUERY)).json(),
+  });
+  // Q1 — plan INDÉTERMINÉ (Shopify injoignable ET aucun plan en cache, après retries bornés) : ne
+  // JAMAIS rendre un free dégradé. On lève un signal TRANSITOIRE distinct (503) → l'ErrorBoundary le
+  // rend comme un état d'attente « reconnexion, rechargez », PAS comme un crash applicatif rouge.
+  // Un payeur qui vient de souscrire n'est jamais affiché gratuit sur un simple incident d'appel.
+  if (ent.source === "indeterminate") {
+    throw new Response("plan-indeterminate", { status: 503, statusText: "Plan indeterminé (Shopify injoignable)" });
+  }
+  const { isPro, isExpert } = ent;
 
   let products = [];
   let productsCapped = false;
@@ -839,21 +846,24 @@ export const action = async ({ request }) => {
     return null;
   }
 
-  // Plan check for action handlers — direct GraphQL, same rationale as loader.
-  let billingIsPro = false, billingIsExpert = false;
+  // Plan check for action handlers — MÊME chemin que le loader (resolveEntitlement) : fail-safe D1,
+  // borne FROZEN D2, gating par ensemble de noms D3. On récupère le JSON (ou null si l'appel échoue).
+  let subJson = null;
   try {
-    const subResp = await admin.graphql(`
-      query AllSubscriptions {
-        currentAppInstallation {
-          allSubscriptions(first: 25) { edges { node { id name status } } }
-        }
-      }
-    `);
-    const subJson = await subResp.json();
-    // Même source de vérité que le loader : allSubscriptions (voit les FROZEN) → planEntitlement.
-    const nodes = (subJson.data?.currentAppInstallation?.allSubscriptions?.edges ?? []).map(e => e.node);
-    ({ isPro: billingIsPro, isExpert: billingIsExpert } = planEntitlement(nodes, PLAN_PRO, PLAN_EXPERT));
+    const subResp = await admin.graphql(ALL_SUBS_QUERY);
+    subJson = await subResp.json();
   } catch (e) { console.error("[Billing] action check:", e?.message); }
+  const billingEnt = await resolveEntitlement({
+    shop: session.shop,
+    json: subJson,
+    refetch: async () => (await admin.graphql(ALL_SUBS_QUERY)).json(),
+  });
+  // Q1 — indéterminé : ne pas gater comme free (éviter le faux « réservé aux plans Pro » servi à un
+  // payeur). On demande un retry explicite plutôt que de dégrader.
+  if (billingEnt.source === "indeterminate") {
+    return { error: "Impossible de vérifier votre abonnement pour l'instant. Réessayez dans un instant." };
+  }
+  const { isPro: billingIsPro, isExpert: billingIsExpert } = billingEnt;
 
   // ── Set VAT regime ────────────────────────────────────────────────────────
   if (body._action === "set_vat_regime") {
@@ -3684,6 +3694,26 @@ export default function Index() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
+  // État TRANSITOIRE (Q1) : plan indéterminé car Shopify est momentanément injoignable (503). C'est
+  // distinct d'une vraie erreur applicative — on invite à recharger, sans dramatiser (ni rouge, ni
+  // « application n'a pas pu se charger »). Les données et le plan du marchand sont intacts.
+  if (isRouteErrorResponse(error) && error.status === 503) {
+    return (
+      <s-page heading="Calculateur de Vraie Marge">
+        <s-section heading="Reconnexion en cours">
+          <div style={{ padding: "20px 24px", borderRadius: "8px", background: "#F1F6FF", border: "1px solid #B3C9F0", fontSize: "14px", color: "#1F3A6E", lineHeight: "1.6" }}>
+            <strong>Vérification de votre abonnement momentanément indisponible.</strong><br />
+            Shopify met quelques instants à répondre. Rechargez la page dans quelques secondes — vos données et votre plan sont intacts.
+            <div style={{ marginTop: "14px" }}>
+              <button onClick={() => window.location.reload()} style={{ padding: "8px 18px", background: "#1F3A6E", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>
+                Recharger
+              </button>
+            </div>
+          </div>
+        </s-section>
+      </s-page>
+    );
+  }
   const message = error instanceof Error ? error.message : "Une erreur inattendue est survenue.";
   return (
     <s-page heading="Calculateur de Vraie Marge">
