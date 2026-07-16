@@ -8,7 +8,7 @@
 //
 // Entrées : { admin } (client Admin GraphQL, online OU offline), supabase (service role),
 //            shop (shop_domain). Sortie : { success, ingested?, orders?, message?, error? }.
-import { parseBulkJsonl, buildOrderHistoryRows } from "./orderIngest.js";
+import { parseBulkJsonl, buildOrderHistoryRows, countDistinctOrders } from "./orderIngest.js";
 
 export async function syncShopOrders({ admin, supabase, shop }) {
   // Fenêtre J-30 en UTC, ISO 8601 explicite (filtre Shopify created_at en UTC).
@@ -160,12 +160,30 @@ export async function syncShopOrders({ admin, supabase, shop }) {
   let ingested = 0;
   if (allRows.length) {
     // ignoreDuplicates : ré-ingestion ne duplique pas et ne mute jamais un snapshot figé.
-    const { error } = await supabase.from("order_margins").upsert(allRows, { onConflict: "shop_domain,order_id,line_item_id", ignoreDuplicates: true });
+    // .select("order_id") : ON CONFLICT DO NOTHING ... RETURNING ne renvoie QUE les lignes
+    // RÉELLEMENT insérées (Postgres) → delta exact des commandes nouvelles ce sync (C4a).
+    const { data: insertedRows, error } = await supabase.from("order_margins")
+      .upsert(allRows, { onConflict: "shop_domain,order_id,line_item_id", ignoreDuplicates: true })
+      .select("order_id");
     if (error) {
       await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "failed", last_backfill_at: now }, { onConflict: "shop_domain" });
       return { success: false, error: error.message };
     }
     ingested = allRows.length;
+
+    // C4a — compteur mensuel de commandes DISTINCTES (fondation du plafond d'alerting). Tourne "à
+    // vide" : personne ne le lit encore (branchement en C4b). N'affecte NI le retour, NI l'envoi
+    // d'alerte. NON-FATAL : un échec de comptage ne doit jamais faire échouer une ingestion réussie
+    // (comportement observable strictement identique à aujourd'hui). Incrément ATOMIQUE via RPC
+    // (orders_count += delta) → pas de read-modify-write, pas de course.
+    try {
+      const delta = countDistinctOrders(insertedRows); // lignes insérées → commandes distinctes (PUR)
+      if (delta > 0) {
+        const month = new Date().toISOString().slice(0, 7);
+        const { error: cntErr } = await supabase.rpc("increment_usage_orders", { p_shop: shop, p_month: month, p_delta: delta });
+        if (cntErr) console.error("[Backfill] compteur commandes:", cntErr.message);
+      }
+    } catch (e) { console.error("[Backfill] compteur commandes:", e?.message); }
   }
   await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "completed", window_start: windowStart, bulk_operation_id: bulkId, last_backfill_at: now }, { onConflict: "shop_domain" });
   return { success: true, ingested, orders: orders.length };

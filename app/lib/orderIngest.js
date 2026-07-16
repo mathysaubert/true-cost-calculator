@@ -249,6 +249,24 @@ export function allocateOrderFixedFee(rows, fixedFee) {
   return rows;
 }
 
+// ── Commandes DISTINCTES parmi des lignes ingérées — PUR (base du plafond d'alerting, C4a) ──
+// Une ligne = un line item ; plusieurs lignes partagent un order_id → 1 commande. Robuste :
+//   • entrée non-tableau (null/undefined) → 0 ;
+//   • order_id manquant/null/"" sur une ligne → IGNORÉE (pas comptée). Choix : on ne compte que
+//     des commandes RÉELLEMENT identifiées. Compter une ligne sans order_id gonflerait le volume →
+//     bascule du plafond à tort AU DÉTRIMENT du marchand (alerting coupé prématurément). En sous-
+//     comptant on ne pénalise jamais le marchand pour une lacune de données. (order_margins.order_id
+//     est NOT NULL au schéma → garde défensive.)
+export function countDistinctOrders(rows) {
+  if (!Array.isArray(rows)) return 0;
+  const ids = new Set();
+  for (const r of rows) {
+    const id = r?.order_id;
+    if (id != null && id !== "") ids.add(id);
+  }
+  return ids.size;
+}
+
 // ── Orchestration pure d'une commande → lignes d'historique prêtes à upsert ──
 // costLookup(variantId) → costRow | null. Lignes sans variant NI product ignorées
 // (tip / frais custom / remise globale : pas un produit).

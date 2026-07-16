@@ -8,7 +8,7 @@
 
 import {
   parseBulkJsonl, effectiveRefundedQty, netUnitRevenue,
-  buildOrderHistoryRows,
+  buildOrderHistoryRows, countDistinctOrders,
 } from "../app/lib/orderIngest.js";
 import { computeMargin } from "../app/lib/engine.js";
 
@@ -209,6 +209,19 @@ console.log("\n── Clamp effective_qty ≥ 0 ──");
   const r = buildOrderHistoryRows(parseBulkJsonl(txt)[0], lookup, SHOP)[0];
   ok(r.effective_qty === 0, `effective_qty clampé à 0 (${r.effective_qty})`);
   ok(cents(r.line_net_revenue, 0) && cents(r.line_net_margin, 0), "revenu 0 et marge 0 (fixe prorata 0 car Σrevenu=0)");
+}
+
+// ── C4a : countDistinctOrders — lignes insérées → commandes distinctes (PUR, base du plafond) ──
+console.log("\n── C4a : countDistinctOrders ──");
+{
+  ok(countDistinctOrders([]) === 0, "tableau vide → 0");
+  ok(countDistinctOrders(null) === 0, "null → 0 (pas de crash)");
+  ok(countDistinctOrders(undefined) === 0, "undefined → 0 (pas de crash)");
+  ok(countDistinctOrders("nope") === 0, "non-tableau → 0");
+  ok(countDistinctOrders([{ order_id: "A" }, { order_id: "A" }, { order_id: "A" }]) === 1, "3 lignes MÊME order_id → 1 commande (dédup)");
+  ok(countDistinctOrders([{ order_id: "A" }, { order_id: "B" }, { order_id: "C" }]) === 3, "3 lignes 3 order_id → 3 commandes");
+  ok(countDistinctOrders([{ order_id: "A" }, { order_id: "A" }, { order_id: "B" }]) === 2, "mélange (A,A,B) → 2 commandes distinctes");
+  ok(countDistinctOrders([{ order_id: "A" }, { order_id: null }, { order_id: "" }, {}, { order_id: "B" }]) === 2, "order_id null/vide/absent IGNORÉ → 2 (A,B) — jamais de sur-comptage");
 }
 
 console.log("\n" + "═".repeat(66));

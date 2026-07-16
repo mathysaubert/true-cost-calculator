@@ -14,6 +14,8 @@ import {
   fallbackEntitlement,
   retryForLiveEnvelope,
   subscriptionNodesFromResponse,
+  planToOrderCap,
+  alertingEnabled,
   FROZEN_GRACE_DAYS,
 } from "../app/lib/plan.js";
 
@@ -194,6 +196,20 @@ console.log("\n── robustesse ──");
   ok(!ent([null, { name: PRO }, { status: "FROZEN" }]).isPro, "nœuds partiels (name/status manquants) → free");
   ok(subscriptionNodesFromResponse(null).length === 0, "réponse null → 0 nœud (pas de crash)");
   ok(subscriptionNodesFromResponse({ data: {} }).length === 0, "enveloppe vide → 0 nœud");
+}
+
+// ── C4a : plafond d'alerting — palier par plan + activation (bascule différée, borne inclusive) ──
+console.log("\n── C4a : planToOrderCap + alertingEnabled ──");
+{
+  ok(planToOrderCap({ isPro: false, isExpert: false }) === 200, "Gratuit → 200 commandes/mois");
+  ok(planToOrderCap({ isPro: true, isExpert: false }) === 1000, "Pro → 1000 commandes/mois");
+  ok(planToOrderCap({ isPro: true, isExpert: true }) === Infinity, "Expert → illimité (Infinity)");
+  ok(planToOrderCap({}) === 200, "entrée vide (défaut) → 200 (traité comme gratuit)");
+  // alertingEnabled : compteur du mois PRÉCÉDENT vs palier, borne INCLUSIVE.
+  ok(alertingEnabled(150, 200) === true, "150 ≤ 200 (sous le palier) → alerting activé");
+  ok(alertingEnabled(200, 200) === true, "200 == 200 (pile au palier, borne inclusive) → encore activé");
+  ok(alertingEnabled(201, 200) === false, "201 > 200 (dépassé au mois M) → alerting coupé (M+1)");
+  ok(alertingEnabled(999999, Infinity) === true, "Expert (cap Infinity) → toujours activé quel que soit le volume");
 }
 
 console.log("\n" + "═".repeat(66));

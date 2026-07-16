@@ -74,6 +74,21 @@ export function planEntitlement(subscriptionNodes = [], opts = {}) {
   return { isPro, isExpert };
 }
 
+// ── Plafond d'alerting au volume de commandes (C4a — fondation, branchement en C4b) ──────────
+// PUR. Palier de commandes ingérées/mois par plan : Gratuit 200 / Pro 1000 / Expert illimité.
+// isExpert ⇒ isPro (l'Expert englobe le Pro) → on teste isExpert d'abord. Entrée = { isPro, isExpert }
+// (la sortie de planEntitlement / resolveEntitlement).
+export function planToOrderCap(ent = {}) {
+  return ent.isExpert ? Infinity : ent.isPro ? 1000 : 200;
+}
+
+// alerting activé ce mois ⇔ le compteur du mois PRÉCÉDENT n'a pas dépassé le palier (bascule
+// DIFFÉRÉE : dépassement en M → coupure en M+1, le mois en cours toujours servi). Borne INCLUSIVE
+// (== cap → encore activé), cohérente avec la borne de grâce (planEntitlement). PUR.
+export function alertingEnabled(prevMonthCount, cap) {
+  return prevMonthCount <= cap;
+}
+
 // ── Repli PUR sur le dernier plan connu (D1) — 'expert'|'pro'|'free' → { isPro, isExpert } ─
 // Utilisé quand l'appel GraphQL échoue : on ne dégrade JAMAIS un payeur sur une panne d'infra.
 export function entitlementFromPlan(plan) {
