@@ -25,6 +25,7 @@ import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
 import { resolveEntitlement } from "../lib/plan.server";
+import { planToOrderCap, alertingEnabled, previousMonth } from "../lib/plan.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -686,8 +687,12 @@ export const loader = async ({ request }) => {
     console.error("[Products] GraphQL failed:", productsResp1.reason?.message);
   }
 
-  // Fetch history, alert threshold, and vat_regime concurrently
-  const [historyResult, alertResult, annotationsResult, planResult, orderMarginsResult, orderMarginsCountResult] = await Promise.allSettled([
+  // C4c : compteur de commandes du mois COURANT et du mois PRÉCÉDENT (bandeau plafond d'alerting).
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const prevMonthKey = previousMonth(new Date());
+
+  // Fetch history, alert threshold, vat_regime, and order-alerting counters concurrently
+  const [historyResult, alertResult, annotationsResult, planResult, orderMarginsResult, orderMarginsCountResult, usageCurResult, usagePrevResult] = await Promise.allSettled([
     supabase
       .from("calculations")
       .select("id, product_id, product_title, category, country, purchase_price, selling_price, net_margin_percent, net_margin_euros, created_at")
@@ -702,6 +707,8 @@ export const loader = async ({ request }) => {
     // UI Monitor : N lignes order_margins les plus récentes + compte total (cap explicite).
     supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
     supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
+    supabase.from("usage").select("orders_count").eq("shop_domain", session.shop).eq("month", currentMonth).maybeSingle(),
+    supabase.from("usage").select("orders_count").eq("shop_domain", session.shop).eq("month", prevMonthKey).maybeSingle(),
   ]);
 
   const history = historyResult.status === "fulfilled" && isPro
@@ -785,8 +792,17 @@ export const loader = async ({ request }) => {
     ? Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]))
     : {};
 
+  // C4c : plafond d'alerting au volume — RÉUTILISE les helpers purs (aucune logique dupliquée ici).
+  // alertingActive = le compteur du mois PRÉCÉDENT est ≤ palier (bascule différée). Note : un cap
+  // Infinity (Expert) devient null via JSON → le bandeau, gaté sur isExpert, ne s'affiche pas.
+  const ordersThisMonth = usageCurResult.status === "fulfilled" ? (usageCurResult.value.data?.orders_count ?? 0) : 0;
+  const ordersPrevMonth = usagePrevResult.status === "fulfilled" ? (usagePrevResult.value.data?.orders_count ?? 0) : 0;
+  const alertingCap = planToOrderCap({ isPro, isExpert });
+  const alertingActive = alertingEnabled(ordersPrevMonth, alertingCap);
+
   return { isPro, isExpert, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
+    ordersThisMonth, ordersPrevMonth, alertingCap, alertingActive,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
 
@@ -1895,7 +1911,62 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+// C4c : bandeau du plafond d'alerting au volume — AFFICHAGE seul (la décision réelle vit dans le cron).
+// Deux états DISTINCTS + la nature DIFFÉRÉE (le compteur du mois précédent décide du mois courant).
+// Jamais pour l'Expert (illimité). Sobre, non intrusif : rien tant qu'il n'y a pas de volume.
+function AlertingQuotaBanner({ isExpert, isPro, alertingActive, alertingCap, ordersThisMonth, ordersPrevMonth, onUpgrade }) {
+  if (isExpert || alertingCap == null || !Number.isFinite(alertingCap)) return null; // Expert / illimité → jamais de bandeau
+  const nf = (n) => Number(n ?? 0).toLocaleString("fr-FR");
+  const planName = isPro ? "Pro" : "Gratuit";
+  const nextPlan = isPro ? "Expert" : "Pro";
+  const capLabel = nf(alertingCap);
+  const upgrade = (
+    <button onClick={onUpgrade} style={{ background: "none", border: "none", padding: 0, marginTop: "8px", color: "#7C3AED", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", display: "block" }}>
+      Passer à {nextPlan} →
+    </button>
+  );
+
+  // (b) SUSPENDU ce mois-ci — dépassement le mois dernier (bascule différée). État prioritaire.
+  if (!alertingActive) {
+    return (
+      <div style={{ padding: "14px 16px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #E8D9A8", marginBottom: "20px" }}>
+        <div style={{ fontSize: "13px", fontWeight: "600", color: "#8A6D00", marginBottom: "4px" }}>Alertes de perte en pause ce mois-ci</div>
+        <div style={{ fontSize: "13px", color: "#5C5C5C", lineHeight: "1.6" }}>
+          Vous avez suivi <strong>{nf(ordersPrevMonth)}</strong> commandes le mois dernier, au-delà des <strong>{capLabel}</strong> couvertes par le plan {planName}. Vos calculs, votre monitor et vos données restent accessibles — seul l'envoi d'alertes de perte par e-mail est suspendu ce mois-ci.
+        </div>
+        {upgrade}
+      </div>
+    );
+  }
+
+  // (a) ACTIF — rien tant qu'il n'y a pas de volume (fresh install : pas de bruit prématuré).
+  if (!ordersThisMonth) return null;
+
+  // (a) ACTIF + on approche/dépasse le plafond (≥ 80 %) → anticipation (informatif, jamais alarmant).
+  if (ordersThisMonth >= 0.8 * alertingCap) {
+    const over = ordersThisMonth > alertingCap;
+    return (
+      <div style={{ padding: "14px 16px", borderRadius: "10px", background: "#F6F3FF", border: "1px solid #D8CCF5", marginBottom: "20px" }}>
+        <div style={{ fontSize: "13px", color: "#3D3560", lineHeight: "1.6" }}>
+          Vous suivez <strong>{nf(ordersThisMonth)}</strong> commandes ce mois-ci
+          {over
+            ? <>, au-delà des <strong>{capLabel}</strong> couvertes par le plan {planName}. Les alertes de perte seront suspendues <strong>le mois prochain</strong> sans changement de plan.</>
+            : <>. Le plan {planName} couvre jusqu'à <strong>{capLabel}</strong> commandes/mois ; au-delà, les alertes de perte seront suspendues <strong>le mois prochain</strong>.</>}
+        </div>
+        {upgrade}
+      </div>
+    );
+  }
+
+  // (a) ACTIF + confortable → ligne discrète, non intrusive.
+  return (
+    <div style={{ fontSize: "12px", color: "#6D7175", marginBottom: "16px" }}>
+      <strong style={{ color: "#008060" }}>{nf(ordersThisMonth)}</strong> / {capLabel} commandes suivies ce mois-ci · alertes de perte actives.
+    </div>
+  );
+}
+
+function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, isPro, alertingActive, alertingCap, ordersThisMonth, ordersPrevMonth, onUpgrade, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -1994,6 +2065,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 
   return (
     <div>
+      <AlertingQuotaBanner isExpert={isExpert} isPro={isPro} alertingActive={alertingActive} alertingCap={alertingCap} ordersThisMonth={ordersThisMonth} ordersPrevMonth={ordersPrevMonth} onUpgrade={onUpgrade} />
       <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
         Renseignez une fois, par variante, les coûts que Shopify ne connaît pas. Ils alimenteront le suivi de marge réelle sur vos vraies commandes.
         Les valeurs <strong>estimées</strong> sont pré-remplies (coût Shopify, catégorie, réglages boutique) — toute marge qui en dépend sera signalée « coûts estimés » tant que vous ne les avez pas confirmées.
@@ -2206,6 +2278,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 export default function Index() {
   const { isPro, isExpert, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
+    ordersThisMonth, ordersPrevMonth, alertingCap, alertingActive,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
   const saveFetcher          = useFetcher();
@@ -3431,7 +3504,7 @@ export default function Index() {
         )}
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
-        {activeTab === "costs" && <CostTracker isExpert={isExpert} defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
+        {activeTab === "costs" && <CostTracker isExpert={isExpert} isPro={isPro} alertingActive={alertingActive} alertingCap={alertingCap} ordersThisMonth={ordersThisMonth} ordersPrevMonth={ordersPrevMonth} onUpgrade={() => setShowUpgrade(true)} defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
           currentCpa={currentCpa} currentCpaUpdatedAt={currentCpaUpdatedAt} currentCpaDeclaredLabel={currentCpaDeclaredLabel} cpaTargets={cpaTargets} cpaByProduct={cpaByProduct}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
