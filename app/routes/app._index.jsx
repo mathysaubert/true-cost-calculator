@@ -28,7 +28,6 @@ import { resolveEntitlement } from "../lib/plan.server";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FREE_LIMIT = 10;
 const DEFAULT_ALERT_THRESHOLD = 25;
 const HISTORY_LIMIT_EXPERT = 200;
 const HISTORY_LIMIT_PRO = 50;
@@ -687,13 +686,8 @@ export const loader = async ({ request }) => {
     console.error("[Products] GraphQL failed:", productsResp1.reason?.message);
   }
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
-
-  // Fetch usage, history, alert threshold, and vat_regime concurrently
-  const [countResult, historyResult, alertResult, annotationsResult, planResult, orderMarginsResult, orderMarginsCountResult] = await Promise.allSettled([
-    !isPro
-      ? supabase.from("usage").select("calculation_count").eq("shop_domain", session.shop).eq("month", currentMonth).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+  // Fetch history, alert threshold, and vat_regime concurrently
+  const [historyResult, alertResult, annotationsResult, planResult, orderMarginsResult, orderMarginsCountResult] = await Promise.allSettled([
     supabase
       .from("calculations")
       .select("id, product_id, product_title, category, country, purchase_price, selling_price, net_margin_percent, net_margin_euros, created_at")
@@ -709,9 +703,6 @@ export const loader = async ({ request }) => {
     supabase.from("order_margins").select("*").eq("shop_domain", session.shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP),
     supabase.from("order_margins").select("id", { count: "exact", head: true }).eq("shop_domain", session.shop),
   ]);
-
-  const monthlyCount = countResult.status === "fulfilled"
-    ? (countResult.value.data?.calculation_count ?? 0) : 0;
 
   const history = historyResult.status === "fulfilled" && isPro
     ? (historyResult.value.data ?? []) : [];
@@ -784,7 +775,7 @@ export const loader = async ({ request }) => {
   const cpaTargets = computeCpaTargets(aggregateOrderMargins(orderMargins), { thresholdPct: profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt });
   const cpaByProduct = Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]));
 
-  return { isPro, isExpert, monthlyCount, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+  return { isPro, isExpert, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
 };
@@ -1457,24 +1448,10 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
     return { success: false, error: "Titre produit trop long." };
   }
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
-
-  if (!billingIsPro) {
-    const { data: usage } = await supabase.from("usage")
-      .select("calculation_count")
-      .eq("shop_domain", session.shop)
-      .eq("month", currentMonth)
-      .maybeSingle();
-
-    const count = usage?.calculation_count ?? 0;
-    if (count >= FREE_LIMIT) return { success: false, limitReached: true };
-
-    await supabase.from("usage").upsert(
-      { shop_domain: session.shop, month: currentMonth, calculation_count: count + 1, updated_at: new Date().toISOString() },
-      { onConflict: "shop_domain,month" }
-    );
-    return { success: true, monthlyCount: count + 1 };
-  }
+  // C2 : calcul manuel ILLIMITÉ pour tous les plans — plus aucun plafond mensuel. Le plan gratuit
+  // n'a pas d'historique (réservé Pro+, cf. loader) → on renvoie le succès SANS insérer dans
+  // calculations, et sans compter (la table usage n'est plus ni lue ni écrite).
+  if (!billingIsPro) return { success: true };
 
   const netMarginPct = parseFloat(body.net_margin_percent);
   const netMarginEur = parseFloat(body.net_margin_euros);
@@ -2199,7 +2176,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, monthlyCount: initialCount, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+  const { isPro, isExpert, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
 
@@ -2252,7 +2229,6 @@ export default function Index() {
   const [warnings,    setWarnings]    = useState([]);
   const [activeTab,   setActiveTab]   = useState("calculator");
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const [localCount,  setLocalCount]  = useState(initialCount);
 
   // ── Activation semaine 1 : parcours guidé install → marge réelle (Shape 1) ──
   // Réutilise les actions EXISTANTES sans les modifier : costs_list (estime + persiste les
@@ -2298,12 +2274,6 @@ export default function Index() {
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
 
-  // Sync state from server actions
-  useEffect(() => {
-    if (!saveFetcher.data) return;
-    if (saveFetcher.data.monthlyCount !== undefined) setLocalCount(saveFetcher.data.monthlyCount);
-    if (saveFetcher.data.limitReached) { setShowUpgrade(true); setResults(null); }
-  }, [saveFetcher.data]);
 
   // Sync alert threshold after save
   useEffect(() => {
@@ -2415,7 +2385,6 @@ export default function Index() {
   }, [form]);
 
   const handleReveal = () => {
-    if (!isPro && localCount >= FREE_LIMIT) { setShowUpgrade(true); setResults(null); return; }
     const r = calculate();
     if (!r) return;
 
@@ -2705,20 +2674,6 @@ export default function Index() {
         {/* ════════ CALCULATOR TAB ════════════════════════════════════════ */}
         {activeTab === "calculator" && (
           <>
-            {!isPro && !showUpgrade && (
-              <div style={{ padding: "10px 16px", borderRadius: "6px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: localCount >= FREE_LIMIT ? "#FFF4F4" : localCount >= FREE_LIMIT - 1 ? "#FFF9EC" : "#F1F8F5", border: `1px solid ${localCount >= FREE_LIMIT ? "#D72C0D" : localCount >= FREE_LIMIT - 1 ? "#B98900" : "#8DC8A8"}` }}>
-                <span style={{ fontSize: "13px", color: "#202223" }}>
-                  Plan gratuit · <strong>{localCount}/{FREE_LIMIT}</strong> calculs ce mois
-                  {localCount >= FREE_LIMIT ? " — limite atteinte" : localCount >= FREE_LIMIT - 1 ? " — dernier calcul gratuit" : ""}
-                </span>
-                {localCount >= FREE_LIMIT && (
-                  <button onClick={() => setShowUpgrade(true)} style={{ padding: "4px 12px", background: "#008060", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>
-                    Voir les plans
-                  </button>
-                )}
-              </div>
-            )}
-
             {showUpgrade && !isPro ? (
               <div style={{ padding: "24px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "24px" }}>
@@ -2731,7 +2686,7 @@ export default function Index() {
                   <div style={{ padding: "20px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "left" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Gratuit</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>0€/mois</div>
-                    {[`${FREE_LIMIT} calculs/mois`, "Sans historique", "Support standard"].map(f => (
+                    {["Calculs illimités", "Suivi des commandes", "Sans historique"].map(f => (
                       <div key={f} style={{ fontSize: "12px", color: "#6D7175", marginBottom: "5px" }}>✓ {f}</div>
                     ))}
                   </div>
@@ -2898,7 +2853,7 @@ export default function Index() {
                       ✓ {isPro ? "Calcul sauvegardé" : "Calcul enregistré"}
                     </span>
                   )}
-                  {!isSaving && saveStatus?.success === false && !saveStatus?.limitReached && (
+                  {!isSaving && saveStatus?.success === false && (
                     <span style={{ fontSize: "12px", color: "#D72C0D" }}>Erreur — {saveStatus.error}</span>
                   )}
                 </div>
@@ -3624,7 +3579,7 @@ export default function Index() {
             {isExpert ? "✦ Plan Expert actif" : isPro ? "★ Plan Pro actif" : "Plan Gratuit"}
           </div>
           <div style={{ fontSize: "12px", color: "#6D7175" }}>
-            {isExpert ? "Calculs illimités · Audit · ROAS · IA" : isPro ? "Calculs illimités · Historique · IA" : `${localCount}/${FREE_LIMIT} calculs ce mois`}
+            {isExpert ? "Calculs illimités · Audit · ROAS · IA" : isPro ? "Calculs illimités · Historique · IA" : "Calculs illimités · Suivi des commandes"}
           </div>
         </div>
         {!isExpert && !isPro && (
