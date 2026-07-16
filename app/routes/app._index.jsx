@@ -711,8 +711,11 @@ export const loader = async ({ request }) => {
     ? (alertResult.value.data?.threshold ?? DEFAULT_ALERT_THRESHOLD)
     : DEFAULT_ALERT_THRESHOLD;
 
-  // Feature 4: detect threshold violations in last 20 calculations
-  const allRecent = historyResult.status === "fulfilled"
+  // Feature 4: detect threshold violations in last 20 calculations.
+  // C6 : gate isPro EXPLICITE (comme `history` plus haut). Le gratuit sauvegarde ses calculs mais ne
+  // doit RIEN en voir — ni historique, ni bandeau d'alerte (violations). Sans ce gate, ses lignes
+  // remonteraient dans l'AlertBanner et l'onglet Alertes dès que le gratuit persiste (C6).
+  const allRecent = historyResult.status === "fulfilled" && isPro
     ? (historyResult.value.data ?? []).slice(0, 20) : [];
   const violations = allRecent.filter(c => c.net_margin_percent < alertThreshold);
 
@@ -1448,11 +1451,11 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
     return { success: false, error: "Titre produit trop long." };
   }
 
-  // C2 : calcul manuel ILLIMITÉ pour tous les plans — plus aucun plafond mensuel. Le plan gratuit
-  // n'a pas d'historique (réservé Pro+, cf. loader) → on renvoie le succès SANS insérer dans
-  // calculations, et sans compter (la table usage n'est plus ni lue ni écrite).
-  if (!billingIsPro) return { success: true };
-
+  // C2 : calcul manuel ILLIMITÉ pour tous les plans (plus aucun plafond mensuel ; table usage ni lue
+  // ni écrite). C6 : le plan gratuit SAUVEGARDE désormais ses calculs comme un Pro (insert ci-dessous)
+  // — le gate reste UNIQUEMENT sur la LECTURE (le loader ne renvoie historique/violations que si
+  // isPro). Le marchand gratuit accumule son historique en silence et le retrouve intégralement dès
+  // qu'il passe Pro. Tous les champs insérés viennent de `body`/session — aucune valeur Pro-spécifique.
   const netMarginPct = parseFloat(body.net_margin_percent);
   const netMarginEur = parseFloat(body.net_margin_euros);
   const coutRendu    = parseFloat(body.cout_rendu);
