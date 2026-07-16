@@ -9,8 +9,10 @@ import { supabase } from "../supabase.server";
 import prisma from "../db.server";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins } from "../lib/orderHistory.js";
-import { computeProfitabilityChanges, dominantCostPost } from "../lib/profitabilityAlert.js";
+import { computeProfitabilityChanges, dominantCostPost, decideAlertAction, shouldAdvanceState } from "../lib/profitabilityAlert.js";
 import { sendLossAlert } from "../lib/email.server.js";
+import { resolveEntitlement } from "../lib/plan.server";
+import { planToOrderCap, alertingEnabled, previousMonth } from "../lib/plan.js";
 
 // @vercel/react-router : durée max de la fonction servant cette route. INDISPENSABLE —
 // la sync poll le bulk jusqu'à 25s, au-dessus du défaut Hobby (10s) → sinon timeout.
@@ -20,6 +22,15 @@ export const config = { maxDuration: 60 };
 // Même plafond que le monitor (app._index.jsx) → l'alerte juge sur EXACTEMENT ce que voit
 // le marchand (lignes order_margins les plus récentes, toutes dates = état cumulé).
 const ORDER_MARGINS_CAP = 5000;
+
+// C4b : requête d'abonnements pour dériver le plan (→ plafond d'alerting), comme le cron dunning.
+// Minimale (id/name/status) — resolveEntitlement lit lui-même frozen_since/shop_plans en interne.
+const ALL_SUBS_QUERY = `
+  query AllSubs {
+    currentAppInstallation {
+      allSubscriptions(first: 25, reverse: true) { edges { node { id name status } } }
+    }
+  }`;
 
 const stateRow = (e, shop, now) => ({
   shop_domain: shop, product_id: e.product_id, last_state: e.state,
@@ -92,18 +103,56 @@ async function runForShop(shop) {
       b.topCost = dominantCostPost(p?.costPosts);
       b.breakdownAvailable = p?.breakdownAvailable ?? false;
     }
-    const to = await resolveEmail(admin);
-
-    if (!to) {
-      // [G3] email absent → on AVANCE quand même l'état (sinon réessai quotidien à vide).
-      console.warn(`[Cron] email absent ${shop} — état avancé sans envoi`);
-      r.noEmail = true;
-      await writeStates(basculements.map((e) => stateRow(e, shop, now)));
-    } else {
-      const ok = await sendLossAlert({ to, shop, basculements, thresholdPct });
-      if (ok) { r.mailed = true; await writeStates(basculements.map((e) => stateRow(e, shop, now))); }
-      else    { r.mailFailed = true; /* état NON avancé → réessai demain */ }
+    // ── C4b : plafond d'alerting au volume — DÉCISION d'envoi/avance (fonctions PURES, lot17) ──
+    // Tout ce qui précède (sync, agg, diff, seeds/maj) est INCHANGÉ ; seul CE bloc décide s'il faut
+    // envoyer l'alerte et avancer l'état. Bascule DIFFÉRÉE : alerting coupé ce mois SSI le compteur
+    // de commandes du mois PRÉCÉDENT a dépassé le palier du plan (le mois en cours est toujours servi).
+    //   • 'send'/'advance_only'/'send'-échoué → comportement STRICTEMENT identique à avant.
+    //   • 'suppress' (OFF) → ni envoi ni avance d'état → aucune alerte perdue (rafale-digest à la reprise).
+    // DÉFAUT SÛR : si le plan est indéterminé (Shopify injoignable) OU si la lecture échoue → alerting
+    // ON. On ne 'suppress' JAMAIS sur un doute : une incertitude ne doit pas avaler une alerte (au pire
+    // un email de trop à un marchand dépassé). La décision elle-même est pure et testée (lot17).
+    let enabled = true, cap = Infinity, prevCount = 0, planSource = "default-on";
+    try {
+      let subJson = null;
+      try { subJson = await (await admin.graphql(ALL_SUBS_QUERY)).json(); }
+      catch (e) { console.error(`[Cron] allSubscriptions KO ${shop}:`, e?.message); }
+      const ent = await resolveEntitlement({ shop, json: subJson, refetch: async () => (await admin.graphql(ALL_SUBS_QUERY)).json() });
+      planSource = ent.source;
+      if (ent.source === "live") {
+        // Plan FRAIS et autoritatif : on peut décider la bascule différée.
+        cap = planToOrderCap(ent);
+        const { data: um } = await supabase.from("usage").select("orders_count")
+          .eq("shop_domain", shop).eq("month", previousMonth(new Date())).maybeSingle();
+        prevCount = um?.orders_count ?? 0;
+        enabled = alertingEnabled(prevCount, cap);
+      } else {
+        // 'cache' (live échoué → dernier plan connu, possiblement périmé) OU 'indeterminate' :
+        // l'appel LIVE du plan n'a pas abouti → DOUTE. On ne 'suppress' QUE sur un plan live ;
+        // sinon ON. Un doute ne doit jamais avaler une alerte (au pire un email de trop).
+        enabled = true;
+      }
+    } catch (e) {
+      console.error(`[Cron] plan/plafond KO ${shop} → alerting ON par défaut:`, e?.message);
+      enabled = true;
     }
+
+    const to = await resolveEmail(admin);
+    const action = decideAlertAction({ alertingEnabled: enabled, hasEmail: !!to, hasBasculements: true });
+    // Diagnostic prod (par boutique) : on n'a rien à deviner.
+    console.log(`[Cron] alerting ${shop}: prevCount=${prevCount} cap=${cap} enabled=${enabled} action=${action} (plan ${planSource})`);
+    r.alertingEnabled = enabled; r.action = action;
+
+    let sendOk = false;
+    if (action === "send") sendOk = await sendLossAlert({ to, shop, basculements, thresholdPct });
+    if (shouldAdvanceState(action, sendOk)) {
+      await writeStates(basculements.map((e) => stateRow(e, shop, now)));
+    }
+
+    // Reporting (parité avec l'ancien flux) : advance_only=G3, send ok/échec, suppress=OFF.
+    if (action === "advance_only") r.noEmail = true;
+    else if (action === "send") { if (sendOk) r.mailed = true; else r.mailFailed = true; }
+    else if (action === "suppress") r.suppressed = true;
   }
   return r;
 }
