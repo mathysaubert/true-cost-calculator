@@ -143,3 +143,33 @@ export function computeProfitabilityChanges(current = [], prevStateMap = new Map
 
   return { basculements, seeds, majNormales };
 }
+
+// ── Décision d'alerting au volume — PURE (branchée par le cron en C4b-2) ─────────────────────
+// Sépare la DÉCISION (testable) de l'I/O (cron), comme decideDunningAction. Deux fonctions :
+//   decideAlertAction  : quelle action, selon (alerting activé ce mois ?, email destinataire ?,
+//                        des basculements ?).
+//   shouldAdvanceState : faut-il avancer product_profitability_state, selon l'action ET le succès
+//                        d'envoi — porte l'invariant G2 (avancer SSI envoi réussi ; JAMAIS pendant OFF).
+//
+// Actions :
+//   'nothing'      → aucun basculement → ne rien faire.
+//   'suppress'     → alerting COUPÉ ce mois (dépassement le mois dernier) → ni envoi, NI avance d'état
+//                    (comme le chemin mailFailed) → aucune alerte perdue, rafale-digest à la reprise.
+//   'advance_only' → alerting actif mais pas d'email → on avance l'état sans envoyer (G3).
+//   'send'         → alerting actif + email → tenter l'envoi ; l'avance (SSI succès) est résolue
+//                    par shouldAdvanceState.
+export function decideAlertAction({ alertingEnabled, hasEmail, hasBasculements } = {}) {
+  if (!hasBasculements) return "nothing";
+  if (!alertingEnabled) return "suppress";
+  return hasEmail ? "send" : "advance_only";
+}
+
+// Avance-t-on product_profitability_state ? Porte l'invariant G2. sendOk n'a de sens que pour 'send'
+// (ignoré ailleurs). 'suppress' → false : pendant OFF on n'avance JAMAIS → aucune alerte perdue.
+export function shouldAdvanceState(action, sendOk = false) {
+  switch (action) {
+    case "advance_only": return true;
+    case "send":         return sendOk === true;
+    default:             return false; // 'nothing' | 'suppress' | inconnu → ne pas avancer
+  }
+}

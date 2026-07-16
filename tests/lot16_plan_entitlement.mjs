@@ -16,6 +16,7 @@ import {
   subscriptionNodesFromResponse,
   planToOrderCap,
   alertingEnabled,
+  previousMonth,
   FROZEN_GRACE_DAYS,
 } from "../app/lib/plan.js";
 
@@ -210,6 +211,11 @@ console.log("\n── C4a : planToOrderCap + alertingEnabled ──");
   ok(alertingEnabled(200, 200) === true, "200 == 200 (pile au palier, borne inclusive) → encore activé");
   ok(alertingEnabled(201, 200) === false, "201 > 200 (dépassé au mois M) → alerting coupé (M+1)");
   ok(alertingEnabled(999999, Infinity) === true, "Expert (cap Infinity) → toujours activé quel que soit le volume");
+  // previousMonth : mois M-1 au format "YYYY-MM", rollover d'année géré.
+  ok(previousMonth(new Date("2026-07-16T12:00:00Z")) === "2026-06", "juillet 2026 → '2026-06' (mois normal)");
+  ok(previousMonth(new Date("2026-01-05T12:00:00Z")) === "2025-12", "janvier 2026 → '2025-12' (rollover année)");
+  ok(previousMonth(new Date("2026-12-31T23:00:00Z")) === "2026-11", "décembre 2026 → '2026-11'");
+  ok(previousMonth(new Date("2026-03-31T12:00:00Z")) === "2026-02", "31 mars → '2026-02' (jour d'entrée indifférent, pas de débordement)");
 }
 
 console.log("\n" + "═".repeat(66));

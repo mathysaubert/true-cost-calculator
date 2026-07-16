@@ -89,6 +89,14 @@ export function alertingEnabled(prevMonthCount, cap) {
   return prevMonthCount <= cap;
 }
 
+// Mois PRÉCÉDENT au format "YYYY-MM" — PUR. Le cron lit usage.orders_count de ce mois pour la
+// bascule différée (dépassement en M → coupure en M+1). Date.UTC avec month-1 normalise nativement
+// le rollover d'année : janvier 2026 → "2025-12". Le jour d'entrée est indifférent (on force le 1er).
+export function previousMonth(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+}
+
 // ── Repli PUR sur le dernier plan connu (D1) — 'expert'|'pro'|'free' → { isPro, isExpert } ─
 // Utilisé quand l'appel GraphQL échoue : on ne dégrade JAMAIS un payeur sur une panne d'infra.
 export function entitlementFromPlan(plan) {
