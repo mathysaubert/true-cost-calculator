@@ -363,7 +363,7 @@ function ExpertGate({ onUpgrade }) {
       <div style={{ fontSize: "32px", marginBottom: "14px" }}>🔒</div>
       <div style={{ fontSize: "17px", fontWeight: "700", color: "#202223", marginBottom: "8px" }}>Fonctionnalité Expert</div>
       <div style={{ fontSize: "14px", color: "#6D7175", marginBottom: "24px", lineHeight: "1.6" }}>
-        Réservée au plan <strong>Expert — 15$/mois</strong>.
+        Réservée au plan <strong>Expert — 69$/mois</strong>.
       </div>
       <button onClick={onUpgrade} style={{ padding: "12px 28px", background: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
         Voir le plan Expert →
@@ -2544,13 +2544,13 @@ export default function Index() {
     ["subscribe", "subscribe_expert"].includes(navigation.json?._action);
   const isSavingAlert = alertFetcher.state !== "idle";
 
-  const subscribeBtn = (label = "Passer au Pro — 9$/mois") => (
+  const subscribeBtn = (label = "Passer au Pro — 29$/mois") => (
     <button onClick={handleSubscribe} disabled={isSubscribing}
       style={{ padding: "10px 24px", background: "#008060", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: isSubscribing ? "default" : "pointer", fontFamily: "inherit", opacity: isSubscribing ? 0.7 : 1 }}>
       {isSubscribing ? "Redirection…" : label}
     </button>
   );
-  const subscribeExpertBtn = (label = "Passer au plan Expert — 15$/mois") => (
+  const subscribeExpertBtn = (label = "Passer au plan Expert — 69$/mois") => (
     <button onClick={handleSubscribeExpert} disabled={isSubscribing}
       style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED 0%,#5B21B6 100%)", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: isSubscribing ? "default" : "pointer", fontFamily: "inherit", opacity: isSubscribing ? 0.7 : 1, boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
       {isSubscribing ? "Redirection…" : label}
@@ -2739,7 +2739,7 @@ export default function Index() {
                   <div style={{ padding: "20px", borderRadius: "10px", background: "#F1F8F5", border: "2px solid #008060", textAlign: "left", position: "relative" }}>
                     <div style={{ position: "absolute", top: "-1px", right: "12px", background: "#008060", color: "#fff", fontSize: "10px", fontWeight: "700", padding: "3px 8px", borderRadius: "0 0 6px 6px" }}>POPULAIRE</div>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#008060", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Pro</div>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>9$/mois</div>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>29$/mois</div>
                     {["Calculs illimités", "Historique + graphe", "Alertes de marge", "Recommandations IA", "Support prioritaire"].map(f => (
                       <div key={f} style={{ fontSize: "12px", color: "#008060", marginBottom: "5px" }}>✓ {f}</div>
                     ))}
@@ -2749,7 +2749,7 @@ export default function Index() {
                   <div style={{ padding: "20px", borderRadius: "10px", background: "linear-gradient(135deg,#faf8ff 0%,#f0ecff 100%)", border: "2px solid #7C3AED", textAlign: "left", position: "relative", boxShadow: "0 0 0 1px #7C3AED22, 0 8px 24px rgba(124,58,237,0.15)" }}>
                     <div style={{ position: "absolute", top: "-1px", right: "12px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700", padding: "3px 8px", borderRadius: "0 0 6px 6px" }}>RECOMMANDÉ</div>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Expert</div>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>15$/mois</div>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>69$/mois</div>
                     {["Tout le plan Pro", "Break-Even ROAS", "Audit Catalogue complet", "Graphe avancé + tooltips", "Annotations historique", "Support dédié"].map(f => (
                       <div key={f} style={{ fontSize: "12px", color: "#7C3AED", marginBottom: "5px" }}>✓ {f}</div>
                     ))}
@@ -3024,7 +3024,7 @@ export default function Index() {
             <div style={{ textAlign: "center", padding: "48px 24px" }}>
               <div style={{ fontSize: "36px", marginBottom: "16px" }}>🔒</div>
               <div style={{ fontSize: "16px", fontWeight: "600", color: "#202223", marginBottom: "8px" }}>Fonctionnalité Pro</div>
-              <div style={{ fontSize: "14px", color: "#6D7175", marginBottom: "24px" }}>L'historique et les graphes sont disponibles avec le plan Pro à 9$/mois.</div>
+              <div style={{ fontSize: "14px", color: "#6D7175", marginBottom: "24px" }}>L'historique et les graphes sont disponibles avec le plan Pro à 29$/mois.</div>
               {subscribeBtn()}
             </div>
           ) : history.length === 0 ? (
