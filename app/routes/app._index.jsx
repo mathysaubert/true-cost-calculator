@@ -775,8 +775,15 @@ export const loader = async ({ request }) => {
   })() : null;
   // BUG 1 : toute la dérivation CPA vit ICI (serveur), pas dans le JSX. computeCpaTargets consomme
   // l'agrégat (net_margin = marge avant pub) ; le client n'affichera que formatMoney(...).
-  const cpaTargets = computeCpaTargets(aggregateOrderMargins(orderMargins), { thresholdPct: profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt });
-  const cpaByProduct = Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]));
+  // C3 : CPA prescriptif (B5) = Expert uniquement. GATE DONNÉES — on ne calcule/renvoie cpaTargets
+  // que si isExpert → aucune fuite de plafond/écart dans le payload d'un non-Expert (pas seulement un
+  // masquage visuel). computeCpaTargets (lib, pur) reste inchangé ; seul son APPEL est conditionné.
+  const cpaTargets = isExpert
+    ? computeCpaTargets(aggregateOrderMargins(orderMargins), { thresholdPct: profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt })
+    : null;
+  const cpaByProduct = isExpert
+    ? Object.fromEntries(cpaTargets.perProduct.map(x => [x.product_id ?? "__unknown__", x]))
+    : {};
 
   return { isPro, isExpert, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
@@ -937,6 +944,10 @@ export const action = async ({ request }) => {
   // sans corrompre aucune donnée ni fausser aucun calcul. Le DÉPASSEMENT doit TOUJOURS être
   // déclarable (c'est l'info la plus actionnable). Seule borne = TECHNIQUE (affichage/précision).
   if (body._action === "set_current_cpa") {
+    // C3 : B6 (déclarer son CPA) suit B5 en Expert — son unique consommateur (l'écart au plafond,
+    // cpaTargets.ecart) est désormais Expert-only ; laisser un non-Expert déclarer un CPA qu'il ne
+    // peut plus comparer serait une impasse. Garde serveur (défense en profondeur, cf. run_audit).
+    if (!billingIsExpert) return { success: false, error: "Fonctionnalité réservée au plan Expert." };
     const raw = String(body.current_cpa ?? "").replace(",", ".").trim();
     const nowIso = new Date().toISOString();
     if (raw === "") {
@@ -1664,7 +1675,7 @@ function LineBreakdownCard({ lb }) {
 }
 
 // ── UI Monitor : sous-bloc repliable (collapsed par défaut) — lecture seule ──
-function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, cpaTargets, cpaByProduct, currentCpaDeclaredLabel, thresholdPct, onGoToCosts }) {
+function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById, cpaTargets, cpaByProduct, currentCpaDeclaredLabel, thresholdPct, isExpert, onGoToCosts }) {
   const [open, setOpen] = useState(false);
   const [sortBy, setSortBy] = useState("margin"); // margin | revenue
   const [openLines, setOpenLines] = useState(() => new Set()); // product_ids dépliés
@@ -1728,15 +1739,22 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                 </>
               )}
 
-              {/* CPA prescriptif — signaux INCONDITIONNELS (indépendants du tri) + plafond blended.
-                  Tout vient de cpaTargets (serveur) ; le JSX ne fait que rendre (BUG 1). */}
-              {cpaTargets?.noAcqCount > 0 && (
+              {/* CPA prescriptif (B5) — Expert uniquement (C3). Non-Expert : rappel discret, non
+                  intrusif ; le reste du monitor (agrégats, courbe, table) reste visible pour tous. */}
+              {!isExpert && (
+                <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED22", fontSize: "12px", color: "#6D7175", marginBottom: "8px" }}>
+                  <strong style={{ color: "#7C3AED" }}>Pilotage d'acquisition</strong> — CPA maximum par commande, plafond par produit et alerte de dépassement sont réservés au plan <strong>Expert</strong>.
+                </div>
+              )}
+              {/* Signaux INCONDITIONNELS (indépendants du tri) + plafond blended. Tout vient de
+                  cpaTargets (serveur) ; le JSX ne fait que rendre (BUG 1). */}
+              {isExpert && cpaTargets?.noAcqCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
                   produit(s) ne supportent aucune acquisition payante — marge épuisée ou entièrement remboursés à perte. Voir la colonne « Marge dispo/unité », qui distingue les deux cas.
                 </div>
               )}
-              {cpaTargets?.blended && (() => {
+              {isExpert && cpaTargets?.blended && (() => {
                 const ec = cpaTargets.ecart;
                 // overspend = flag SERVEUR (présence + non-obsolète + dépassement). Aucun calcul JSX.
                 const overspend = !!(ec && !ec.stale && ec.overspend);
@@ -1792,7 +1810,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th><th style={th}>Marge dispo/unité</th><th style={th}>État</th>
+                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th>{isExpert && <th style={th}>Marge dispo/unité</th>}<th style={th}>État</th>
                   </tr></thead>
                   <tbody>
                     {products.map(p => {
@@ -1811,7 +1829,9 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <td style={td}>{formatMoney(p.net_revenue, p.currency)}</td>
                         <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatMoney(p.net_margin, p.currency)}</td>
                         <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
-                        {/* Marge dispo/unité — switch PUR sur cpaByProduct[pkey].state (serveur). Zéro calcul. */}
+                        {/* Marge dispo/unité (B5) — colonne Expert uniquement (C3). Switch PUR sur
+                            cpaByProduct[pkey].state (serveur). Zéro calcul. */}
+                        {isExpert && (
                         <td style={td}>
                           {(() => {
                             const c = cpaByProduct?.[pkey];
@@ -1828,6 +1848,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                             return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises — pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) — pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
                           })()}
                         </td>
+                        )}
                         <td style={td}>
                           <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700",
                             color: p.unprofitable ? "#D72C0D" : "#008060", background: p.unprofitable ? "#FFF4F4" : "#F1F8F5" }}>
@@ -1837,7 +1858,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       </tr>
                       {expanded && (
                         <tr style={{ background: "#FFFFFF" }}>
-                          <td colSpan={8} style={{ padding: "10px 14px" }}>
+                          <td colSpan={isExpert ? 8 : 7} style={{ padding: "10px 14px" }}>
                             <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
                               Détail par ligne de commande — chaque ligne affiche son propre snapshot figé (lecture pure, valeurs stockées).
                             </div>
@@ -1874,7 +1895,7 @@ const SOURCE_PILL = {
   imported:  { label: "Importé",  color: "#2C6ECB", bg: "#EEF4FF" },
 };
 
-function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
+function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
   const confirmFetcher = useFetcher();
@@ -2042,7 +2063,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         </div>
       </div>
 
-      {/* CPA prescriptif : CPA actuel déclaré — devise BOUTIQUE explicite (point A anti-erreur devise) */}
+      {/* CPA prescriptif : CPA actuel déclaré (B6) — Expert uniquement (C3), suit B5 : son seul
+          usage est la comparaison au plafond, désormais Expert-only. Action gardée côté serveur. */}
+      {isExpert && (
       <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
         <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Votre CPA d'acquisition actuel</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
@@ -2065,6 +2088,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord — sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
         </div>
       </div>
+      )}
 
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
@@ -2094,6 +2118,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
         productTitleById={productTitleById ?? {}}
         cpaTargets={cpaTargets} cpaByProduct={cpaByProduct} currentCpaDeclaredLabel={currentCpaDeclaredLabel} thresholdPct={profitabilityThresholdPct}
+        isExpert={isExpert}
         onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
 
       {/* Barre d'actions */}
@@ -3406,7 +3431,7 @@ export default function Index() {
         )}
 
         {/* ════════ SUIVI DES COÛTS (Brique A) ═══════════════════════════════ */}
-        {activeTab === "costs" && <CostTracker defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
+        {activeTab === "costs" && <CostTracker isExpert={isExpert} defaultImportCountry={defaultImportCountry} fees={fees} feesCurrency={feesCurrency} profitabilityThresholdPct={profitabilityThresholdPct}
           currentCpa={currentCpa} currentCpaUpdatedAt={currentCpaUpdatedAt} currentCpaDeclaredLabel={currentCpaDeclaredLabel} cpaTargets={cpaTargets} cpaByProduct={cpaByProduct}
           orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal} orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
           productTitleById={Object.fromEntries((products ?? []).map(p => [p.id, p.title]))} />}
