@@ -2777,18 +2777,25 @@ export default function Index() {
           <>
             {showUpgrade && !isPro ? (
               <div style={{ padding: "24px 0" }}>
-                <div style={{ textAlign: "center", marginBottom: "24px" }}>
-                  <div style={{ fontSize: "36px", marginBottom: "12px" }}>🔒</div>
-                  <div style={{ fontSize: "20px", fontWeight: "700", color: "#202223", marginBottom: "6px" }}>Passez au niveau supérieur</div>
-                  <div style={{ fontSize: "14px", color: "#6D7175" }}>Calculs illimités, historique avancé, audit catalogue et ROAS.</div>
+                <div style={{ textAlign: "center", marginBottom: "28px", maxWidth: "620px", marginLeft: "auto", marginRight: "auto" }}>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223", lineHeight: "1.4", marginBottom: "8px" }}>Calculez votre marge nette réelle — droits de douane, TVA import, frais Shopify &amp; Stripe, retours et pub inclus.</div>
+                  <div style={{ fontSize: "14px", color: "#6D7175" }}>Choisissez le volume de surveillance adapté à votre boutique.</div>
                 </div>
                 <div className="tcc-upgrade-plans" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", maxWidth: "780px", margin: "0 auto 28px" }}>
                   {/* Free */}
                   <div style={{ padding: "20px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "left" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Gratuit</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>0€/mois</div>
-                    {["Calculs illimités", "Suivi des commandes", "Sans historique"].map(f => (
-                      <div key={f} style={{ fontSize: "12px", color: "#6D7175", marginBottom: "5px" }}>✓ {f}</div>
+                    {[
+                      "Votre marge nette réelle sur chaque commande, tous coûts cachés déduits",
+                      "Soyez alerté par e-mail dès qu'un produit passe à perte — jusqu'à 200 commandes/mois",
+                      "Définissez votre seuil : sous quel % de marge un produit doit vous alerter",
+                      "Calculs de marge manuels illimités",
+                    ].map(f => (
+                      <div key={f} style={{ display: "flex", gap: "7px", alignItems: "flex-start", fontSize: "12px", lineHeight: "1.5", marginBottom: "7px" }}>
+                        <span style={{ color: "#6D7175", fontWeight: "700", flexShrink: 0 }}>✓</span>
+                        <span style={{ color: "#454F5B" }}>{f}</span>
+                      </div>
                     ))}
                   </div>
                   {/* Pro */}
@@ -2796,8 +2803,16 @@ export default function Index() {
                     <div style={{ position: "absolute", top: "-1px", right: "12px", background: "#008060", color: "#fff", fontSize: "10px", fontWeight: "700", padding: "3px 8px", borderRadius: "0 0 6px 6px" }}>POPULAIRE</div>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#008060", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Pro</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>29$/mois</div>
-                    {["Calculs illimités", "Historique + graphe", "Alertes de marge", "Recommandations IA", "Support prioritaire"].map(f => (
-                      <div key={f} style={{ fontSize: "12px", color: "#008060", marginBottom: "5px" }}>✓ {f}</div>
+                    {[
+                      "Tout le plan Gratuit",
+                      "Surveillance étendue — jusqu'à 1 000 commandes/mois",
+                      "Retrouvez l'évolution de vos marges dans le temps",
+                      "Une recommandation d'action après chaque analyse",
+                    ].map(f => (
+                      <div key={f} style={{ display: "flex", gap: "7px", alignItems: "flex-start", fontSize: "12px", lineHeight: "1.5", marginBottom: "7px" }}>
+                        <span style={{ color: "#008060", fontWeight: "700", flexShrink: 0 }}>✓</span>
+                        <span style={{ color: "#454F5B" }}>{f}</span>
+                      </div>
                     ))}
                     <div style={{ marginTop: "16px" }}>{subscribeBtn("Choisir Pro")}</div>
                   </div>
@@ -2806,11 +2821,23 @@ export default function Index() {
                     <div style={{ position: "absolute", top: "-1px", right: "12px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700", padding: "3px 8px", borderRadius: "0 0 6px 6px" }}>RECOMMANDÉ</div>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Expert</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>69$/mois</div>
-                    {["Tout le plan Pro", "Break-Even ROAS", "Audit Catalogue complet", "Graphe avancé + tooltips", "Annotations historique", "Support dédié"].map(f => (
-                      <div key={f} style={{ fontSize: "12px", color: "#7C3AED", marginBottom: "5px" }}>✓ {f}</div>
+                    {[
+                      "Tout le plan Pro",
+                      "Surveillance sans limite de volume",
+                      "Repérez d'un coup tous les produits qui vous font perdre de l'argent, classés du pire au plus rentable",
+                      "Sachez combien vous pouvez dépenser en pub par produit sans vendre à perte",
+                      "Gardez une trace annotée de vos décisions passées",
+                    ].map(f => (
+                      <div key={f} style={{ display: "flex", gap: "7px", alignItems: "flex-start", fontSize: "12px", lineHeight: "1.5", marginBottom: "7px" }}>
+                        <span style={{ color: "#7C3AED", fontWeight: "700", flexShrink: 0 }}>✓</span>
+                        <span style={{ color: "#454F5B" }}>{f}</span>
+                      </div>
                     ))}
                     <div style={{ marginTop: "16px" }}>{subscribeExpertBtn("Choisir Expert")}</div>
                   </div>
+                </div>
+                <div style={{ maxWidth: "640px", margin: "0 auto 24px", padding: "0 12px", fontSize: "12px", lineHeight: "1.65", color: "#57606A", textAlign: "center" }}>
+                  Aucune coupure brutale : au-delà de votre volume, votre suivi de marge et votre monitor restent entièrement accessibles — seules les alertes e-mail sont mises en pause, jamais avant le mois suivant, et elles reprennent dès que votre volume repasse sous le seuil.
                 </div>
                 <div style={{ textAlign: "center" }}>
                   <button onClick={() => setShowUpgrade(false)} style={{ padding: "10px 20px", background: "none", color: "#6D7175", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "14px", cursor: "pointer", fontFamily: "inherit" }}>
