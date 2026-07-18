@@ -68,6 +68,23 @@ export function estimateVariantCost({ unitCost, categoryName, productType, title
   };
 }
 
+// ── Réhydratation d'une ligne de coûts depuis le unitCost Shopify (Brique A) — PUR ──────────
+// Une ligne ESTIMÉE se laisse corriger par une donnée RÉELLE du marchand : si Shopify expose un
+// unitCost > 0 qui DIFFÈRE du prix_achat estimé, on le reprend (une donnée réelle bat une estimation).
+// Une ligne 'confirmed'/'imported' (saisie ou CSV du marchand) fait AUTORITÉ → JAMAIS touchée.
+// Seul prix_achat vient de Shopify : port/emballage/qty/catégorie/etc. restent inchangés.
+// needsPersist=true UNIQUEMENT si la valeur change réellement → PAS de boucle d'écriture : une fois
+// réhydraté, prix_achat === unitCost → needsPersist repasse à false et le reste (convergence en 1 write).
+// Entrée : existing (ligne variant_costs stockée, ou null/undefined), liveUnitCost (unitCost Shopify :
+// string|number|null). Sortie : { row, needsPersist } — row = ligne à AFFICHER (réhydratée ou inchangée).
+export function reconcileEstimatedCost(existing, liveUnitCost) {
+  if (!existing || existing.source !== "estimated") return { row: existing, needsPersist: false };
+  const cost = parseFloat(liveUnitCost);
+  if (!Number.isFinite(cost) || cost <= 0) return { row: existing, needsPersist: false };
+  if (cost === Number(existing.prix_achat)) return { row: existing, needsPersist: false }; // identique → ne pas réécrire
+  return { row: { ...existing, prix_achat: cost }, needsPersist: true };
+}
+
 // ── Validation d'un jeu de coûts (saisie UI ou ligne CSV) ───────────────────
 // Renvoie { value, errors } : value = objet nettoyé prêt à persister (champs
 // PERSISTED_COLUMNS), errors = liste de messages lisibles (jamais d'avalage silencieux).

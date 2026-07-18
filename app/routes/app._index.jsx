@@ -18,7 +18,7 @@ import { buildMargeLine } from "../lib/aiPayload.js";
 import {
   PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS,
   shopifyTypeToCategory, estimateVariantCost, validateCostRow,
-  parseCostsCsv, buildCostsCsv, CSV_COLUMNS,
+  parseCostsCsv, buildCostsCsv, CSV_COLUMNS, reconcileEstimatedCost,
 } from "../lib/variantCosts.js";
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
@@ -1083,22 +1083,38 @@ export const action = async ({ request }) => {
     const { data: stored } = await supabase.from("variant_costs").select("*").eq("shop_domain", session.shop);
     const storedMap = new Map((stored ?? []).map(r => [r.variant_id, r]));
 
-    // Variantes sans coûts → estimation persistée en source='estimated' (insert-only :
-    // ignoreDuplicates ne réécrit jamais une ligne confirmed/imported existante).
-    const toInsert = [];
+    // Variantes sans coûts → estimation persistée en source='estimated' (insert-only : ignoreDuplicates
+    // ne réécrit jamais une ligne confirmed/imported). Réhydratation : une ligne ESTIMÉE se laisse
+    // corriger par le unitCost Shopify réel s'il apparaît / change plus tard (reconcileEstimatedCost, pur) —
+    // seul prix_achat, et seulement si la valeur diffère (aucune boucle d'écriture).
+    const now = new Date().toISOString();
+    const toInsert = [], toRehydrate = [];
     const costs = variants.map(v => {
       const existing = storedMap.get(v.variant_id);
       const display = { variant_id: v.variant_id, product_id: v.product_id, product_title: v.product_title, variant_title: v.variant_title, price: v.price };
-      if (existing) return { ...display, ...existing };
+      if (existing) {
+        const { row, needsPersist } = reconcileEstimatedCost(existing, v.unitCost);
+        if (needsPersist) {
+          const payload = { ...row, updated_at: now };
+          delete payload.id;          // ne pas réécrire la PK
+          delete payload.created_at;  // (absente du schéma variant_costs — garde défensive)
+          toRehydrate.push(payload);
+        }
+        return { ...display, ...row };
+      }
       const est = estimateVariantCost({
         unitCost: v.unitCost, categoryName: v.categoryName, productType: v.productType,
         title: v.product_title, defaultCountry, vatRegime, shippingModel,
       });
-      toInsert.push({ shop_domain: session.shop, variant_id: v.variant_id, product_id: v.product_id, ...est, updated_at: new Date().toISOString() });
+      toInsert.push({ shop_domain: session.shop, variant_id: v.variant_id, product_id: v.product_id, ...est, updated_at: now });
       return { ...display, ...est };
     });
     if (toInsert.length) {
       await supabase.from("variant_costs").upsert(toInsert, { onConflict: "shop_domain,variant_id", ignoreDuplicates: true });
+    }
+    if (toRehydrate.length) {
+      // SANS ignoreDuplicates → met à jour prix_achat des lignes 'estimated' réhydratées (autres champs conservés).
+      await supabase.from("variant_costs").upsert(toRehydrate, { onConflict: "shop_domain,variant_id" });
     }
 
     return { success: true, costs, defaultCountry, variantsCapped };
