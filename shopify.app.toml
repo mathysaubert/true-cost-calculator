@@ -9,7 +9,10 @@ embedded = true
 # read_products,read_inventory : audit catalogue + coûts par variante (Brique A).
 # read_orders : monitor de marge réelle sur les vraies commandes (Brique B).
 #   Fenêtre 30 j ⊂ 60 j → read_orders suffit, read_all_orders NON requis (historique long = v1.1).
-#   Données commande = PCD : déclaration Partner Dashboard requise (faite en dev).
+#   read_orders lit UNIQUEMENT des champs financiers/line-items (id, dates, devise, quantités, prix,
+#   remboursements) — AUCUNE donnée personnelle de client (ni nom/email/adresse, ni IP/navigateur/
+#   géoloc/OS). La déclaration Protected Customer Data (Partner Dashboard) doit être MINIMISÉE en
+#   conséquence : ne cocher aucun champ de données client (surtout pas IP/géoloc/navigateur/OS).
 scopes = "read_products,read_inventory,read_orders"
 
 [webhooks]
