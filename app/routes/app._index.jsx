@@ -2686,7 +2686,9 @@ export default function Index() {
       {showWelcome && (
         <s-section heading={`Bienvenue dans True Cost Calculator ${isExpert ? "Expert" : "Pro"} !`}>
           <div style={{ padding: "16px 20px", borderRadius: "8px", background: "#F1F8F5", border: "1px solid #008060", fontSize: "14px", color: "#202223", lineHeight: "1.6" }}>
-            Calculs illimités activés. Vos simulations sont sauvegardées automatiquement dans l'onglet <strong>Historique</strong>.
+            {isExpert
+              ? <>Surveillance sans limite de volume activée. Vous avez aussi l'audit du catalogue — vos produits classés du pire au plus rentable — et le <strong>budget pub maximum par produit</strong>.</>
+              : <>Alertes de perte jusqu'à <strong>1 000 commandes/mois</strong>, plus l'historique complet de l'évolution de vos marges.</>}
           </div>
         </s-section>
       )}
@@ -2818,8 +2820,8 @@ export default function Index() {
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#008060", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Pro</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>29$/mois</div>
                     {[
+                      "Alertes perte : 1000 commandes/mois",
                       "Tout le plan Gratuit",
-                      "Surveillance étendue — jusqu'à 1 000 commandes/mois",
                       "Retrouvez l'évolution de vos marges dans le temps",
                       "Une recommandation d'action après chaque analyse",
                     ].map(f => (
@@ -2836,8 +2838,8 @@ export default function Index() {
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Expert</div>
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>69$/mois</div>
                     {[
+                      "Surveillance ILLIMITÉE, sans plafond",
                       "Tout le plan Pro",
-                      "Surveillance sans limite de volume",
                       "Repérez d'un coup tous les produits qui vous font perdre de l'argent, classés du pire au plus rentable",
                       "Sachez combien vous pouvez dépenser en pub par produit sans vendre à perte",
                       "Gardez une trace annotée de vos décisions passées",
@@ -3721,7 +3723,7 @@ export default function Index() {
             {isExpert ? "✦ Plan Expert actif" : isPro ? "★ Plan Pro actif" : "Plan Gratuit"}
           </div>
           <div style={{ fontSize: "12px", color: "#6D7175" }}>
-            {isExpert ? "Calculs illimités · Audit · ROAS · IA" : isPro ? "Calculs illimités · Historique · IA" : "Calculs illimités · Suivi des commandes"}
+            {isExpert ? "Surveillance illimitée · Audit · CPA pub" : isPro ? "1 000 commandes/mois · Historique · IA" : "200 commandes/mois · Monitor complet"}
           </div>
         </div>
         {!isExpert && !isPro && (
