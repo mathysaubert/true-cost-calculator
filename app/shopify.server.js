@@ -23,8 +23,13 @@ const shopify = shopifyApp({
   future: {
     expiringOfflineAccessTokens: true,
   },
+  // trialDays au niveau du PLAN (sibling de lineItems, cf. BillingConfigSubscriptionLineItemPlan).
+  // billing.request lit billingConfig.trialDays et le passe à appSubscriptionCreate → l'essai de
+  // 7 jours annoncé sur la fiche App Store est réellement appliqué à la charge (les handlers
+  // subscribe/subscribe_expert n'ont rien à passer, la valeur vient d'ici).
   billing: {
     [PLAN_PRO]: {
+      trialDays: 7,
       lineItems: [
         {
           amount: 29,
@@ -34,6 +39,7 @@ const shopify = shopifyApp({
       ],
     },
     [PLAN_EXPERT]: {
+      trialDays: 7,
       lineItems: [
         {
           amount: 69,
