@@ -828,6 +828,22 @@ async function checkRateLimit(shop, action, maxPerDay) {
   return true;
 }
 
+// Détecte une boutique de développement Partenaire (dev store) → abonnement de TEST (non facturé).
+// SÛR par construction : (1) un dev store NE PEUT PAS traiter de vrais paiements clients (Shopify le
+// bloque) → un abonnement de test ne perd AUCUN revenu réel ; (2) un vrai marchand sur plan payant
+// rapporte partnerDevelopment=false, non falsifiable. DÉFAUT SÛR : toute incertitude (erreur GraphQL,
+// champ absent, timeout) retombe sur FALSE → facturation RÉELLE. Le doute ne donne JAMAIS un test.
+async function isDevStore(admin) {
+  try {
+    const r = await admin.graphql(`{ shop { plan { partnerDevelopment } } }`);
+    const j = await r.json();
+    return j.data?.shop?.plan?.partnerDevelopment === true;
+  } catch (e) {
+    console.error("[Billing] dev-store detect:", e?.message);
+    return false; // au moindre doute → facturation réelle
+  }
+}
+
 export const action = async ({ request }) => {
   const { session, billing, admin } = await authenticate.admin(request);
 
@@ -838,8 +854,6 @@ export const action = async ({ request }) => {
     return { success: false, error: "Corps de requête invalide." };
   }
 
-  const isTestMode = process.env.NODE_ENV !== "production";
-
   // ── Subscribe Pro ─────────────────────────────────────────────────────────
   if (body._action === "subscribe") {
     // returnUrl must stay inside the Shopify Admin context so authenticate.admin()
@@ -847,7 +861,7 @@ export const action = async ({ request }) => {
     // redirect to /auth/login (manual shop input) because there is no App Bridge token.
     await billing.request({
       plan: PLAN_PRO,
-      isTest: isTestMode,
+      isTest: await isDevStore(admin), // dev store → test ; toute incertitude → false (facturation réelle)
       returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
     });
     return null;
@@ -857,7 +871,7 @@ export const action = async ({ request }) => {
   if (body._action === "subscribe_expert") {
     await billing.request({
       plan: PLAN_EXPERT,
-      isTest: isTestMode,
+      isTest: await isDevStore(admin), // dev store → test ; toute incertitude → false (facturation réelle)
       returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
     });
     return null;
