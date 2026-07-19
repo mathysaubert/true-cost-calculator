@@ -434,7 +434,7 @@ function getRoasViability(roas) {
   return           { color: "#008060", bg: "#F1F8F5", border: "#008060", message: null };
 }
 
-function BreakEvenROAS({ results, onGoToSimulation }) {
+function BreakEvenROAS({ results, onGoToSimulation, feesCurrency = "EUR" }) {
   if (!results) return null;
   const { prixVente, revenu, coutRendu, shopifyCost, stripeCost, retoursCost, fraisFixes = 0 } = results;
   // CPA_MAX = revenu HT - landed_cost - frais plateformes (TTC) - coûts fixes
@@ -496,7 +496,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
         </div>
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6", marginBottom: "14px", fontStyle: "italic" }}>"{roasPhrase}"</div>
         <div style={{ padding: "12px 16px", borderRadius: "8px", background: `${roasColor}0D`, border: `1px solid ${roasColor}22`, fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-          Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{formatNum(roas)} € de CA</strong> pour chaque euro dépensé en pub afin d'être rentables.
+          Vos campagnes doivent générer au minimum <strong style={{ color: roasColor }}>{formatNum(roas)} {feesCurrency} de CA</strong> pour chaque {feesCurrency} dépensé en pub afin d'être rentables.
         </div>
         <div style={{ marginTop: "8px", fontSize: "11px", color: "#8C9196", lineHeight: "1.5" }}>
           Calcul basé sur une valeur de conversion TTC (standard B2C FR).
@@ -575,7 +575,7 @@ function BreakEvenROAS({ results, onGoToSimulation }) {
             </div>
           </div>
           <div style={{ textAlign: "center", flexShrink: 0, paddingTop: "4px" }}>
-            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{formatEur(available)}</div>
+            <div style={{ fontSize: "46px", fontWeight: "800", color: cpaColor, lineHeight: 1, letterSpacing: "-1.5px" }}>{formatMoney(available, feesCurrency)}</div>
             <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "5px", fontWeight: "500" }}>par acquisition</div>
           </div>
         </div>
@@ -596,7 +596,7 @@ export const loader = async ({ request }) => {
     admin.graphql(ALL_SUBS_QUERY),
     admin.graphql(`
       query ProductsPage1 {
-        shop { taxesIncluded ianaTimezone }
+        shop { taxesIncluded ianaTimezone currencyCode }
         products(first: 250, sortKey: TITLE) {
           edges {
             node {
@@ -643,6 +643,7 @@ export const loader = async ({ request }) => {
   // Overridden below if shop.taxesIncluded is explicitly false.
   let shopTaxesIncluded = true;
   let shopTimezone = null; // IANA de la boutique (Shopify) → date de déclaration dans SON fuseau
+  let shopCurrency = null;  // devise de la boutique (Shopify) → source PRIMAIRE des libellés monétaires
   if (productsResp1.status === "fulfilled") {
     try {
       const json1 = await productsResp1.value.json();
@@ -650,6 +651,7 @@ export const loader = async ({ request }) => {
         shopTaxesIncluded = json1.data.shop.taxesIncluded;
       }
       if (typeof json1.data?.shop?.ianaTimezone === "string") shopTimezone = json1.data.shop.ianaTimezone;
+      if (/^[A-Z]{3}$/.test(json1.data?.shop?.currencyCode ?? "")) shopCurrency = json1.data.shop.currencyCode;
       const page1 = json1.data?.products;
       if (page1) {
         products = page1.edges.map(({ node }) => ({
@@ -757,8 +759,10 @@ export const loader = async ({ request }) => {
     ? (orderMarginsCountResult.value.count ?? orderMargins.length) : orderMargins.length;
   const orderMarginsCapped = orderMarginsTotal > ORDER_MARGINS_CAP;
 
-  // Devise d'affichage du frais fixe : celle des commandes synchronisées (sinon EUR).
-  const feesCurrency = orderMargins.find(o => o.currency_code)?.currency_code ?? "EUR";
+  // Devise d'affichage : SOURCE PRIMAIRE = devise de la boutique (Shopify shop.currencyCode) → correcte
+  // dès le J1, avant toute commande. Secours : la devise des commandes synchronisées si l'appel shop a
+  // échoué. Dernier recours : EUR. (Corrige le cas « nouvel install USD affiché en EUR ».)
+  const feesCurrency = shopCurrency ?? orderMargins.find(o => o.currency_code)?.currency_code ?? "EUR";
 
   // CPA prescriptif — CPA déclaré (null = jamais renseigné, distinct de 0) + date.
   const currentCpa = planResult.status === "fulfilled" ? (planResult.value.data?.current_cpa ?? null) : null;
@@ -2317,10 +2321,10 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
             <thead>
               <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                 <th style={th}>Produit / Variante</th>
-                <th style={th}>Prix achat €</th>
-                <th style={th}>Port lot €</th>
+                <th style={th}>Prix achat ({feesCurrency})</th>
+                <th style={th}>Port lot ({feesCurrency})</th>
                 <th style={th}>Qté/lot</th>
-                <th style={th}>Emballage €</th>
+                <th style={th}>Emballage ({feesCurrency})</th>
                 <th style={th}>TVA</th>
                 <th style={th}>Logistique</th>
                 <th style={th}>Pays</th>
@@ -2366,6 +2370,12 @@ export default function Index() {
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     ordersThisMonth, ordersPrevMonth, alertingCap, alertingActive,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
+
+  // Affichage monétaire dans la DEVISE DE LA BOUTIQUE (feesCurrency, dérivée des commandes), et non
+  // en euros codés en dur : le calculateur, le simulateur, l'historique et l'audit passent par ce
+  // formateur. (formatEur vit dans engine.js — 0 diff — donc on ne l'appelle plus au rendu, on utilise
+  // formatMoney(x, feesCurrency), déjà currency-aware, comme le monitor.)
+  const money = (n) => formatMoney(n, feesCurrency);
 
   const saveFetcher          = useFetcher();
   const aiFetcher            = useFetcher();
@@ -2949,7 +2959,7 @@ export default function Index() {
                       <option value="">— Sélectionner un produit (auto-remplit le prix de vente) —</option>
                       {products.map(p => (
                         <option key={p.id} value={p.id}>
-                          {p.title}{p.price > 0 ? ` — ${formatEur(p.price)}` : ""}
+                          {p.title}{p.price > 0 ? ` — ${money(p.price)}` : ""}
                         </option>
                       ))}
                     </select>
@@ -2969,10 +2979,10 @@ export default function Index() {
                 <div className="tcc-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Données produit</div>
-                    <FieldGroup label="Prix d'achat fournisseur (€)" tooltip="Prix hors taxes payé au fournisseur, livraison fournisseur non incluse. À retrouver sur votre facture pro-forma ou votre commande AliExpress / Alibaba.">
+                    <FieldGroup label={`Prix d'achat fournisseur (${feesCurrency})`} tooltip="Prix hors taxes payé au fournisseur, livraison fournisseur non incluse. À retrouver sur votre facture pro-forma ou votre commande AliExpress / Alibaba.">
                       <input type="text" inputMode="decimal" value={form.prixAchat} onChange={update("prixAchat")} style={inputStyle} placeholder="ex : 12.00" />
                     </FieldGroup>
-                    <FieldGroup label="Prix de vente (€)" tooltip="Prix public de vente sur votre boutique, frais de livraison client exclus. C'est le montant que vous encaissez.">
+                    <FieldGroup label={`Prix de vente (${feesCurrency})`} tooltip="Prix public de vente sur votre boutique, frais de livraison client exclus. C'est le montant que vous encaissez.">
                       <input type="text" inputMode="decimal" value={form.prixVente} onChange={update("prixVente")} style={inputStyle} placeholder="ex : 34.99" />
                     </FieldGroup>
                     <FieldGroup label="Catégorie produit" tooltip="Utilisée pour estimer vos droits de douane selon la nomenclature TARIC (tarif douanier intégré de l'UE). Choisissez la catégorie la plus proche de votre produit.">
@@ -2986,10 +2996,10 @@ export default function Index() {
                     <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché — renseignez votre coût réel si vous le connaissez.">
                       <select value={form.paysImport} onChange={update("paysImport")} style={inputStyle}>
                         {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                          <option key={pays} value={pays}>{pays} — port ~{cost}€</option>
+                          <option key={pays} value={pays}>{pays} — port ~{cost} {feesCurrency}</option>
                         ))}
                       </select>
-                      <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay}€</div>
+                      <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay} {feesCurrency}</div>
                     </FieldGroup>
                     <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti (régime réel) : la TVA à l'import est déductible — elle n'est PAS un coût. Franchise en base / micro-entreprise : la TVA import est un coût sec définitif.">
                       <select
@@ -3050,10 +3060,10 @@ export default function Index() {
                     <FieldGroup label="Budget ads (% du CA)" direction="left" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
                       <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 20" />
                     </FieldGroup>
-                    <FieldGroup label="Frais de retour (€)" direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
+                    <FieldGroup label={`Frais de retour (${feesCurrency})`} direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                       <input type="text" inputMode="decimal" value={form.fraisRetour} onChange={update("fraisRetour")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
-                    <FieldGroup label="Coût d'emballage (€)" direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                    <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
                       <input type="text" inputMode="decimal" value={form.coutEmballage} onChange={update("coutEmballage")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
                   </div>
@@ -3088,7 +3098,7 @@ export default function Index() {
             <div className="tcc-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
               <div>
                 <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Paramètres produit</div>
-                <FieldGroup label="Prix d'achat fournisseur (€)">
+                <FieldGroup label={`Prix d'achat fournisseur (${feesCurrency})`}>
                   <input type="text" inputMode="decimal" value={simForm.prixAchat} onChange={updateSim("prixAchat")} style={inputStyle} placeholder="ex : 20.00" />
                 </FieldGroup>
                 <FieldGroup label="Catégorie produit">
@@ -3101,7 +3111,7 @@ export default function Index() {
                 <FieldGroup label="Pays d'import">
                   <select value={simForm.paysImport} onChange={updateSim("paysImport")} style={inputStyle}>
                     {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                      <option key={pays} value={pays}>{pays} — port ~{cost}€</option>
+                      <option key={pays} value={pays}>{pays} — port ~{cost} {feesCurrency}</option>
                     ))}
                   </select>
                 </FieldGroup>
@@ -3144,10 +3154,10 @@ export default function Index() {
                 <FieldGroup label="Budget ads (%)">
                   <input type="text" inputMode="decimal" value={simForm.ads} onChange={updateSim("ads")} style={inputStyle} placeholder="15" />
                 </FieldGroup>
-                <FieldGroup label="Frais de retour (€)" direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
+                <FieldGroup label={`Frais de retour (${feesCurrency})`} direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                   <input type="text" inputMode="decimal" value={simForm.fraisRetour ?? "0"} onChange={updateSim("fraisRetour")} style={inputStyle} placeholder="0" />
                 </FieldGroup>
-                <FieldGroup label="Coût d'emballage (€)" direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
                   <input type="text" inputMode="decimal" value={simForm.coutEmballage ?? "0"} onChange={updateSim("coutEmballage")} style={inputStyle} placeholder="0" />
                 </FieldGroup>
               </div>
@@ -3161,28 +3171,28 @@ export default function Index() {
                 <div className="tcc-sim-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F1F8F5", border: "2px solid #008060", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente minimum</div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{formatEur(simResult.prixVenteMin)}</div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#008060", marginBottom: "6px" }}>{money(simResult.prixVenteMin)}</div>
                     <div style={{ fontSize: "12px", color: "#6D7175" }}>pour {formatPct(parseFloat(simResult.targetMargin))} % de marge nette</div>
-                    <div style={{ fontSize: "12px", color: "#008060", fontWeight: "600", marginTop: "4px" }}>({formatEur(simResult.prixVenteMin * parseFloat(simResult.targetMargin) / 100)} par vente)</div>
+                    <div style={{ fontSize: "12px", color: "#008060", fontWeight: "600", marginTop: "4px" }}>({money(simResult.prixVenteMin * parseFloat(simResult.targetMargin) / 100)} par vente)</div>
                   </div>
                   <div style={{ padding: "24px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px" }}>Prix de vente recommandé</div>
-                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#202223", marginBottom: "6px" }}>{formatEur(simResult.prixVenteRec)}</div>
+                    <div style={{ fontSize: "32px", fontWeight: "800", color: "#202223", marginBottom: "6px" }}>{money(simResult.prixVenteRec)}</div>
                     <div style={{ fontSize: "12px", color: "#6D7175" }}>+10 % de sécurité ({formatPct(parseFloat(simResult.targetMargin) + 4.5)} % marge estimée)</div>
-                    <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({formatEur(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100)} par vente)</div>
+                    <div style={{ fontSize: "12px", color: "#202223", fontWeight: "600", marginTop: "4px" }}>({money(simResult.prixVenteRec * (parseFloat(simResult.targetMargin) + 4.5) / 100)} par vente)</div>
                   </div>
                 </div>
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
-                  Coût rendu (achat + douane + TVA import + port) = <strong>{formatEur(simResult.coutRendu)}</strong><br />
+                  Coût rendu (achat + douane + TVA import + port) = <strong>{money(simResult.coutRendu)}</strong><br />
                   {simResult.fraisFixes > 0 && (() => {
                     const parts = [];
                     if ((simResult.fraisRetour ?? 0) + (simResult.coutEmballage ?? 0) > 0) parts.push("retour + emballage");
                     if ((simResult.processorFixedFee ?? 0) > 0) parts.push(`frais fixe ${simResult.paymentProcessor ?? "processeur"}`);
-                    return <>Frais fixes ({parts.join(" + ") || "divers"}) = <strong>{formatEur(simResult.fraisFixes)}</strong><br /></>;
+                    return <>Frais fixes ({parts.join(" + ") || "divers"}) = <strong>{money(simResult.fraisFixes)}</strong><br /></>;
                   })()}
                   Taux de frais variables (Shopify + {simResult.paymentProcessor ?? "Paiement"} + retours + ads) = <strong>{formatPct(simResult.totalFeeRate * 100)} %</strong><br />
-                  Formule : ({formatNum(simResult.coutRendu)}{simResult.fraisFixes > 0 ? ` + ${formatNum(simResult.fraisFixes)}` : ""}) ÷ (1 − {formatPct(simResult.totalFeeRate * 100)} % − {formatPct(parseFloat(simResult.targetMargin))} %) = {formatEur(simResult.prixVenteMin)}
+                  Formule : ({formatNum(simResult.coutRendu)}{simResult.fraisFixes > 0 ? ` + ${formatNum(simResult.fraisFixes)}` : ""}) ÷ (1 − {formatPct(simResult.totalFeeRate * 100)} % − {formatPct(parseFloat(simResult.targetMargin))} %) = {money(simResult.prixVenteMin)}
                 </div>
               </div>
             )}
@@ -3284,10 +3294,10 @@ export default function Index() {
                         </div>
                         <div className="tcc-hist-col-cat" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
                         <div className="tcc-hist-col-pays" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.country}</div>
-                        <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223" }}>{formatEur(calc.selling_price)}</div>
+                        <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223" }}>{money(calc.selling_price)}</div>
                         <div style={{ padding: "11px 12px" }}>
                           <span style={{ fontSize: "13px", fontWeight: "700", color: mc }}>{formatPct(calc.net_margin_percent)} %</span>
-                          <span style={{ fontSize: "11px", color: "#6D7175", marginLeft: "4px" }}>{formatEur(calc.net_margin_euros)}</span>
+                          <span style={{ fontSize: "11px", color: "#6D7175", marginLeft: "4px" }}>{money(calc.net_margin_euros)}</span>
                         </div>
                       </div>
                     );
@@ -3454,7 +3464,7 @@ export default function Index() {
                         style={{ ...inputStyle, fontSize: "13px" }} placeholder="0.05" />
                     </div>
                     <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Port fournisseur estimé (€)</div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Port fournisseur estimé ({feesCurrency})</div>
                       <input type="text" value={auditParams.shipping_cost} onChange={e => setAuditParams(p => ({ ...p, shipping_cost: e.target.value }))}
                         style={{ ...inputStyle, fontSize: "13px" }} placeholder="8" />
                     </div>
@@ -3571,8 +3581,8 @@ export default function Index() {
                                 {p.mappedCategory}{p.isDefaultCategory ? " — estimation" : ""}
                               </div>
                             </div>
-                            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.price)}</div>
-                            <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{formatEur(p.cost)}</div>
+                            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{money(p.price)}</div>
+                            <div className="tcc-audit-col-cost" style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{money(p.cost)}</div>
                             <div style={{ padding: "10px 12px" }}><span style={{ fontSize: "13px", fontWeight: "700", color: statusColor }}>{formatPct(p.netPct)} %</span></div>
                             <div style={{ padding: "10px 12px" }}><span style={{ padding: "3px 10px", borderRadius: "10px", background: statusBg, color: statusColor, fontSize: "11px", fontWeight: "700" }}>{statusLabel}</span></div>
                           </div>
@@ -3667,7 +3677,7 @@ export default function Index() {
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
                   Votre marge apparente : <strong style={{ color: "#202223" }}>{formatPct(results.margeApparente)} %</strong>
                   {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{formatPct(results.margeNettePercent)} %</strong>
-                  <span style={{ display: "block" }}>(<strong style={{ color: "#D72C0D" }}>−{formatEur(Math.abs(results.margeNette))} par vente</strong>)</span>
+                  <span style={{ display: "block" }}>(<strong style={{ color: "#D72C0D" }}>−{money(Math.abs(results.margeNette))} par vente</strong>)</span>
                 </div>
               </>
             ) : (
@@ -3676,7 +3686,7 @@ export default function Index() {
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
                   Votre marge apparente : <strong style={{ color: "#202223" }}>{formatPct(results.margeApparente)} %</strong>
                   {" → "}Votre marge nette réelle : <strong style={{ color: marginColor }}>{formatPct(results.margeNettePercent)} %</strong>
-                  <span style={{ display: "block" }}>(<strong style={{ color: marginColor }}>{formatEur(results.margeNette)} par vente</strong>)</span>
+                  <span style={{ display: "block" }}>(<strong style={{ color: marginColor }}>{money(results.margeNette)} par vente</strong>)</span>
                 </div>
               </>
             )}
@@ -3701,15 +3711,15 @@ export default function Index() {
 
           <div className="tcc-margin-cards" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "32px" }}>
             <StatCard label="Marge apparente"    value={`${formatPct(results.margeApparente)} %`}    sub="Marge apparente calculée"        color="#6D7175"   bg="#F9FAFB" />
-            <StatCard label="Marge brute"         value={`${formatPct(results.margeBrutePercent)} %`} sub={`${formatEur(results.margeBrute)} / vente`} color="#202223"   bg="#F9FAFB" />
-            <StatCard label="Marge nette réelle"  value={`${formatPct(results.margeNettePercent)} %`} sub={`${formatEur(results.margeNette)} / vente`} color={marginColor} bg={marginBg} />
+            <StatCard label="Marge brute"         value={`${formatPct(results.margeBrutePercent)} %`} sub={`${money(results.margeBrute)} / vente`} color="#202223"   bg="#F9FAFB" />
+            <StatCard label="Marge nette réelle"  value={`${formatPct(results.margeNettePercent)} %`} sub={`${money(results.margeNette)} / vente`} color={marginColor} bg={marginBg} />
           </div>
 
           <div className="tcc-cost-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
             <div>
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Structure du coût d'achat</div>
               {[
-                { label: "Prix fournisseur",                      value: formatEur(results.prixAchat),  color: "#202223" },
+                { label: "Prix fournisseur",                      value: money(results.prixAchat),  color: "#202223" },
                 { label: (() => {
                     const sm = form.shippingModel ?? "stock";
                     const pa = results.prixAchat ?? 0;
@@ -3725,9 +3735,9 @@ export default function Index() {
                       return `+ Droits de douane (forfait 3€/article — réforme UE)`;
                     }
                     return `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`;
-                  })(), value: `+${formatEur(results.douane)}`, color: "#6D7175" },
-                { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${formatEur(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
-                { label: `+ Frais de port (${form.paysImport})`,  value: `+${formatEur(results.shipping)}`,  color: "#6D7175" },
+                  })(), value: `+${money(results.douane)}`, color: "#6D7175" },
+                { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${money(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
+                { label: `+ Frais de port (${form.paysImport})`,  value: `+${money(results.shipping)}`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color }}>{label}</span>
@@ -3736,22 +3746,22 @@ export default function Index() {
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
                 <span style={{ fontSize: "14px", fontWeight: "700", color: "#202223" }}>= Coût rendu total</span>
-                <span style={{ fontSize: "15px", fontWeight: "700", color: "#202223" }}>{formatEur(results.coutRendu)}</span>
+                <span style={{ fontSize: "15px", fontWeight: "700", color: "#202223" }}>{money(results.coutRendu)}</span>
               </div>
             </div>
             <div>
               <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "12px" }}>Déductions sur le prix de vente</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                 <span style={{ fontSize: "13px", color: "#008060" }}>Prix de vente</span>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#008060" }}>{formatEur(results.prixVente)}</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#008060" }}>{money(results.prixVente)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                 <span style={{ fontSize: "13px", color: "#D72C0D" }}>— Coût rendu</span>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{formatEur(results.coutRendu)}</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{money(results.coutRendu)}</span>
               </div>
               {[
                 { label: `— Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
-                { label: `— ${form.paymentProcessor} (${form.stripeFee}% + ${form.processorFixedFee ?? "0.25"}€)`, value: results.stripeCost },
+                { label: `— ${form.paymentProcessor} (${form.stripeFee}% + ${form.processorFixedFee ?? "0.25"} ${feesCurrency})`, value: results.stripeCost },
                 { label: `— Provision retours (${form.retours}%)`, value: results.retoursCost },
                 { label: `— Budget ads (${form.ads}%)`,           value: results.adsCost },
                 ...(results.fraisRetour > 0 ? [{ label: "— Frais de retour", value: results.fraisRetour }] : []),
@@ -3759,12 +3769,12 @@ export default function Index() {
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color: "#D72C0D" }}>{label}</span>
-                  <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{formatEur(value)}</span>
+                  <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{money(value)}</span>
                 </div>
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
                 <span style={{ fontSize: "14px", fontWeight: "700", color: marginColor }}>= Marge nette réelle</span>
-                <span style={{ fontSize: "15px", fontWeight: "700", color: marginColor }}>{formatEur(results.margeNette)}</span>
+                <span style={{ fontSize: "15px", fontWeight: "700", color: marginColor }}>{money(results.margeNette)}</span>
               </div>
             </div>
           </div>
@@ -3774,7 +3784,7 @@ export default function Index() {
 
           {/* Expert: Break-Even ROAS */}
           {isExpert ? (
-            <BreakEvenROAS results={results} onGoToSimulation={() => setActiveTab("simulate")} />
+            <BreakEvenROAS results={results} onGoToSimulation={() => setActiveTab("simulate")} feesCurrency={feesCurrency} />
           ) : (
             <div style={{ marginTop: "20px", padding: "14px 18px", borderRadius: "10px", background: "linear-gradient(135deg,#faf8ff,#f0ecff)", border: "1px solid #7C3AED33", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
