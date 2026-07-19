@@ -16,7 +16,7 @@
 // redéfini ici : le mail conditionnel et le gating partagent ainsi UNE seule source de vérité et ne
 // peuvent structurellement pas diverger (une modif future de la grâce s'applique aux deux d'un coup).
 import { FROZEN_GRACE_DAYS } from "./plan.js";
-import { emailShell } from "./emailLayout.js";
+import { emailShell, EMAIL_TEXT, EMAIL_MUTED } from "./emailLayout.js";
 
 export const DUNNING_MAX = 5;            // plafond de relances par épisode frozen
 export const DUNNING_INTERVAL_DAYS = 3;  // espacement minimal entre deux relances
@@ -136,17 +136,17 @@ export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = 
   ].join("\n");
 
   const bodyHtml = withinGrace
-    ? `<p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, <strong>votre accès à True Cost Calculator continue</strong> — vos fonctionnalités restent disponibles pour le moment.</p>
-    <p>Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. <strong>Vos données sont conservées dans tous les cas.</strong></p>`
-    : `<p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé, et <strong>l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu</strong>. Il est rétabli dès que votre paiement est régularisé. <strong>Vos données sont conservées.</strong></p>
-    <p>Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.</p>`;
+    ? `<p style="${EMAIL_TEXT}">Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, <strong>votre accès à True Cost Calculator continue</strong> — vos fonctionnalités restent disponibles pour le moment.</p>
+    <p style="${EMAIL_TEXT}">Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. <strong>Vos données sont conservées dans tous les cas.</strong></p>`
+    : `<p style="${EMAIL_TEXT}">Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé, et <strong>l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu</strong>. Il est rétabli dès que votre paiement est régularisé. <strong>Vos données sont conservées.</strong></p>
+    <p style="${EMAIL_TEXT}">Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.</p>`;
 
   const html = emailShell(`${bodyHtml}
-    <p style="margin:20px 0">
+    <p style="margin:20px 0;${EMAIL_TEXT}">
       <a href="${lien}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Régulariser mon paiement</a>
     </p>
-    <p style="font-size:12px;color:#6D7175">Ou copiez ce lien : <a href="${lien}">${lien}</a></p>
-    <p style="font-size:12px;color:#6D7175">Déjà régularisé ? Vous pouvez ignorer ce message.</p>`);
+    <p style="font-size:12px;${EMAIL_MUTED}">Ou copiez ce lien : <a href="${lien}">${lien}</a></p>
+    <p style="font-size:12px;${EMAIL_MUTED}">Déjà régularisé ? Vous pouvez ignorer ce message.</p>`);
 
   return { subject, html, text };
 }
@@ -159,8 +159,8 @@ export function renderDunningResolvedEmail({ shop, plan }) {
     `Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.`,
     `Merci !`,
   ].join("\n");
-  const html = emailShell(`<p>Votre paiement est passé et <strong>${planLabel(plan)}</strong> est réactivé.</p>
-    <p>Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.</p>
-    <p>Merci !</p>`);
+  const html = emailShell(`<p style="${EMAIL_TEXT}">Votre paiement est passé et <strong>${planLabel(plan)}</strong> est réactivé.</p>
+    <p style="${EMAIL_TEXT}">Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.</p>
+    <p style="${EMAIL_TEXT}">Merci !</p>`);
   return { subject, html, text };
 }
