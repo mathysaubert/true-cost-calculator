@@ -279,7 +279,7 @@ function AlertBanner({ violations, threshold }) {
       <span style={{ fontSize: "18px", flexShrink: 0 }}>⚠️</span>
       <div>
         <div style={{ fontSize: "14px", fontWeight: "600", color: "#D72C0D", marginBottom: "4px" }}>
-          {violations.length} produit{violations.length > 1 ? "s" : ""} en dessous du seuil de {threshold}%
+          {violations.length} produit{violations.length > 1 ? "s" : ""} sous votre seuil d'alerte de marge ({threshold} %)
         </div>
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
           {violations.slice(0, 3).map((v, i) => (
@@ -514,7 +514,7 @@ function BreakEvenROAS({ results, onGoToSimulation, feesCurrency = "EUR" }) {
         <div style={{ marginBottom: "14px" }}>
           <div style={{ fontSize: "12px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: "3px" }}>Viabilité par plateforme</div>
           <div style={{ fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
-            Votre ROAS break-even comparé aux performances moyennes du marché.
+            Votre ROAS break-even comparé aux ordres de grandeur courants de chaque plateforme (indicatifs).
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -527,7 +527,7 @@ function BreakEvenROAS({ results, onGoToSimulation, feesCurrency = "EUR" }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223", marginBottom: "1px" }}>{name}</div>
-                  <div style={{ fontSize: "11px", color: "#6D7175" }}>{sub} · ROAS moyen marché : <strong>{min}x – {max}x</strong></div>
+                  <div style={{ fontSize: "11px", color: "#6D7175" }}>{sub} · ROAS courant : <strong>{min}x – {max}x</strong> (indicatif)</div>
                 </div>
                 <div style={{ flexShrink: 0, textAlign: "right" }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "20px", background: s.color + "18", border: `1px solid ${s.color}33`, marginBottom: "3px" }}>
@@ -2202,9 +2202,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         </div>
       </div>
 
-      {/* Seuil d'alerte de rentabilité (% global boutique, lu par l'alerte quotidienne) */}
+      {/* Seuil de rentabilité (% global boutique) — pilote l'email quotidien B7 ET l'audit catalogue */}
       <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil d'alerte de rentabilité</div>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil de rentabilité</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
           <label style={{ fontSize: "11px", color: "#6D7175" }}>
             <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% du CA)</div>
@@ -2221,7 +2221,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {thresholdFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{thresholdFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          L'alerte quotidienne se déclenche quand la marge nette cumulée d'un produit passe sous ce seuil. <strong>0 %</strong> = alerte uniquement à perte réelle (marge négative).
+          L'email quotidien de rentabilité se déclenche quand la marge nette cumulée d'un produit passe sous ce seuil ; l'audit catalogue l'utilise aussi pour classer vos produits. <strong>0 %</strong> = alerte uniquement à perte réelle (marge négative).
         </div>
       </div>
 
@@ -3054,7 +3054,7 @@ export default function Index() {
                         ))}
                       </select>
                     </FieldGroup>
-                    <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. E-commerce mode : 15–30%. Électronique : 5–15%. Autres : 5–10%. Source : estimations sectorielles Fevad.">
+                    <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. Ordres de grandeur indicatifs : mode 15–30%, électronique 5–15%, autres 5–10% — à ajuster selon votre historique.">
                       <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 8" />
                     </FieldGroup>
                     <FieldGroup label="Budget ads (% du CA)" direction="left" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
@@ -3313,7 +3313,7 @@ export default function Index() {
           <div>
             {/* Encadré explicatif */}
             <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-              Les alertes de marge vous notifient automatiquement quand un produit calculé tombe en dessous de votre seuil de rentabilité cible. Le seuil par défaut est 25% — c'est le minimum recommandé en e-commerce selon le Fevad pour maintenir une activité saine après charges fixes.
+              Les alertes de marge vous signalent, en rouge en haut de l'app, quand un produit que vous venez de calculer tombe sous votre seuil d'alerte de marge. Le seuil par défaut est 25% — ajustez-le à votre activité.
             </div>
 
             <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
@@ -3321,7 +3321,7 @@ export default function Index() {
             </div>
 
             <div style={{ maxWidth: "420px", marginBottom: "28px" }}>
-              <FieldGroup label="Seuil de rentabilité cible (%)">
+              <FieldGroup label="Seuil d'alerte de marge (%)">
                 <div className="tcc-alert-input" style={{ display: "flex", gap: "10px" }}>
                   <input
                     type="text"
@@ -3341,7 +3341,7 @@ export default function Index() {
                 </div>
               </FieldGroup>
               <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px", lineHeight: "1.6" }}>
-                Références marché : E-commerce généraliste 20–25% · Mode 15–20% · Électronique 8–12% · Cosmétique 30–40%
+                Repères indicatifs, à ajuster selon votre secteur : E-commerce généraliste 20–25% · Mode 15–20% · Électronique 8–12% · Cosmétique 30–40%
               </div>
               {alertFetcher.data?.success && (
                 <div style={{ fontSize: "13px", color: "#008060", marginTop: "8px" }}>✓ Seuil mis à jour</div>
@@ -3354,7 +3354,7 @@ export default function Index() {
             {violations.length > 0 ? (
               <div>
                 <div style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D", marginBottom: "12px" }}>
-                  ⚠️ {violations.length} produit{violations.length > 1 ? "s" : ""} en dessous du seuil ({initialThreshold}%)
+                  ⚠️ {violations.length} produit{violations.length > 1 ? "s" : ""} sous votre seuil d'alerte de marge ({initialThreshold} %)
                 </div>
                 <div style={{ border: "1px solid #D72C0D22", borderRadius: "8px", overflow: "hidden" }}>
                   <div className="tcc-alert-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: "#FFF4F4", borderBottom: "1px solid #F1D0D0" }}>
@@ -3841,7 +3841,7 @@ export default function Index() {
             <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
           </s-unordered-list>
           <s-paragraph>
-            <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles basées sur les tendances marché actuelles pour les taux de retour.
+            <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles pour les taux de retour.
           </s-paragraph>
         </div>
       </s-section>
