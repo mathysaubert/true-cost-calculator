@@ -24,6 +24,19 @@ module.exports = {
   // Base config
   extends: ["eslint:recommended"],
 
+  // ── Gate de build (vercel-build) : eslint échoue le build sur les ERREURS, pas sur les warnings. ──
+  // Politique : bloquant = vraies erreurs (no-undef, imports/variables inutilisés, syntaxe) ; toléré =
+  // stylistique (prop-types, apostrophes) rétrogradé en WARNING. Objectif : attraper au build un import
+  // manquant / une référence à une variable supprimée (qui traversent la suite de tests, laquelle ne
+  // couvre que les fonctions pures, pas le JSX) — SANS échouer sur ~279 erreurs stylistiques préexistantes.
+  rules: {
+    // Un IMPORT ou une variable locale inutilisés RESTENT bloquants (= symbole supprimé/oublié, le bug
+    // qu'on veut attraper). Les paramètres de fonction inutilisés (args) sont tolérés (bénins, courants).
+    "no-unused-vars": ["error", { args: "none", ignoreRestSiblings: true }],
+    // catch {} vide = pattern volontaire (localStorage best-effort) ; tout AUTRE bloc vide reste bloquant.
+    "no-empty": ["error", { allowEmptyCatch: true }],
+  },
+
   overrides: [
     // React
     {
@@ -50,6 +63,10 @@ module.exports = {
       },
       rules: {
         "react/no-unknown-property": ["error", { ignore: ["variant"] }],
+        // Stylistiques → WARNINGS non bloquants : props non validées et apostrophes FR non échappées
+        // ne sont pas des bugs. Le gate ne rougit que sur les vraies erreurs (no-undef, etc.).
+        "react/prop-types": "warn",
+        "react/no-unescaped-entities": "warn",
       },
     },
 
