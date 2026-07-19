@@ -1711,15 +1711,16 @@ function LineGroupCard({ group }) {
         </>
       )}
 
-      {/* Ce qui VARIE par commande — tableau dense (n°, date, qté, marge de ligne). Chaque marge de
-          ligne = marge unitaire ci-dessus × qté effective − fixe processeur proraté (identité D3/D4),
-          lue depuis les valeurs stockées. Capé à GROUP_ORDER_CAP pour borner le DOM à l'échelle. */}
+      {/* Ce qui VARIE par commande — tableau dense (n°, date, qté, CA net, marge de ligne). Chaque marge
+          de ligne = marge unitaire ci-dessus × qté effective − fixe processeur proraté (identité D3/D4) ;
+          le CA net (line_net_revenue) descend ici depuis la table « Par produit » — l'info n'est jamais
+          perdue. Valeurs STOCKÉES. Capé à GROUP_ORDER_CAP pour borner le DOM à l'échelle. */}
       <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
         <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>{multi ? `Commandes concernées (${group.count})` : "Commande"}</div>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "320px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "380px" }}>
             <thead><tr style={{ borderBottom: "1px solid #E4E5E7" }}>
-              <th style={oth}>Commande</th><th style={oth}>Date</th><th style={oth}>Qté</th><th style={{ ...oth, textAlign: "right" }}>Marge de ligne</th>
+              <th style={oth}>Commande</th><th style={oth}>Date</th><th style={oth}>Qté</th><th style={{ ...oth, textAlign: "right" }}>CA net</th><th style={{ ...oth, textAlign: "right" }}>Marge de ligne</th>
             </tr></thead>
             <tbody>
               {shown.map((o) => (
@@ -1727,6 +1728,7 @@ function LineGroupCard({ group }) {
                   <td style={oc}>{o.order_id ? o.order_id.split("/").pop() : "—"}</td>
                   <td style={{ ...oc, color: "#6D7175" }}>{o.order_created_at ? String(o.order_created_at).slice(0, 10) : "—"}</td>
                   <td style={oc}>{o.effective_qty}{o.refunded_qty > 0 ? <span style={{ color: "#B98900" }}> ({o.quantity}−{o.refunded_qty} remb.)</span> : ""}</td>
+                  <td style={{ ...oc, textAlign: "right" }}>{m(o.line_net_revenue)}</td>
                   <td style={{ ...oc, textAlign: "right", fontWeight: "600", color: o.line_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(o.line_net_margin)}</td>
                 </tr>
               ))}
@@ -1760,12 +1762,14 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
   // on laisse donc les intitulés se replier dans leur colonne (les courts ne se replient pas).
   const th = { padding: "7px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "normal" };
   const td = { padding: "7px 8px", fontSize: "12px", color: "#202223" };
-  // Répartition EXPLICITE des largeurs (table-layout fixe) : Produit prend la part du lion (noms longs),
-  // les colonnes numériques sont resserrées. Somme = 100 % → la table épouse son conteneur, jamais de
-  // débordement ≥ minWidth. Deux jeux : 8 colonnes (Expert, avec « Marge dispo/unité ») et 7 (sans).
+  // Répartition EXPLICITE des largeurs (table-layout fixe). Colonnes RÉDUITES pour tenir dans la colonne
+  // principale Polaris (~640px) sans écraser les pills : « Cmd » + « Qté » fusionnés en « Ventes », et
+  // « CA net » sorti du tableau (déplacé dans le dépli, bloc CA net par commande). Somme = 100 % → la
+  // table épouse son conteneur. « dispo » à 18 % ≈ 115px à 640px → le pill « Aucun budget pub » (~110px)
+  // tient sans chevaucher « État ». Deux jeux : 6 colonnes (Expert, avec « Marge dispo/unité ») et 5 (sans).
   const cw = isExpert
-    ? { prod: "26%", cmd: "7%", qte: "7%", ca: "12%", marge: "13%", pct: "10%", dispo: "14%", etat: "11%" }
-    : { prod: "32%", cmd: "8%", qte: "8%", ca: "14%", marge: "15%", pct: "11%", etat: "12%" };
+    ? { prod: "30%", ventes: "12%", marge: "16%", pct: "12%", dispo: "18%", etat: "12%" }
+    : { prod: "36%", ventes: "14%", marge: "20%", pct: "14%", etat: "16%" };
 
   return (
     <div style={{ borderRadius: "8px", border: "1px solid #E4E5E7", marginBottom: "16px", overflow: "hidden" }}>
@@ -1907,7 +1911,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px", tableLayout: "fixed" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.cmd }}>Cmd</th><th style={{ ...th, width: cw.qte }}>Qté</th><th style={{ ...th, width: cw.ca }}>CA net</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }}>Marge dispo/unité</th>}<th style={{ ...th, width: cw.etat }}>État</th>
+                    <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.ventes }}>Ventes</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }}>Marge dispo/unité</th>}<th style={{ ...th, width: cw.etat }}>État</th>
                   </tr></thead>
                   <tbody>
                     {products.map(p => {
@@ -1921,9 +1925,8 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                           <span style={{ display: "inline-block", width: "12px", fontSize: "10px", color: "#6D7175", transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
                           {title(p.product_id)}
                         </td>
-                        <td style={td}>{p.orders}</td>
-                        <td style={td}>{p.effective_qty}</td>
-                        <td style={td}>{formatMoney(p.net_revenue, p.currency)}</td>
+                        {/* Ventes = Cmd + Qté fusionnées (« 3 cmd · 5 u »). CA net déplacé dans le dépli. */}
+                        <td style={td} title="Commandes · unités vendues (effectives)">{p.orders} cmd · {p.effective_qty} u</td>
                         <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatMoney(p.net_margin, p.currency)}</td>
                         <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
                         {/* Marge dispo/unité (B5) — colonne Expert uniquement (C3). Switch PUR sur
@@ -1957,7 +1960,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       </tr>
                       {expanded && (
                         <tr style={{ background: "#FFFFFF" }}>
-                          <td colSpan={isExpert ? 8 : 7} style={{ padding: "10px 14px" }}>
+                          <td colSpan={isExpert ? 6 : 5} style={{ padding: "10px 14px" }}>
                             <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
                               Détail par décomposition — les commandes économiquement identiques sont regroupées (snapshot figé, lecture pure, valeurs stockées).
                             </div>
