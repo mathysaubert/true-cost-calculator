@@ -299,6 +299,37 @@ console.log("\n── [GROUP] exhaustivité du regroupement ──");
   ok(g[0].mostRecent >= g[1].mostRecent, "groupes triés par commande la plus récente d'abord");
 }
 
+// ── [CENTIME] Σ colonne = total affiché — arrondi PAR LIGNE (fin de l'écart 2 centimes) ──
+// Sans arrondi par ligne, un produit à lignes sous-centime affiche une marge (arrondi du brut) qui
+// diffère de la somme des lignes du dépli (chacune arrondie) → la colonne « ne tombe pas juste ».
+// L'invariant : ligne-au-centime → produit = Σ lignes → total = Σ produits, aux 3 niveaux, marge ET CA.
+console.log("\n── [CENTIME] somme des produits = total, à 3 niveaux ──");
+{
+  const c2 = (v) => Math.round(v * 100) / 100;   // arrondi centime (comme l'agrégat)
+  const cents = (v) => Math.round(v * 100);      // centimes entiers → comparaison exacte
+  const a = aggregateOrderMargins([
+    // Produit PΣ : 3 lignes à 10,006 (sous-centime). Chacune arrondie = 10,01 → 30,03 (PAS 30,02 = round(30,018)).
+    frow({ order: "gid://shopify/Order/9001", product: "PΣ", variant: "V", q: 1, eq: 1, nur: 10.006, unm: 10.006, lnr: 10.006, lnm: 10.006 }),
+    frow({ order: "gid://shopify/Order/9002", product: "PΣ", variant: "V", q: 1, eq: 1, nur: 10.006, unm: 10.006, lnr: 10.006, lnm: 10.006 }),
+    frow({ order: "gid://shopify/Order/9003", product: "PΣ", variant: "V", q: 1, eq: 1, nur: 10.006, unm: 10.006, lnr: 10.006, lnm: 10.006 }),
+    // Produit PΩ : 2 lignes à 5,006 → 5,01 chacune → 10,02. (rend le niveau 2 non trivial : 2 produits)
+    frow({ order: "gid://shopify/Order/9004", product: "PΩ", variant: "W", q: 1, eq: 1, nur: 5.006, unm: 5.006, lnr: 5.006, lnm: 5.006 }),
+    frow({ order: "gid://shopify/Order/9005", product: "PΩ", variant: "W", q: 1, eq: 1, nur: 5.006, unm: 5.006, lnr: 5.006, lnm: 5.006 }),
+  ]);
+  const p = a.byProduct.find(x => x.product_id === "PΣ");
+  // Niveau 1 : Σ des lignes du dépli (affichées au centime) = marge produit.
+  const depliMargin = p.lineGroups.reduce((s, g) => s + g.orders.reduce((ss, o) => ss + c2(o.line_net_margin), 0), 0);
+  ok(cents(depliMargin) === cents(p.net_margin), `niveau 1 : Σ lignes dépli = marge produit PΣ (${p.net_margin})`);
+  ok(cents(p.net_margin) === 3003, `PΣ = 3 × 10,006 arrondis à la ligne = 30,03, pas 30,02 (${p.net_margin})`);
+  // Niveau 2 : Σ produits = total (marge nette), sur 2 produits.
+  const sumProdMargin = a.byProduct.reduce((s, x) => s + x.net_margin, 0);
+  ok(cents(sumProdMargin) === cents(a.totals.net_margin), `niveau 2 : Σ produits = total marge (${a.totals.net_margin})`);
+  ok(cents(a.totals.net_margin) === 4005, `total = 30,03 + 10,02 = 40,05 (${a.totals.net_margin})`);
+  // Niveau 3 : idem pour le CA net.
+  const sumProdRev = a.byProduct.reduce((s, x) => s + x.net_revenue, 0);
+  ok(cents(sumProdRev) === cents(a.totals.net_revenue), `niveau 3 : Σ produits = total CA net (${a.totals.net_revenue})`);
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 7 (historique monitor) : ✓ Tous les tests passent"

@@ -6,6 +6,13 @@
 // jamais de prixVente−coutRendu inline.)
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; };
+// Arrondi au centime appliqué à CHAQUE ligne AVANT sommation (agrégats d'affichage seulement). Garantit
+// que la somme d'une colonne arrondie égale EXACTEMENT le total affiché : produit = Σ ligne-au-centime
+// (= ce que montre le dépli), total = Σ produits — fin de l'écart « sum of rounded ≠ rounded of sum ».
+// NE TOUCHE PAS le stockage : line_net_margin / line_net_revenue en base restent à pleine précision ;
+// on n'arrondit que les nombres lus pour l'UI (par produit, totaux, byDay). Ce n'est pas re-dériver une
+// marge (BUG 1) — on arrondit des marges de ligne DÉJÀ calculées par le moteur.
+const round2 = (v) => Math.round(num(v) * 100) / 100;
 
 // Formate un montant selon la VRAIE devise (currency_code de l'agrégat), pas l'euro
 // codé en dur. Devise invalide/mixte → format neutre + code éventuel (jamais de
@@ -191,8 +198,8 @@ export function aggregateOrderMargins(rows = []) {
     if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [], costPosts: Object.fromEntries(POST_KEYS.map((k) => [k, 0])), breakdownLines: 0 }; prodMap.set(key, p); }
     p.orderIds.add(r.order_id);
     p.effective_qty += num(r.effective_qty);
-    p.net_revenue   += num(r.line_net_revenue);
-    p.net_margin    += num(r.line_net_margin);
+    p.net_revenue   += round2(r.line_net_revenue); // arrondi PAR LIGNE → la colonne produit s'additionne juste
+    p.net_margin    += round2(r.line_net_margin);
     if (r.currency_code) p.currencySet.add(r.currency_code);
     p.lines.push(lineBreakdown(r));
     const bd = r.margin_breakdown_json;
@@ -223,8 +230,8 @@ export function aggregateOrderMargins(rows = []) {
     if (!day) continue;
     let d = dayMap.get(day);
     if (!d) { d = { day, net_revenue: 0, net_margin: 0 }; dayMap.set(day, d); }
-    d.net_revenue += num(r.line_net_revenue);
-    d.net_margin  += num(r.line_net_margin);
+    d.net_revenue += round2(r.line_net_revenue); // même arrondi par ligne → courbe cohérente avec produits/total
+    d.net_margin  += round2(r.line_net_margin);
   }
   const byDay = [...dayMap.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 
@@ -250,8 +257,9 @@ export function aggregateOrderMargins(rows = []) {
 
   // Totaux GLOBAUX (à n'afficher que mono-devise — la couche UI gate sur multiCurrency).
   const totals = {
-    net_revenue: valid.reduce((s, r) => s + num(r.line_net_revenue), 0),
-    net_margin:  valid.reduce((s, r) => s + num(r.line_net_margin), 0),
+    // Σ des MÊMES lignes-au-centime que les agrégats produit → total = Σ produits, exactement.
+    net_revenue: valid.reduce((s, r) => s + round2(r.line_net_revenue), 0),
+    net_margin:  valid.reduce((s, r) => s + round2(r.line_net_margin), 0),
     orders:      new Set(valid.map((r) => r.order_id)).size,
   };
 
