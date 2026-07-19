@@ -2883,7 +2883,7 @@ export default function Index() {
                   {/* Free */}
                   <div style={{ padding: "20px", borderRadius: "10px", background: "#F9FAFB", border: "2px solid #E4E5E7", textAlign: "left" }}>
                     <div style={{ fontSize: "11px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>Gratuit</div>
-                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>0€/mois</div>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>0$/mois</div>
                     {[
                       "Votre marge nette réelle sur chaque commande, tous coûts cachés déduits",
                       "Soyez alerté par e-mail dès qu'un produit passe à perte — jusqu'à 200 commandes/mois",
