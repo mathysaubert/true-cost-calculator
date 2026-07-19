@@ -1842,9 +1842,9 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       « Acquisition impossible » (même vocabulaire que le badge produit) + les deux causes. */}
                   {cpaTargets.blended.noBudget ? (
                     <>
-                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#D72C0D", textTransform: "uppercase", letterSpacing: "0.4px" }}>Acquisition impossible</div>
+                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#D72C0D", textTransform: "uppercase", letterSpacing: "0.4px" }}>Aucun budget publicitaire</div>
                       <div style={{ fontSize: "13px", color: "#202223", marginTop: "3px", lineHeight: "1.5" }}>
-                        Aucun budget d'acquisition disponible : votre marge nette globale est négative, ou entièrement absorbée par votre seuil de rentabilité ({thresholdPct} %). Toute dépense publicitaire creuserait la perte.
+                        Aucun budget publicitaire disponible : votre marge nette globale est négative, ou entièrement absorbée par votre seuil de rentabilité ({thresholdPct} %). Toute dépense publicitaire creuserait la perte.
                       </div>
                     </>
                   ) : (
@@ -1924,11 +1924,13 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                             if (!c) return <span style={{ color: "#6D7175" }}>—</span>;
                             if (c.state === "value_destroyed") return (
                               <span title="Toutes les unités vendues ont été remboursées et l'opération laisse une perte (frais/retours) — aucune marge par unité à calculer."
-                                    style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>Remboursé — perte</span>
+                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>Remboursé — perte</span>
                             );
+                            // Libellé COURT (tient sur une ligne dans la colonne) ; la nuance longue vit dans le title=.
+                            // Vocabulaire « budget pub » aligné avec le bloc CPA blended ci-dessus et le bandeau.
                             if (c.state === "no_acquisition") return (
-                              <span title={`La marge disponible par unité est ≤ 0 : la moindre dépense d'acquisition sur ce produit le fait vendre à perte, compte tenu de votre seuil de rentabilité (${thresholdPct} %).`}
-                                    style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Acquisition impossible</span>
+                              <span title={`Aucun budget publicitaire disponible : la marge disponible par unité est ≤ 0, la moindre dépense d'acquisition fait vendre ce produit à perte, compte tenu de votre seuil de rentabilité (${thresholdPct} %).`}
+                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Aucun budget pub</span>
                             );
                             if (c.state === "ok") return formatMoney(c.margeDispoUnite, p.currency);
                             return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises — pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) — pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
@@ -3522,13 +3524,15 @@ export default function Index() {
                       </div>
                     )}
 
-                    {/* Full table */}
-                    <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "10px", lineHeight: "1.6" }}>
-                      Seuls les <strong>{products.length}</strong> produit{products.length > 1 ? "s" : ""} ayant un coût fournisseur renseigné dans Shopify apparaissent ci-dessous.
-                      {auditData.totalScanned - products.length > 0 && (
-                        <> Les <strong>{auditData.totalScanned - products.length}</strong> autre{auditData.totalScanned - products.length > 1 ? "s" : ""} produit{auditData.totalScanned - products.length > 1 ? "s" : ""} de votre catalogue n'ont pas de coût renseigné.</>
-                      )}
-                    </div>
+                    {/* Full table — note d'audit PARTIEL : discrète (ne dramatise pas), mais JAMAIS masquée
+                        quand des produits sont exclus (un audit partiel présenté comme complet = mensonge
+                        par omission). Absente si 0 exclu (tout le catalogue a un coût). Actionnable. */}
+                    {auditData.totalScanned - products.length > 0 && (
+                      <div style={{ fontSize: "11px", color: "#8C9196", marginBottom: "10px" }}>
+                        {products.length} produit{products.length > 1 ? "s" : ""} analysé{products.length > 1 ? "s" : ""} · {auditData.totalScanned - products.length} sans coût renseigné (non analysé{auditData.totalScanned - products.length > 1 ? "s" : ""}).{" "}
+                        <button onClick={() => setActiveTab("costs")} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "11px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>Renseigner les coûts</button>
+                      </div>
+                    )}
                     <div style={{ border: "1px solid #E4E5E7", borderRadius: "8px", overflow: "hidden" }}>
                       <div className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                         {["Produit", "Prix vente", "Coût fournisseur", "Marge nette %", "Statut"].map((h, idx) => (
