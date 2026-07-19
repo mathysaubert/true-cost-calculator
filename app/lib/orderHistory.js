@@ -112,6 +112,56 @@ export function waterfallFromBreakdown(breakdown, snapshot) {
   };
 }
 
+// ── Regroupement des lignes par DÉCOMPOSITION IDENTIQUE (Option A) ────────────
+// Problème résolu : un produit vendu sur N commandes économiquement identiques affichait N cartes
+// de dépli rigoureusement identiques (illisible ; et à l'échelle — jusqu'à ORDER_MARGINS_CAP lignes —
+// carrément inutilisable). On regroupe les lignes dont l'ÉCONOMIE UNITAIRE est identique et on ne
+// montre le waterfall/les intrants QU'UNE fois par groupe ; ce qui VARIE par commande (n°, date,
+// quantité, remboursement, fixe proraté, totaux de ligne) reste listé commande par commande.
+// AUCUN recalcul de marge : on ne fait que grouper des lignes déjà calculées (pendant lecture du BUG 1).
+//
+// Empreinte = sérialisation STABLE (clés triées → indépendante de l'ordre des clés JSON de la DB) des
+// SEULS champs unitaires/figés : breakdown figé + snapshot + devise + source de coût + marge/CA
+// unitaires + présence du breakdown. On EXCLUT allocated_fixed_fee / effective_qty / quantity /
+// refunded_qty / line_net_* : ils varient légitimement d'une commande à l'autre et n'appartiennent
+// pas à la « décomposition ». Deux décompositions réellement identiques mais sérialisées différemment
+// dégraderaient au pire en deux groupes (jamais un chiffre faux) — le tri des clés l'évite.
+function stableStringify(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",")}}`;
+}
+
+export function groupLinesByFingerprint(lines = []) {
+  const groups = new Map();
+  for (const lb of lines) {
+    const key = stableStringify({
+      b: lb.breakdown ?? null, s: lb.snapshot ?? null,
+      c: lb.currency ?? null, src: lb.cost_source ?? null,
+      um: lb.unit_net_margin, ur: lb.net_unit_revenue, hb: lb.has_breakdown,
+    });
+    let g = groups.get(key);
+    if (!g) { g = { key, rep: lb, orders: [] }; groups.set(key, g); }
+    // Par commande : uniquement ce qui VARIE (le reste vit sur g.rep, affiché une fois).
+    g.orders.push({
+      order_id: lb.order_id, order_created_at: lb.order_created_at,
+      quantity: lb.quantity, refunded_qty: lb.refunded_qty, effective_qty: lb.effective_qty,
+      allocated_fixed_fee: lb.allocated_fixed_fee,
+      line_net_margin: lb.line_net_margin, line_net_revenue: lb.line_net_revenue,
+      currency: lb.currency,
+    });
+  }
+  // Commandes récentes d'abord dans chaque groupe ; groupes triés par leur commande la plus récente.
+  const arr = [...groups.values()].map((g) => {
+    g.orders.sort((a, b) => (a.order_created_at < b.order_created_at ? 1 : a.order_created_at > b.order_created_at ? -1 : 0));
+    g.count = g.orders.length;
+    g.mostRecent = g.orders[0]?.order_created_at ?? null;
+    return g;
+  });
+  arr.sort((a, b) => (a.mostRecent < b.mostRecent ? 1 : a.mostRecent > b.mostRecent ? -1 : 0));
+  return arr;
+}
+
 export function aggregateOrderMargins(rows = []) {
   // [C] cost_source='missing' (marges null) : exclu des agrégats/courbe/rentabilité,
   // rangé à part. Les compter 0 ou perte serait faux.
@@ -162,6 +212,8 @@ export function aggregateOrderMargins(rows = []) {
     breakdownAvailable: p.breakdownLines > 0,
     // lignes les plus récentes d'abord (order_created_at desc), chacune son dépli
     lines:         p.lines.sort((a, b) => (a.order_created_at < b.order_created_at ? 1 : a.order_created_at > b.order_created_at ? -1 : 0)),
+    // Dépli GROUPÉ par décomposition identique (Option A) — le rendu itère là-dessus, plus sur lines.
+    lineGroups:    groupLinesByFingerprint(p.lines),
   }));
 
   // [B] Agrégat PAR JOUR (UTC) — deux séries quotidiennes (pas de cumul).

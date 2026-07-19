@@ -72,8 +72,16 @@ export function computeCpaTargets(agg, { thresholdPct = 0, currentCpa = null, cu
   if (!agg?.multiCurrency && num(agg?.totals?.orders) > 0) {
     const orders = num(agg.totals.orders);
     const units  = byProduct.reduce((s, p) => s + num(p.effective_qty), 0); // unités totales (comptage, sans devise)
+    const cpaMax = availableForAds(agg.totals.net_margin, agg.totals.net_revenue, thresholdPct) / orders;
     blended = {
-      cpaMax: availableForAds(agg.totals.net_margin, agg.totals.net_revenue, thresholdPct) / orders,
+      cpaMax,
+      // noBudget : le plafond blended est ≤ 0 → afficher un NOMBRE négatif est un non-sens (« dépenser
+      // moins que rien en pub ? »). Flag SERVEUR (miroir du state "no_acquisition" côté produit) sur
+      // lequel l'UI switche : elle remplace le chiffre par « Acquisition impossible ». Deux causes,
+      // toutes deux couvertes par ce même flag : marge globale NÉGATIVE, ou marge positive mais
+      // entièrement absorbée par la réserve de seuil (net_margin ≤ seuil×CA). Frontière ≤ 0 (0 € de
+      // budget = déjà aucune acquisition finançable), cohérente avec margeDispoUnite ≤ 0.
+      noBudget: cpaMax <= 0,
       currency: agg.currencies?.[0] ?? null,
       orders,
       avgBasket: Math.round((units / orders) * 10) / 10, // unités/commande (arrondi serveur → pas de format JSX)

@@ -1602,50 +1602,44 @@ const WF_DED_LABEL = {
   retoursCost: "Retours",
   fraisFixes:  "Frais fixes (emballage)",
 };
-function LineBreakdownCard({ lb }) {
+// Cap de la liste de commandes PAR GROUPE : borne dure du DOM à l'échelle. 20 ≈ une page de lignes
+// denses lisibles sans scroll explosif, et couvre entièrement l'immense majorité des groupes réels
+// (un produit a rarement > 20 commandes à décomposition STRICTEMENT identique) ; au-delà, on résume
+// « + N autres ». Ainsi un produit vendu 300 fois → 1 waterfall + 20 lignes + un résumé, jamais 300 cartes.
+const GROUP_ORDER_CAP = 20;
+
+function LineGroupCard({ group }) {
+  const lb = group.rep;                       // représentant : porte la décomposition unitaire commune
   const m = (n) => formatMoney(n, lb.currency);
   const sub = lb.snapshot;
-  const refunded = lb.refunded_qty > 0;
   const lblRow = { display: "flex", justifyContent: "space-between", gap: "12px", padding: "3px 0", fontSize: "12px" };
   const lbl = { color: "#6D7175" };
   const val = { color: "#202223", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
-  const date = lb.order_created_at ? String(lb.order_created_at).slice(0, 10) : "—";
   const pill = SOURCE_PILL[lb.cost_source] ?? { label: lb.cost_source ?? "—", color: "#6D7175", bg: "#F1F2F4" };
   // Waterfall poste-par-poste : seulement si le breakdown est figé (lignes Brique B).
   const wf = lb.has_breakdown ? waterfallFromBreakdown(lb.breakdown, lb.snapshot) : null;
+  const multi = group.count > 1;
+  const shown = group.orders.slice(0, GROUP_ORDER_CAP);
+  const extra = group.count - shown.length;
+  const oc = { padding: "6px 8px", fontSize: "12px", color: "#202223", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
+  const oth = { padding: "6px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left" };
   return (
     <div style={{ padding: "12px 14px", borderRadius: "8px", border: "1px solid #E4E5E7", background: "#FAFAFB", marginBottom: "8px" }}>
+      {/* En-tête de groupe : le corps ci-dessous (décomposition unitaire + intrants) vaut pour TOUTES
+          les commandes du groupe — affiché UNE seule fois. Ce qui varie est listé dans le tableau plus bas. */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-        <span style={{ fontSize: "11px", fontWeight: "600", color: "#202223" }}>Commande {lb.order_id ? lb.order_id.split("/").pop() : "—"}</span>
-        <span style={{ fontSize: "11px", color: "#6D7175" }}>{date}</span>
+        <span style={{ fontSize: "11px", fontWeight: "700", color: "#202223" }}>
+          {multi ? `${group.count} commandes · même décomposition` : `Commande ${lb.order_id ? lb.order_id.split("/").pop() : "—"}`}
+        </span>
         <span style={{ padding: "1px 7px", borderRadius: "9px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{pill.label}</span>
       </div>
 
-      {/* Identité MARGE — cible stockée = line_net_margin (réplique de l'agrégation D3/D4) */}
+      {/* Économie UNITAIRE commune — identique sur toutes les commandes du groupe (par construction
+          de l'empreinte). C'est la partie qui, avant, était répétée N fois. */}
       <div style={{ marginBottom: "10px" }}>
-        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Marge nette de ligne</div>
-        <div style={lblRow}><span style={lbl}>Marge nette unitaire</span><span style={val}>{m(lb.unit_net_margin)}</span></div>
-        <div style={lblRow}>
-          <span style={lbl}>× Quantité effective{refunded ? ` (${lb.quantity} − ${lb.refunded_qty} remboursée${lb.refunded_qty > 1 ? "s" : ""})` : ""}</span>
-          <span style={val}>{lb.effective_qty}</span>
-        </div>
-        <div style={lblRow}><span style={lbl}>− Fixe processeur (proraté commande)</span><span style={val}>−{m(lb.allocated_fixed_fee)}</span></div>
-        <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "700" }}>
-          <span style={{ color: "#202223" }}>= Marge nette de ligne</span>
-          <span style={{ ...val, color: lb.line_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.line_net_margin)}</span>
-        </div>
-      </div>
-
-      {/* Identité REVENU — cible stockée = line_net_revenue */}
-      <div style={{ marginBottom: refunded ? "6px" : "0" }}>
-        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>CA net de ligne</div>
-        {/* « (TTC) » seulement si l'encaissé est réellement TTC (assujetti+TTC = revenue_is_ht).
-            Franchise / sans TVA / pré-B (wf null) → neutre (on ne devine pas le régime). */}
+        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Économie unitaire{multi ? " (identique sur ces commandes)" : ""}</div>
         <div style={lblRow}><span style={lbl}>Prix de vente net unitaire{wf?.revenue_is_ht ? " (TTC)" : ""}</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
-        <div style={lblRow}><span style={lbl}>× Quantité effective</span><span style={val}>{lb.effective_qty}</span></div>
-        <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "600" }}>
-          <span style={{ color: "#202223" }}>= CA net de ligne</span><span style={val}>{m(lb.line_net_revenue)}</span>
-        </div>
+        <div style={{ ...lblRow, fontWeight: "700" }}><span style={{ color: "#202223" }}>Marge nette unitaire</span><span style={{ ...val, color: lb.unit_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.unit_net_margin)}</span></div>
       </div>
 
       {/* Waterfall poste-par-poste SOUS unit_net_margin (Brique B) — LECTURE PURE du JSON.
@@ -1716,6 +1710,35 @@ function LineBreakdownCard({ lb }) {
           </div>
         </>
       )}
+
+      {/* Ce qui VARIE par commande — tableau dense (n°, date, qté, marge de ligne). Chaque marge de
+          ligne = marge unitaire ci-dessus × qté effective − fixe processeur proraté (identité D3/D4),
+          lue depuis les valeurs stockées. Capé à GROUP_ORDER_CAP pour borner le DOM à l'échelle. */}
+      <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
+        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>{multi ? `Commandes concernées (${group.count})` : "Commande"}</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "320px" }}>
+            <thead><tr style={{ borderBottom: "1px solid #E4E5E7" }}>
+              <th style={oth}>Commande</th><th style={oth}>Date</th><th style={oth}>Qté</th><th style={{ ...oth, textAlign: "right" }}>Marge de ligne</th>
+            </tr></thead>
+            <tbody>
+              {shown.map((o) => (
+                <tr key={`${o.order_id}-${o.order_created_at}`} style={{ borderBottom: "1px solid #F1F2F4" }}>
+                  <td style={oc}>{o.order_id ? o.order_id.split("/").pop() : "—"}</td>
+                  <td style={{ ...oc, color: "#6D7175" }}>{o.order_created_at ? String(o.order_created_at).slice(0, 10) : "—"}</td>
+                  <td style={oc}>{o.effective_qty}{o.refunded_qty > 0 ? <span style={{ color: "#B98900" }}> ({o.quantity}−{o.refunded_qty} remb.)</span> : ""}</td>
+                  <td style={{ ...oc, textAlign: "right", fontWeight: "600", color: o.line_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(o.line_net_margin)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {extra > 0 && (
+          <div style={{ marginTop: "6px", fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
+            + {extra} autre{extra > 1 ? "s" : ""} commande{extra > 1 ? "s" : ""} · même décomposition (masquée{extra > 1 ? "s" : ""} pour la lisibilité).
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1797,7 +1820,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {isExpert && cpaTargets?.noAcqCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
-                  produit(s) ne supportent aucune acquisition payante — marge épuisée ou entièrement remboursés à perte. Voir la colonne « Marge dispo/unité », qui distingue les deux cas.
+                  produit(s) ne peuvent financer aucune publicité — leur marge (même positive) est trop faible pour absorber un coût d'acquisition. C'est une mesure de capacité pub, distincte de « à perte ». Voir la colonne « Marge dispo/unité », qui distingue les cas.
                 </div>
               )}
               {isExpert && cpaTargets?.blended && (() => {
@@ -1815,12 +1838,26 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                     </div>
                   )}
 
-                  <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
-                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
-                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
+                  {/* noBudget (flag SERVEUR) : plafond ≤ 0 → un nombre négatif n'a aucun sens. On affiche
+                      « Acquisition impossible » (même vocabulaire que le badge produit) + les deux causes. */}
+                  {cpaTargets.blended.noBudget ? (
+                    <>
+                      <div style={{ fontSize: "11px", fontWeight: "700", color: "#D72C0D", textTransform: "uppercase", letterSpacing: "0.4px" }}>Acquisition impossible</div>
+                      <div style={{ fontSize: "13px", color: "#202223", marginTop: "3px", lineHeight: "1.5" }}>
+                        Aucun budget d'acquisition disponible : votre marge nette globale est négative, ou entièrement absorbée par votre seuil de rentabilité ({thresholdPct} %). Toute dépense publicitaire creuserait la perte.
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
+                      <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
+                    </>
+                  )}
 
-                  {/* Échantillon faible : SUBORDONNÉ (texte simple, sans fond) quand l'alerte rouge est présente. */}
-                  {cpaTargets.blended.lowSample && (overspend ? (
+                  {/* Échantillon faible : SUBORDONNÉ (texte simple, sans fond) quand l'alerte rouge est présente.
+                      Sans objet si noBudget (aucun plafond à fiabiliser) → masqué. */}
+                  {!cpaTargets.blended.noBudget && cpaTargets.blended.lowSample && (overspend ? (
                     <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px" }}>Plafond sur {cpaTargets.blended.orders} commande(s) — indicatif ; la colonne « Marge dispo/unité » ne dépend pas du volume.</div>
                   ) : (
                     <div style={{ fontSize: "12px", color: "#B98900", marginTop: "6px", padding: "8px 10px", background: "#FFF9EC", borderRadius: "6px" }}>
@@ -1833,14 +1870,17 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                     <div style={{ fontSize: "12px", color: "#6D7175", marginTop: "6px" }}>Renseignez votre CPA actuel (dans les réglages plus haut) pour situer votre marge de manœuvre.</div>
                   ) : ec.stale ? (
                     <div style={{ fontSize: "12px", color: "#8C9196", marginTop: "6px", fontStyle: "italic" }}>Écart non affiché : votre CPA déclaré date de plus de 30 jours. Remettez-le à jour pour une comparaison utile.</div>
-                  ) : overspend ? null : (
+                  ) : (overspend || cpaTargets.blended.noBudget) ? null : (
                     <div style={{ fontSize: "13px", color: "#008060", marginTop: "6px" }}>Marge de manœuvre : {formatMoney(ec.gapAmount, cpaTargets.blended.currency)} (CPA déclaré {formatMoney(ec.currentCpa, cpaTargets.blended.currency)}).</div>
                   )}
 
                   {currentCpaDeclaredLabel && (
                     <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {currentCpaDeclaredLabel} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
                   )}
-                  <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable — si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne catalogue : un mix de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
+                  {/* Rappel « plafond par commande » : sans objet quand il n'y a pas de plafond (noBudget). */}
+                  {!cpaTargets.blended.noBudget && (
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable — si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne catalogue : un mix de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
+                  )}
                 </div>
                 );
               })()}
@@ -1906,9 +1946,9 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <tr style={{ background: "#FFFFFF" }}>
                           <td colSpan={isExpert ? 8 : 7} style={{ padding: "10px 14px" }}>
                             <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
-                              Détail par ligne de commande — chaque ligne affiche son propre snapshot figé (lecture pure, valeurs stockées).
+                              Détail par décomposition — les commandes économiquement identiques sont regroupées (snapshot figé, lecture pure, valeurs stockées).
                             </div>
-                            {p.lines.map(lb => <LineBreakdownCard key={`${lb.order_id}-${lb.line_item_id}`} lb={lb} />)}
+                            {p.lineGroups.map(g => <LineGroupCard key={g.key} group={g} />)}
                           </td>
                         </tr>
                       )}

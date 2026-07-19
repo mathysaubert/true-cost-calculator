@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot7_order_history.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { aggregateOrderMargins, formatMoney, lineBreakdown } from "../app/lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney, lineBreakdown, groupLinesByFingerprint } from "../app/lib/orderHistory.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -241,6 +241,62 @@ console.log("\n── [K] agrégation des postes de coût (BUG 1 : somme de vale
   const b = aggregateOrderMargins([row({ order: "ON1", product: "PN", qty: 1, rev: 10, margin: -4 })]);
   const pn = b.byProduct.find((x) => x.product_id === "PN");
   ok(pn.breakdownAvailable === false && pn.costPosts.douane === 0, "aucun breakdown → breakdownAvailable false, postes à 0");
+}
+
+// ── [GROUP] Option A : commandes à décomposition IDENTIQUE regroupées (1 waterfall, pas N) ──
+console.log("\n── [GROUP] regroupement par décomposition identique ──");
+{
+  const snap = { prix_achat: 10, port_entrant: 1, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Sport", source: "confirmed" };
+  const a = aggregateOrderMargins([
+    frow({ order: "gid://shopify/Order/1", product: "PG", variant: "V", q: 1, eq: 1, nur: 20, unm: 5, lnr: 20, lnm: 4.90, fee: 0.10, day: "2026-06-10T10:00:00Z", snap }),
+    frow({ order: "gid://shopify/Order/2", product: "PG", variant: "V", q: 2, eq: 2, nur: 20, unm: 5, lnr: 40, lnm: 9.80, fee: 0.20, day: "2026-06-12T10:00:00Z", snap }),
+    frow({ order: "gid://shopify/Order/3", product: "PG", variant: "V", q: 1, eq: 1, nur: 20, unm: 5, lnr: 20, lnm: 4.95, fee: 0.05, day: "2026-06-11T10:00:00Z", snap }),
+  ]);
+  const p = a.byProduct.find(x => x.product_id === "PG");
+  ok(p.lineGroups.length === 1, `3 commandes identiques → 1 groupe (${p.lineGroups.length})`);
+  ok(p.lineGroups[0].count === 3, "le groupe compte ses 3 commandes");
+  ok(p.lines.length === 3, "p.lines brut conservé (3) — le regroupement n'écrase pas le détail");
+  const days = p.lineGroups[0].orders.map(o => o.order_created_at.slice(0, 10));
+  ok(days[0] === "2026-06-12" && days[2] === "2026-06-10", `commandes triées récentes d'abord (${days.join(",")})`);
+  ok(p.lineGroups[0].orders.some(o => o.effective_qty === 2) && p.lineGroups[0].orders.some(o => o.effective_qty === 1), "ce qui VARIE (qté) reste listé par commande");
+  ok(p.lineGroups[0].rep.unit_net_margin === 5, "le représentant porte la marge unitaire commune (5) — affichée une fois");
+}
+
+// ── [GROUP] décompositions DIFFÉRENTES (snapshot ≠) → groupes séparés (jamais fondus) ──
+console.log("\n── [GROUP] snapshots différents → groupes séparés ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OG1", product: "PH", variant: "V", eq: 1, nur: 20, unm: 5, lnr: 20, lnm: 5, snap: { prix_achat: 10, vat_regime: "assujetti", shipping_model: "stock", source: "confirmed" } }),
+    frow({ order: "OG2", product: "PH", variant: "V", eq: 1, nur: 20, unm: 4, lnr: 20, lnm: 4, snap: { prix_achat: 12, vat_regime: "assujetti", shipping_model: "stock", source: "confirmed" } }),
+  ]);
+  const p = a.byProduct.find(x => x.product_id === "PH");
+  ok(p.lineGroups.length === 2, `coûts figés différents (10 vs 12) → 2 groupes (${p.lineGroups.length})`);
+  ok(p.lineGroups.every(g => g.count === 1), "chaque groupe = 1 commande (décompositions distinctes non fondues)");
+}
+
+// ── [GROUP] empreinte STABLE : ordre des clés du snapshot indifférent ──
+console.log("\n── [GROUP] sérialisation stable (ordre des clés indifférent) ──");
+{
+  const a = aggregateOrderMargins([
+    frow({ order: "OS1", product: "PS", variant: "V", eq: 1, nur: 20, unm: 5, lnr: 20, lnm: 5, snap: { prix_achat: 10, categorie: "Sport", pays_import: "Chine" } }),
+    frow({ order: "OS2", product: "PS", variant: "V", eq: 1, nur: 20, unm: 5, lnr: 20, lnm: 5, snap: { pays_import: "Chine", categorie: "Sport", prix_achat: 10 } }),
+  ]);
+  const p = a.byProduct.find(x => x.product_id === "PS");
+  ok(p.lineGroups.length === 1, "mêmes valeurs, clés dans un ordre différent → une seule empreinte (1 groupe)");
+}
+
+// ── [GROUP] exhaustivité : Σ des commandes des groupes = nb de lignes (rien perdu, rien dupliqué) ──
+console.log("\n── [GROUP] exhaustivité du regroupement ──");
+{
+  const g = groupLinesByFingerprint([
+    lineBreakdown({ order_id: "A", line_item_id: "A-L", order_created_at: "2026-06-10T10:00:00Z", currency_code: "USD", net_unit_revenue: 20, unit_net_margin: 5, line_net_margin: 5, effective_qty: 1 }),
+    lineBreakdown({ order_id: "B", line_item_id: "B-L", order_created_at: "2026-06-11T10:00:00Z", currency_code: "USD", net_unit_revenue: 20, unit_net_margin: 5, line_net_margin: 5, effective_qty: 1 }),
+    lineBreakdown({ order_id: "C", line_item_id: "C-L", order_created_at: "2026-06-12T10:00:00Z", currency_code: "EUR", net_unit_revenue: 20, unit_net_margin: 5, line_net_margin: 5, effective_qty: 1 }),
+  ]);
+  const totalOrders = g.reduce((s, x) => s + x.count, 0);
+  ok(totalOrders === 3, `Σ commandes des groupes = 3 lignes en entrée (${totalOrders})`);
+  ok(g.length === 2, "USD×2 groupées, EUR séparée (devise dans l'empreinte) → 2 groupes");
+  ok(g[0].mostRecent >= g[1].mostRecent, "groupes triés par commande la plus récente d'abord");
 }
 
 console.log("\n" + "═".repeat(66));

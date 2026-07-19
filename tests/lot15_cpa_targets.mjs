@@ -116,6 +116,23 @@ console.log("\n── blended ──");
   ok(computeCpaTargets(agg([P({ id: "A", m: 50, r: 100, q: 2 })], { net_margin: 50, net_revenue: 100, orders: 0 }), {}).blended === null, "A6 : orders=0 → null (pas de NaN)");
 }
 
+// ── noBudget : plafond blended ≤ 0 → flag SERVEUR (l'UI remplace le nombre négatif par un message) ──
+console.log("\n── noBudget : plafond blended ≤ 0 (miroir de no_acquisition) ──");
+{
+  // (a) marge globale NÉGATIVE → cpaMax < 0 → noBudget true (le −162,23 $ observé en prod).
+  const neg = computeCpaTargets(agg([P({ id: "A", m: -100, r: 500, q: 5 })], { net_margin: -100, net_revenue: 500, orders: 5 }), { thresholdPct: 0 });
+  ok(neg.blended.cpaMax < 0 && neg.blended.noBudget === true, "marge globale négative → cpaMax<0, noBudget true");
+  // (b) marge positive MAIS entièrement absorbée par le seuil → cpaMax ≤ 0 → noBudget true.
+  const abs = computeCpaTargets(agg([P({ id: "A", m: 100, r: 1000, q: 10 })], { net_margin: 100, net_revenue: 1000, orders: 10 }), { thresholdPct: 20 });
+  ok(near(abs.blended.cpaMax, -10) && abs.blended.noBudget === true, "(100 − 20%×1000)/10 = −10 → noBudget true (marge absorbée par le seuil)");
+  // (c) plafond STRICTEMENT positif → noBudget false (comportement nominal inchangé).
+  const pos = computeCpaTargets(agg([P({ id: "A", m: 300, r: 1000, q: 10 })], { net_margin: 300, net_revenue: 1000, orders: 10 }), { thresholdPct: 0 });
+  ok(pos.blended.cpaMax > 0 && pos.blended.noBudget === false, "plafond positif (30) → noBudget false");
+  // (d) frontière : cpaMax EXACTEMENT 0 → noBudget true (0 € = déjà aucune acquisition finançable).
+  const zero = computeCpaTargets(agg([P({ id: "A", m: 0, r: 100, q: 1 })], { net_margin: 0, net_revenue: 100, orders: 1 }), { thresholdPct: 0 });
+  ok(zero.blended.cpaMax === 0 && zero.blended.noBudget === true, "cpaMax exactement 0 → noBudget true (frontière ≤ 0, cohérente margeDispoUnite)");
+}
+
 // ── A7 : seuil 100 % → available ≤ 0 partout (logique, pas un bug) ──
 console.log("\n── A7 : seuil 100 % → no_acquisition partout ──");
 {
