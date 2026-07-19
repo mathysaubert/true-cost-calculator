@@ -21,6 +21,7 @@ import {
   parseCostsCsv, buildCostsCsv, CSV_COLUMNS, reconcileEstimatedCost,
 } from "../lib/variantCosts.js";
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
+import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
@@ -1323,11 +1324,10 @@ export const action = async ({ request }) => {
       .filter(Boolean)
       .sort((a, b) => b.netPct - a.netPct);
 
-    const losers  = products.filter(p => p.netPct < 0);
-    const risky   = products.filter(p => p.netPct >= 0 && p.netPct < 15);
-    const winners = products.filter(p => p.netPct >= 15);
-
-    return { auditProducts: products, losers: losers.length, risky: risky.length, winners: winners.length, totalScanned: allProducts.length };
+    // La CLASSIFICATION (winners / risky / losers) est faite côté rendu à partir de auditProducts,
+    // avec le seuil de rentabilité configuré du marchand (source unique : lib/auditClassify.js).
+    // Aucun comptage ici : il utiliserait un seuil que l'action ne charge pas → contradiction.
+    return { auditProducts: products, totalScanned: allProducts.length };
   }
 
   // ── Feature 4: set alert threshold ────────────────────────────────────────
@@ -3323,9 +3323,10 @@ export default function Index() {
             const auditData = auditFetcher.data;
             const isAuditing = auditFetcher.state !== "idle";
             const products = auditData?.auditProducts ?? [];
-            const losers  = products.filter(p => p.netPct < 0);
-            const risky   = products.filter(p => p.netPct >= 0 && p.netPct < 15);
-            const winners = products.filter(p => p.netPct >= 15);
+            // Classification alignée sur le SEUIL configuré du marchand (le même que l'alerting B7),
+            // source unique lib/auditClassify.js — plus de 15 % / 0 % en dur qui contredisaient l'email.
+            const { losers, risky, winners } = classifyAudit(products, profitabilityThresholdPct);
+            const auditKpiLabels = auditLabels(profitabilityThresholdPct);
             // Dedup TOP by normalized title (same product created twice keeps only the best-ranked entry).
             const _seenTop = new Set();
             const topWinners = winners.filter(p => {
@@ -3452,9 +3453,9 @@ export default function Index() {
                   <>
                     <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
-                      <StatCard label="Top Performers ✅"  value={winners.length} sub="marge > 15%"  color="#008060" bg="#F1F8F5" />
-                      <StatCard label="Produits à risque ⚠️" value={risky.length}  sub="marge 0–15%"  color="#B98900" bg="#FFF9EC" />
-                      <StatCard label="Money Losers 🔴"    value={losers.length}  sub="marge < 0%"   color="#D72C0D" bg="#FFF4F4" />
+                      <StatCard label="Top Performers ✅"  value={winners.length} sub={auditKpiLabels.winners} color="#008060" bg="#F1F8F5" />
+                      <StatCard label="Produits à risque ⚠️" value={risky.length}  sub={auditKpiLabels.risky}   color="#B98900" bg="#FFF9EC" />
+                      <StatCard label="Money Losers 🔴"    value={losers.length}  sub={auditKpiLabels.losers}  color="#D72C0D" bg="#FFF4F4" />
                     </div>
 
                     {losers.length > 0 && (
@@ -3495,9 +3496,10 @@ export default function Index() {
                         ))}
                       </div>
                       {products.map((p, i) => {
-                        const statusColor = p.netPct < 0 ? "#D72C0D" : p.netPct < 15 ? "#B98900" : "#008060";
-                        const statusBg    = p.netPct < 0 ? "#FFF4F4" : p.netPct < 15 ? "#FFF9EC" : "#F1F8F5";
-                        const statusLabel = p.netPct < 0 ? "Perte" : p.netPct < 15 ? "Risque" : "OK";
+                        const cat = auditCategory(p.netPct, profitabilityThresholdPct);
+                        const statusColor = cat === "loser" ? "#D72C0D" : cat === "risky" ? "#B98900" : "#008060";
+                        const statusBg    = cat === "loser" ? "#FFF4F4" : cat === "risky" ? "#FFF9EC" : "#F1F8F5";
+                        const statusLabel = cat === "loser" ? "Perte" : cat === "risky" ? "Risque" : "OK";
                         return (
                           <div key={p.id} className="tcc-audit-row" style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 1fr 1.2fr 1fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < products.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                             <div style={{ padding: "10px 12px", overflow: "hidden" }}>
@@ -3539,9 +3541,9 @@ export default function Index() {
                     )}
                     {risky.length > 0 && (
                       <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #B9890033" }}>
-                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} à marge insuffisante (0–15%) — à optimiser</div>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} sous votre objectif ({auditKpiLabels.risky}) — à optimiser</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-                          <div>• <strong>Marge insuffisante pour couvrir vos frais variables et dégager un bénéfice net réel.</strong> Ciblez au minimum 20–25% de marge nette.</div>
+                          <div>• <strong>Marge rentable mais sous l'objectif que vous avez fixé.</strong> Visez au moins votre seuil de rentabilité ({profitabilityThresholdPct} %) de marge nette.</div>
                           <div>• <strong>Évitez les campagnes publicitaires sur ces produits</strong> — chaque euro de pub réduit encore votre marge.</div>
                           <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur et améliorer le coût rendu.</div>
                         </div>
