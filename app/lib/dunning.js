@@ -16,6 +16,7 @@
 // redéfini ici : le mail conditionnel et le gating partagent ainsi UNE seule source de vérité et ne
 // peuvent structurellement pas diverger (une modif future de la grâce s'applique aux deux d'un coup).
 import { FROZEN_GRACE_DAYS } from "./plan.js";
+import { emailShell } from "./emailLayout.js";
 
 export const DUNNING_MAX = 5;            // plafond de relances par épisode frozen
 export const DUNNING_INTERVAL_DAYS = 3;  // espacement minimal entre deux relances
@@ -140,14 +141,12 @@ export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = 
     : `<p>Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé, et <strong>l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu</strong>. Il est rétabli dès que votre paiement est régularisé. <strong>Vos données sont conservées.</strong></p>
     <p>Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.</p>`;
 
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
-    ${bodyHtml}
+  const html = emailShell(`${bodyHtml}
     <p style="margin:20px 0">
       <a href="${lien}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Régulariser mon paiement</a>
     </p>
     <p style="font-size:12px;color:#6D7175">Ou copiez ce lien : <a href="${lien}">${lien}</a></p>
-    <p style="font-size:12px;color:#6D7175">Déjà régularisé ? Vous pouvez ignorer ce message.</p>
-  </div>`;
+    <p style="font-size:12px;color:#6D7175">Déjà régularisé ? Vous pouvez ignorer ce message.</p>`);
 
   return { subject, html, text };
 }
@@ -160,10 +159,8 @@ export function renderDunningResolvedEmail({ shop, plan }) {
     `Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.`,
     `Merci !`,
   ].join("\n");
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.6">
-    <p>Votre paiement est passé et <strong>${planLabel(plan)}</strong> est réactivé.</p>
+  const html = emailShell(`<p>Votre paiement est passé et <strong>${planLabel(plan)}</strong> est réactivé.</p>
     <p>Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.</p>
-    <p>Merci !</p>
-  </div>`;
+    <p>Merci !</p>`);
   return { subject, html, text };
 }

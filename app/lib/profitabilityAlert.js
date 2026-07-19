@@ -24,6 +24,7 @@
 //   seeds        : { product_id, state, margin, marginPct, currency }            → écriture, PAS d'alerte
 //   majNormales  : { product_id, state, margin, marginPct, currency }            → écriture (maj), PAS d'alerte
 import { formatMoney } from "./orderHistory.js";
+import { emailShell } from "./emailLayout.js";
 
 const num = (v) => { const n = +v; return Number.isFinite(n) ? n : 0; };
 
@@ -108,14 +109,12 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const section = (titre, items, render) => items.length
     ? `<h3 style="margin:16px 0 6px;font-size:14px">${titre}</h3><ul style="margin:0;padding-left:18px">${items.map((b) => `<li style="margin:4px 0">${render(b)}</li>`).join("")}</ul>`
     : "";
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#202223;line-height:1.5">
-    <p>D'après les commandes que True Cost Calculator suit pour vous :</p>
+  const html = emailShell(`<p>D'après les commandes que True Cost Calculator suit pour vous :</p>
     ${section("Vous perdez de l'argent sur", realLosses, lossLine)}
     ${section(`Rentables, mais sous votre objectif${objLabel}`, thin, thinLine)}
     ${section("Repassés au-dessus de votre objectif", recoveries, recoLine)}
     ${closing ? `<p>${closing}</p>` : ""}
-    ${missingDetail ? `<p style="font-size:12px;color:#6D7175">${noteText}</p>` : ""}
-  </div>`;
+    ${missingDetail ? `<p style="font-size:12px;color:#6D7175">${noteText}</p>` : ""}`);
 
   return { subject, html, text };
 }
