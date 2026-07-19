@@ -1901,10 +1901,11 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   <option value="revenue">Trier par CA net ↓</option>
                 </select>
               </div>
-              {/* overflowX = filet de sécurité petits écrans seulement : minWidth garantit que les colonnes
-                  (notamment les pills nowrap « Aucun budget pub ») tiennent avant que le scroll ne s'arme. */}
+              {/* table-layout fixe + width:100% → la table épouse la largeur du conteneur (colonne
+                  principale Polaris, ~640px), les colonnes prenant leur part en %. minWidth 480 = plancher :
+                  la table ne descend pas sous 480 (au-delà, overflowX prend le relais sur très petits écrans). */}
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: isExpert ? "860px" : "680px", tableLayout: "fixed" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px", tableLayout: "fixed" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                     <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.cmd }}>Cmd</th><th style={{ ...th, width: cw.qte }}>Qté</th><th style={{ ...th, width: cw.ca }}>CA net</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }}>Marge dispo/unité</th>}<th style={{ ...th, width: cw.etat }}>État</th>
                   </tr></thead>
