@@ -1768,7 +1768,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
   // table épouse son conteneur. « dispo » à 18 % ≈ 115px à 640px → le pill « Aucun budget pub » (~110px)
   // tient sans chevaucher « État ». Deux jeux : 6 colonnes (Expert, avec « Marge dispo/unité ») et 5 (sans).
   const cw = isExpert
-    ? { prod: "30%", ventes: "12%", marge: "16%", pct: "12%", dispo: "18%", etat: "12%" }
+    ? { prod: "30%", ventes: "12%", marge: "16%", pct: "12%", dispo: "20%", etat: "10%" }
     : { prod: "36%", ventes: "14%", marge: "20%", pct: "14%", etat: "16%" };
 
   return (
@@ -1944,7 +1944,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                             // Vocabulaire « budget pub » aligné avec le bloc CPA blended ci-dessus et le bandeau.
                             if (c.state === "no_acquisition") return (
                               <span title={`Aucun budget publicitaire disponible : la marge disponible par unité est ≤ 0, la moindre dépense d'acquisition fait vendre ce produit à perte, compte tenu de votre seuil de rentabilité (${thresholdPct} %).`}
-                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Aucun budget pub</span>
+                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Aucun budget</span>
                             );
                             if (c.state === "ok") return formatMoney(c.margeDispoUnite, p.currency);
                             return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises — pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) — pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
