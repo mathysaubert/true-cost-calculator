@@ -1756,8 +1756,16 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
   const products = [...agg.byProduct].sort((a, b) =>
     sortBy === "revenue" ? b.net_revenue - a.net_revenue : a.net_margin - b.net_margin);
 
-  const th = { padding: "7px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "nowrap" };
+  // whiteSpace normal : en table-layout FIXE, un header nowrap plus large que sa colonne déborderait ;
+  // on laisse donc les intitulés se replier dans leur colonne (les courts ne se replient pas).
+  const th = { padding: "7px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "normal" };
   const td = { padding: "7px 8px", fontSize: "12px", color: "#202223" };
+  // Répartition EXPLICITE des largeurs (table-layout fixe) : Produit prend la part du lion (noms longs),
+  // les colonnes numériques sont resserrées. Somme = 100 % → la table épouse son conteneur, jamais de
+  // débordement ≥ minWidth. Deux jeux : 8 colonnes (Expert, avec « Marge dispo/unité ») et 7 (sans).
+  const cw = isExpert
+    ? { prod: "26%", cmd: "7%", qte: "7%", ca: "12%", marge: "13%", pct: "10%", dispo: "14%", etat: "11%" }
+    : { prod: "32%", cmd: "8%", qte: "8%", ca: "14%", marge: "15%", pct: "11%", etat: "12%" };
 
   return (
     <div style={{ borderRadius: "8px", border: "1px solid #E4E5E7", marginBottom: "16px", overflow: "hidden" }}>
@@ -1893,10 +1901,12 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   <option value="revenue">Trier par CA net ↓</option>
                 </select>
               </div>
+              {/* overflowX = filet de sécurité petits écrans seulement : minWidth garantit que les colonnes
+                  (notamment les pills nowrap « Aucun budget pub ») tiennent avant que le scroll ne s'arme. */}
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: isExpert ? "860px" : "680px", tableLayout: "fixed" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    <th style={th}>Produit</th><th style={th}>Cmd</th><th style={th}>Qté</th><th style={th}>CA net</th><th style={th}>Marge nette</th><th style={th}>% marge</th>{isExpert && <th style={th}>Marge dispo/unité</th>}<th style={th}>État</th>
+                    <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.cmd }}>Cmd</th><th style={{ ...th, width: cw.qte }}>Qté</th><th style={{ ...th, width: cw.ca }}>CA net</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }}>Marge dispo/unité</th>}<th style={{ ...th, width: cw.etat }}>État</th>
                   </tr></thead>
                   <tbody>
                     {products.map(p => {
@@ -1906,7 +1916,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                       <Fragment key={pkey}>
                       <tr style={{ borderBottom: "1px solid #F1F2F4", background: p.unprofitable ? "#FFF4F4" : "transparent", cursor: "pointer" }}
                           onClick={() => setOpenLines(s => { const n = new Set(s); n.has(pkey) ? n.delete(pkey) : n.add(pkey); return n; })}>
-                        <td style={{ ...td, maxWidth: "200px" }}>
+                        <td style={{ ...td, wordBreak: "break-word" }}>
                           <span style={{ display: "inline-block", width: "12px", fontSize: "10px", color: "#6D7175", transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
                           {title(p.product_id)}
                         </td>
