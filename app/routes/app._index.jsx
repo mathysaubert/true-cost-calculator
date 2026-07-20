@@ -733,6 +733,10 @@ export const loader = async ({ request }) => {
     ? (annotationsResult.value.data ?? []) : [];
 
   const showWelcome = new URL(request.url).searchParams.get("subscribed") === "true";
+  // Onglet initial via ?tab= (deep-link email d'alerte → onglet Coûts/monitor). Whitelisté : une valeur
+  // inconnue ou absente retombe sur l'onglet par défaut (jamais de crash / d'onglet fantôme).
+  const tabParam = new URL(request.url).searchParams.get("tab");
+  const initialTab = ["calculator", "simulate", "history", "alerts", "audit", "costs"].includes(tabParam) ? tabParam : null;
   const vatRegime = planResult.status === "fulfilled"
     ? (planResult.value.data?.vat_regime ?? "assujetti")
     : "assujetti";
@@ -805,7 +809,7 @@ export const loader = async ({ request }) => {
   const alertingCap = planToOrderCap({ isPro, isExpert });
   const alertingActive = alertingEnabled(ordersPrevMonth, alertingCap);
 
-  return { isPro, isExpert, history, products, productsCapped, alertThreshold, violations, showWelcome, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+  return { isPro, isExpert, history, products, productsCapped, alertThreshold, violations, showWelcome, initialTab, annotations, vatRegime, shopTaxesIncluded, shippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     ordersThisMonth, ordersPrevMonth, alertingCap, alertingActive,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap: ORDER_MARGINS_CAP };
@@ -2366,7 +2370,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Index() {
-  const { isPro, isExpert, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
+  const { isPro, isExpert, history, products, productsCapped, alertThreshold: initialThreshold, violations, showWelcome, initialTab, annotations: initialAnnotations, vatRegime: initialVatRegime, shopTaxesIncluded, shippingModel: initialShippingModel, defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct,
     currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct,
     ordersThisMonth, ordersPrevMonth, alertingCap, alertingActive,
     orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap } = useLoaderData();
@@ -2424,7 +2428,7 @@ export default function Index() {
   const [results,     setResults]     = useState(null);
   const [errors,      setErrors]      = useState([]);
   const [warnings,    setWarnings]    = useState([]);
-  const [activeTab,   setActiveTab]   = useState("calculator");
+  const [activeTab,   setActiveTab]   = useState(initialTab ?? "calculator"); // ?tab= (deep-link email) sinon défaut
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   // ── Activation semaine 1 : parcours guidé install → marge réelle (Shape 1) ──

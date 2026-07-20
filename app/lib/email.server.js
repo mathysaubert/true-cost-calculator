@@ -18,7 +18,12 @@ export async function sendLossAlert({ to, shop, basculements, thresholdPct = 0 }
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const { subject, html, text } = renderLossAlertEmail({ shop, thresholdPct, basculements });
+    // Lien profond vers le suivi de marge (onglet Coûts), best-effort : null si shop ou API key absent
+    // → l'email part quand même sans lien (jamais bloqué pour un lien manquant, req. 5).
+    const appUrl = shop && process.env.SHOPIFY_API_KEY
+      ? `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?tab=costs`
+      : null;
+    const { subject, html, text } = renderLossAlertEmail({ shop, thresholdPct, basculements, appUrl });
     const { error } = await resend.emails.send({ from: FROM, to, subject, html, text });
     if (error) { console.error(`[Alert] envoi KO pour ${shop} :`, error?.message ?? error); return false; }
     return true;

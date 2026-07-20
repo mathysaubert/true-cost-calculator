@@ -64,7 +64,10 @@ export function dominantCostPost(costPosts) {
 //   • repassé rentable   → "Repassés au-dessus de votre objectif"
 // Entrée basculement : { to, margin, marginPct, currency, title?, topCost?:{label,amount,achatPort}, breakdownAvailable? }.
 // topCost/breakdownAvailable sont fournis SERVEUR (cron) — le template ne fait que rendre (BUG 1).
-export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = [] }) {
+// appUrl : lien profond vers le suivi de marge (onglet Coûts) — construit SERVEUR (email.server.js)
+// depuis shop + SHOPIFY_API_KEY, passé ici (template PUR, aucun env). null si non constructible →
+// l'email part SANS lien (jamais bloqué pour un lien manquant, cf. req. 5).
+export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = [], appUrl = null }) {
   const losses     = basculements.filter((b) => b.to === "loss");
   const realLosses = losses.filter((b) => num(b.margin) < 0);
   const thin       = losses.filter((b) => num(b.margin) >= 0);
@@ -103,6 +106,7 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   if (thin.length)       lines.push(`Rentables, mais sous votre objectif${objLabel} :`, ...thin.map((b) => `• ${thinLine(b)}`), "");
   if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoLine(b)}`), "");
   if (closing) lines.push(closing);
+  if (appUrl) lines.push("", `Voir le suivi de marge dans l'app : ${appUrl}`);
   if (missingDetail) lines.push("", `— ${noteText}`);
   const text = lines.join("\n").trim();
 
@@ -114,6 +118,10 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
     ${section(`Rentables, mais sous votre objectif${objLabel}`, thin, thinLine)}
     ${section("Repassés au-dessus de votre objectif", recoveries, recoLine)}
     ${closing ? `<p style="${EMAIL_TEXT}">${closing}</p>` : ""}
+    ${appUrl ? `<p style="margin:20px 0;${EMAIL_TEXT}">
+      <a href="${appUrl}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Voir le suivi de marge</a>
+    </p>
+    <p style="font-size:12px;${EMAIL_MUTED}">Ou copiez ce lien : <a href="${appUrl}">${appUrl}</a></p>` : ""}
     ${missingDetail ? `<p style="font-size:12px;${EMAIL_MUTED}">${noteText}</p>` : ""}`);
 
   return { subject, html, text };

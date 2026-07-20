@@ -125,6 +125,27 @@ console.log("\n── texte brut ≡ HTML : mêmes chiffres ──");
   }
 }
 
+// ── LIEN VERS L'APP : présent dans HTML ET texte si fourni ; absent proprement sinon (best-effort) ──
+console.log("\n── lien app : parité HTML/texte + envoi jamais bloqué ──");
+{
+  const url = "https://demo.myshopify.com/admin/apps/abc123?tab=costs";
+  const withUrl = renderLossAlertEmail({
+    shop: "demo.myshopify.com", appUrl: url,
+    basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, title: "Snowboard" })],
+  });
+  ok(withUrl.html.includes(url) && withUrl.text.includes(url), "appUrl fourni → lien dans le HTML ET le texte (parité)");
+  ok(/Voir le suivi de marge/.test(withUrl.html), "libellé de bouton sobre présent (HTML)");
+  ok(withUrl.text.includes("Voir le suivi de marge dans l'app"), "libellé + lien en texte brut");
+
+  // Sans appUrl (shop/API key absent côté serveur) : aucun lien, mais l'email part quand même.
+  const noUrl = renderLossAlertEmail({
+    shop: "demo.myshopify.com",
+    basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, title: "Snowboard" })],
+  });
+  ok(!/\/admin\/apps\//.test(noUrl.html) && !/\/admin\/apps\//.test(noUrl.text), "appUrl absent → aucun lien d'app (ni HTML ni texte)");
+  ok(noUrl.html.length > 0 && noUrl.text.length > 0 && noUrl.html.includes("Snowboard"), "email rendu QUAND MÊME sans lien (envoi jamais bloqué pour un lien manquant)");
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 10 (mail alerte) : ✓ Tous les tests passent"
