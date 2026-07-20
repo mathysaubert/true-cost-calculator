@@ -14,18 +14,15 @@ import { sendDunningEmail, sendDunningResolved } from "../lib/email.server.js";
 // La sync n'a pas lieu ici (pas de bulk) ; 60 s reste un plafond large et sûr.
 export const config = { maxDuration: 60 };
 
-// Charges de TEST hors prod (dev store), réelles en prod — identique au bouton subscribe
-// (app._index.jsx). Sur un dev store, Shopify force de toute façon le mode test.
-const IS_TEST = process.env.NODE_ENV !== "production";
-
-// allSubscriptions (PAS activeSubscriptions : ce dernier masque les FROZEN). On lit aussi le
-// pricing des line items du sub gelé → on recrée la charge AU MÊME PRIX (jamais sous-facturer).
+// allSubscriptions (PAS activeSubscriptions : ce dernier masque les FROZEN). On lit aussi le pricing
+// des line items du sub gelé → on recrée la charge AU MÊME PRIX (jamais sous-facturer), ET son champ
+// `test` (AppSubscription.test, Boolean!) → on recrée DANS LE MÊME MODE que le sub d'origine.
 const ALL_SUBS_QUERY = `
   query AllSubs {
     currentAppInstallation {
       allSubscriptions(first: 25, reverse: true) {
         edges { node {
-          id name status createdAt
+          id name status createdAt test
           lineItems {
             plan { pricingDetails {
               __typename
@@ -94,12 +91,18 @@ async function runForShop(shop, now) {
     const plan = frozenNode?.name ?? null;
     if (!lineItems.length) { console.error(`[Dunning] line items introuvables ${shop}`); r.error = "no_line_items"; return r; }
 
+    // Mode de la charge = mode de l'abonnement D'ORIGINE (frozenNode.test), pas NODE_ENV : test↔test,
+    // réel↔réel, quel que soit le type de boutique. Plus fiable que partnerDevelopment (correspond au
+    // mode EXACT du sub gelé). DÉFAUT SÛR : tout ce qui n'est pas explicitement true → false (charge
+    // réelle) — le doute ne donne JAMAIS un test (même règle que le bouton subscribe).
+    const isTest = frozenNode?.test === true;
+
     let confirmationUrl = null;
     try {
       const resp = await admin.graphql(CREATE_MUTATION, { variables: {
         name: plan,
         returnUrl: `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
-        test: IS_TEST,
+        test: isTest,
         lineItems,
       } });
       const payload = (await resp.json()).data?.appSubscriptionCreate;
