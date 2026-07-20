@@ -5,10 +5,13 @@
 // jamais d'une soustraction/division inline (c'était BUG 1 : marge brute re-dérivée
 // en prixVente − coutRendu, base TTC, ≠ tuile affichée en base HT).
 
-import { formatEur, formatPct } from "./engine.js";
+import { formatPct } from "./engine.js";
+import { formatMoney } from "./orderHistory.js";
 
-// Ligne « marges » du prompt. La marge brute € est m.margeBrute (moteur, base HT),
-// PAS une re-dérivation. Iso au rendu de la tuile « Marge brute » au centime.
-export function buildMargeLine(m) {
-  return `Marge apparente : ${formatPct(m.margeApparente)} % | Marge brute : ${formatPct(m.margeBrutePercent)} % (${formatEur(m.margeBrute)}) | Marge nette : ${formatPct(m.margeNettePercent)} % (${formatEur(m.margeNette)}/vente)`;
+// Ligne « marges » du prompt. La marge brute est m.margeBrute (moteur, base HT), PAS une re-dérivation.
+// Iso au rendu de la tuile « Marge brute » au centime. Devise = celle de la boutique (défaut EUR pour
+// compat : formatMoney(x,"EUR") est identique à l'ancien formatEur).
+export function buildMargeLine(m, currency = "EUR") {
+  const money = (v) => formatMoney(v, currency);
+  return `Marge apparente : ${formatPct(m.margeApparente)} % | Marge brute : ${formatPct(m.margeBrutePercent)} % (${money(m.margeBrute)}) | Marge nette : ${formatPct(m.margeNettePercent)} % (${money(m.margeNette)}/vente)`;
 }

@@ -14,6 +14,7 @@ import {
 } from "../app/lib/roas.js";
 import { buildMargeLine } from "../app/lib/aiPayload.js";
 import { computeMargin, formatEur } from "../app/lib/engine.js";
+import { formatMoney } from "../app/lib/orderHistory.js";
 
 const GREEN = "#008060", RED = "#D72C0D";
 let failures = 0;
@@ -93,6 +94,12 @@ console.log("\n── BUG 1 : marge brute du payload IA = m.margeBrute (assujett
     ok(buildMargeLine(mm).includes(`(${formatEur(mm.margeBrute)})`),
        `${c.nom} : marge brute citée = moteur (${formatEur(mm.margeBrute)})`);
   }
+
+  // DEVISE : buildMargeLine formate dans la devise passée (défaut EUR = legacy). Le prompt IA n'est
+  // donc plus en € en dur pour un marchand USD.
+  ok(buildMargeLine(m) === buildMargeLine(m, "EUR"), "défaut = EUR (rétro-compat : identique à formatEur)");
+  ok(buildMargeLine(m, "USD").includes(formatMoney(m.margeBrute, "USD")) && !buildMargeLine(m, "USD").includes("€"),
+     "devise USD → montants en $, aucun € dans la ligne de marges du prompt");
 }
 
 // ── TEST cpaColor : cohérence stricte des deux canaux (couleur ⟺ conseil) ─────

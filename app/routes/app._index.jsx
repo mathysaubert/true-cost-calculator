@@ -7,7 +7,7 @@ import { captureException } from "../sentry.server";
 import {
   LOW_VALUE_PARCEL_CEILING, EU_DROPSHIP_DUTY_REFORM_DATE,
   PAYMENT_PROCESSORS, CUSTOMS_RATES, SHIPPING_ESTIMATES,
-  safeNum, formatEur, formatPct, formatNum,
+  safeNum, formatPct, formatNum,
   computeMargin, computeScenarios, simulateSellingPrice,
 } from "../lib/engine.js";
 import {
@@ -1396,10 +1396,18 @@ export const action = async ({ request }) => {
     const m = computeMargin(engineInput);
     const { current: scenCurrent, scenarios: scenList } = computeScenarios(engineInput);
 
+    // Devise de la boutique (postée par le client depuis feesCurrency = shop.currencyCode). Défaut SÛR :
+    // EUR si absente/malformée → la reco n'est JAMAIS bloquée (dégrade proprement, req. 6). money() formate
+    // dans cette devise (plus formatEur en dur). normLevier normalise le € que le moteur bake dans s.levier
+    // (engine.js intouché) vers la devise réelle — sauf EUR où « € » reste naturel.
+    const currency = /^[A-Z]{3}$/.test(String(body.feesCurrency ?? "")) ? body.feesCurrency : "EUR";
+    const money = (v) => formatMoney(v, currency);
+    const normLevier = (l) => (currency === "EUR" ? l : String(l).replace(/€/g, currency));
+
     const scenariosBlock = scenList.map((s, i) =>
       s.prixCible !== undefined
-        ? `S${i+1}. ${s.levier}\n   → Marge nette : 0,00 € / 0,0 % | Rentable : NON | Prix cible : ${formatEur(s.prixCible)}`
-        : `S${i+1}. ${s.levier}\n   → Marge nette : ${formatEur(s.margeNette)} / ${formatPct(s.margeNettePercent)} % | Rentable : ${s.rentable ? 'OUI' : 'NON'}`
+        ? `S${i+1}. ${normLevier(s.levier)}\n   → Marge nette : ${money(0)} / 0,0 % | Rentable : NON | Prix cible : ${money(s.prixCible)}`
+        : `S${i+1}. ${normLevier(s.levier)}\n   → Marge nette : ${money(s.margeNette)} / ${formatPct(s.margeNettePercent)} % | Rentable : ${s.rentable ? 'OUI' : 'NON'}`
     ).join('\n\n');
 
     const prompt = `Tu es un expert en e-commerce et rentabilité.
@@ -1409,36 +1417,38 @@ DÉFINITIONS CANONIQUES (emploie-les strictement) :
 • Marge brute = (Prix vente − Coût rendu total) / Prix vente — exclut Shopify, Stripe, emballage, retours, ads
 • Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente
 
+DEVISE : tous les montants ci-dessous sont en ${currency}. Emploie EXCLUSIVEMENT ${currency} dans ta réponse — ne convertis jamais et n'utilise aucune autre devise (surtout pas l'euro si ${currency} n'est pas EUR).
+
 DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
 - Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
-- Prix fournisseur : ${formatEur(prixAchat)} | Prix de vente : ${formatEur(prixVente)}
-- Douane : ${formatEur(m.douane)}${(() => {
+- Prix fournisseur : ${money(prixAchat)} | Prix de vente : ${money(prixVente)}
+- Douane : ${money(m.douane)}${(() => {
       const sm = shippingModel ?? "stock";
       const pa = parseFloat(prixAchat);
       if (sm === "dropshipping") {
         if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur — tarif % plein)";
         return new Date() < EU_DROPSHIP_DUTY_REFORM_DATE
           ? " (faible valeur — exonéré jusqu'au 30/06/2026)"
-          : " (faible valeur — forfait 3€ post-01/07/2026)";
+          : " (faible valeur — forfait douanier UE post-01/07/2026)";
       }
       return ""; // stock : tarif % standard, aucune note particulière
-    })()} | TVA import : ${formatEur(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${formatEur(m.shipping)} | Coût rendu net : ${formatEur(m.coutRendu)}
-- ${safeProcessor} : ${stripeFee} %+${formatEur(processorFixedFee)} → ${formatEur(m.stripeCost)} | Shopify : ${shopifyFee} % → ${formatEur(m.shopifyCost)} | Retours : ${retours} % → ${formatEur(m.retoursCost)} | Ads : ${ads} % → ${formatEur(m.adsCost)}
-- Emballage : ${formatEur(coutEmballage)} | Frais retour : ${formatEur(fraisRetour)}
-- ${buildMargeLine(m)}
+    })()} | TVA import : ${money(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${money(m.shipping)} | Coût rendu net : ${money(m.coutRendu)}
+- ${safeProcessor} : ${stripeFee} %+${money(processorFixedFee)} → ${money(m.stripeCost)} | Shopify : ${shopifyFee} % → ${money(m.shopifyCost)} | Retours : ${retours} % → ${money(m.retoursCost)} | Ads : ${ads} % → ${money(m.adsCost)}
+- Emballage : ${money(coutEmballage)} | Frais retour : ${money(fraisRetour)}
+- ${buildMargeLine(m, currency)}
 
-ÉTAT ACTUEL : Marge nette = ${formatEur(scenCurrent.margeNette)} / ${formatPct(scenCurrent.margeNettePercent)} % | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
+ÉTAT ACTUEL : Marge nette = ${money(scenCurrent.margeNette)} / ${formatPct(scenCurrent.margeNettePercent)} % | Rentable : ${scenCurrent.rentable ? 'OUI' : 'NON'}
 
 SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
 ${scenariosBlock}
 
-INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (€, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage — la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
+INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (montants en ${currency}, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage — la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
 
 Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette résultante décroissante. Pour chaque action, cite sa marge nette exacte et précise Rentable=OUI/NON. Si marge actuelle ≤ 0 et qu'aucun scénario seul ne la rend positive, recommande la combinaison listée.
 
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X€ (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
+{"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X ${currency} (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 18000);
@@ -2612,6 +2622,7 @@ export default function Index() {
     // Feature 5: trigger AI recommendation automatically
     const aiData = {
       _action:          "ai_recommend",
+      feesCurrency,     // devise boutique → l'action formate le prompt IA dans cette devise (pas d'€ en dur)
       productTitle:     form.selectedProductTitle || null,
       prixAchat:        r.prixAchat,
       prixVente:        r.prixVente,
