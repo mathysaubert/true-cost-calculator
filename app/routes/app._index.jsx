@@ -2091,6 +2091,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const countryFetcher = useFetcher();
   const backfillFetcher = useFetcher();
   const breakdownFetcher = useFetcher();
+  const recalcFetcher = useFetcher();
   const feesFetcher    = useFetcher();
   const thresholdFetcher = useFetcher();
   const fileRef = useRef(null);
@@ -2299,6 +2300,38 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         </button>
         {breakdownFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {breakdownFetcher.data.filled ?? 0} détail(s) complété(s){(breakdownFetcher.data.skipped ?? 0) > 0 ? ` · ${breakdownFetcher.data.skipped} ignoré(s)` : ""} sur {breakdownFetcher.data.scanned ?? 0} ligne(s) sans détail.</span>}
         {breakdownFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{breakdownFetcher.data.error}</span>}
+      </div>
+
+      {/* Brique 3 : correction des marges figées sur un coût estimé/manquant. Bloc NEUTRE (subordonné à
+          Synchroniser) : action de correction occasionnelle, pas l'action principale. Le résumé vient du
+          serveur (buildRecalcSummary) — l'UI n'en recalcule rien. */}
+      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FBFBFC", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => recalcFetcher.submit({ _action: "recalc_estimated_margins" }, { method: "POST", encType: "application/json" })}
+            disabled={recalcFetcher.state !== "idle"}
+            style={{ padding: "7px 14px", background: "#fff", color: recalcFetcher.state !== "idle" ? "#6D7175" : "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: recalcFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+            {recalcFetcher.state !== "idle" ? "Correction…" : "Corriger les marges calculées sans coût"}
+          </button>
+          {/* Résumé post-opération — réutilise le retour de l'action (jamais de calcul client). */}
+          {recalcFetcher.data?.success && recalcFetcher.data.lignesRecalculees === 0 && (
+            <span style={{ fontSize: "12px", color: "#008060" }}>✓ Vos marges étaient déjà à jour.</span>
+          )}
+          {recalcFetcher.data?.success && recalcFetcher.data.lignesRecalculees > 0 && (
+            <span style={{ fontSize: "12px", color: "#008060" }}>
+              ✓ {recalcFetcher.data.lignesRecalculees} marge(s) recalculée(s).{(recalcFetcher.data.produitsPassesAPerte?.length ?? 0) === 0 ? " Aucun produit ne passe à perte." : ""}
+            </span>
+          )}
+          {(recalcFetcher.data?.produitsPassesAPerte?.length ?? 0) > 0 && (
+            <span style={{ fontSize: "12px", color: "#B98900" }}>
+              {recalcFetcher.data.produitsPassesAPerte.length} produit(s) désormais à perte avec vos coûts réels : {recalcFetcher.data.resume}.
+            </span>
+          )}
+          {recalcFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{recalcFetcher.data.error}</span>}
+        </div>
+        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+          Recalcule la marge des commandes synchronisées <strong>avant que leurs coûts soient renseignés</strong>, à partir de vos coûts actuels. Les marges dont le coût est <strong>confirmé ou importé</strong> ne changent pas — elles sont déjà exactes. Seules les commandes des <strong>30 derniers jours</strong> sont concernées ; au-delà, les marges restent figées.
+        </div>
       </div>
 
       {/* UI Monitor : sous-bloc repliable (lecture seule) de l'historique order_margins */}
