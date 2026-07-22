@@ -50,7 +50,7 @@ export function dominantCostPost(costPosts) {
   let top = null;
   for (const k of Object.keys(POST_LABELS)) {
     const v = num(costPosts[k]);
-    if (v > 0 && (!top || v > top.amount)) top = { label: POST_LABELS[k], amount: v };
+    if (v > 0 && (!top || v > top.amount)) top = { key: k, label: POST_LABELS[k], amount: v };
   }
   return top ? { ...top, achatPort } : null;  // null si aucune surcharge > 0 → mail n'affiche rien
 }
@@ -82,7 +82,12 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   // Ligne perte : montant total + (si dispo) coût d'achat exposé à part + poste annexe dominant.
   const lossLine = (b) => {
     let s = `${productName(b)} : ${money(b.margin, b.currency)} (tout compris).`;
-    if (b.topCost) s += ` Coût d'achat + port : ${money(b.topCost.achatPort, b.currency)} ; au-delà, le poste le plus lourd : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
+    if (b.topCost) {
+      s += ` Coût d'achat + port : ${money(b.topCost.achatPort, b.currency)} ; au-delà, le poste le plus lourd : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
+      // Pire cas : si le poste dominant est la douane ET ≥1 ligne contributrice porte une classification
+      // estimée, on le signale — sans dramatiser (le taux dépend de la catégorie, encore non validée).
+      if (b.topCost.key === "douane" && b.customsEstimated) s += " (taux de douane estimé)";
+    }
     return s;
   };
   const thinLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}. Il rapporte, mais moins que la marge que vous visez.`;

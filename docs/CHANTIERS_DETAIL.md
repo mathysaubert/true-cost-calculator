@@ -18,6 +18,7 @@
 - [X. Emails (dark mode & parité)](#x-emails-dark-mode--parité)
 - [XI. Activation & dette de groupe (polish UI)](#xi-activation--dette-de-groupe-polish-ui)
 - [XII. Recalcul des marges historiques](#xii-recalcul-des-marges-historiques)
+- [XIII. Fiabilité perçue des taux de douane](#xiii-fiabilité-perçue-des-taux-de-douane)
 
 ---
 
@@ -370,6 +371,25 @@
 ### 63. Outillage de test — `f076621` (+ `8831d5e`)
 - **Solution** : `recalc_live_proof.mjs` (preview / `--setup` injection réversible / `--run` cycle complet autonome / `--restore`), helper `_offline_admin.mjs` (construit l'admin depuis le token offline sans importer `shopify.server`, qui a des imports sans extension KO en node brut). Outils dev/démo antérieurs (`8831d5e` : diagnostic + purge ciblée).
 - **Validation réelle** : marge fausse injectée sur « The 3p Fulfilled Snowboard » (−1212€ réel) → clic bouton → produit nommé passé à perte → marge revenue juste → cron simulé `basculements: 0` → restauration propre.
+
+---
+
+## XIII. Fiabilité perçue des taux de douane
+
+*Chantier livré en un commit unique `feat(customs)` (ensemble d'invariants indissociables). Risque de confiance n°1 identifié avant la bêta.*
+
+### 64. Statut de classification douanière (estimée/confirmée) — `feat(customs)`
+- **Problème** : le taux TARIC dépend de la **catégorie** choisie par le marchand. S'il se trompe de catégorie, il conclut « les taux de l'app sont faux » — pas « je me suis trompé ». Tueur de confiance.
+- **Cause racine** : `variant_costs.source` (provenance des **coûts**) conflatait avec la validation de la **classification** : dès que le marchand saisit ses coûts (`source=confirmed`), sa catégorie auto-devinée passerait « confirmée » sans qu'il l'ait vue → l'indicateur disparaîtrait là où le risque est maximal.
+- **Solution & pourquoi** : champ **séparé** `variant_costs.customs_confirmed` (booléen, DEFAULT false = estimée, migration non destructive). Orthogonal à `source`. Décisions pures dans `customsClassification.js` (`classificationStatus`, `customsRateChanged` — sur le TAUX, pas le libellé : Jouets 0 %→Livres 0 % ≠ changement — `resolveCustomsConfirmedOnWrite`, `resolveAuditCategory`). Action `confirm_customs_category` = **un seul UPDATE atomique** (fan-out produit→variantes, indispensable après import partiel divergent). Lot20 (55 assertions) + harness E2E `customs_confirm_proof.mjs` (2 scénarios prouvés sur dev store).
+
+### 65. Statut FIGÉ dans le snapshot (pas résolu au rendu) — `feat(customs)`
+- **Problème** : « résolu au rendu » ferait disparaître l'indicateur sur des marges historiques à coûts confirmés (non recalculées) après une confirmation ultérieure → le marchand regarde un historique au mauvais taux sans signal.
+- **Solution & pourquoi** : le statut est **figé dans `cost_snapshot_json.customs_confirmed`** (`snapshotCosts`, orderIngest.js), écrit à l'ingestion ET au recalcul (point unique). Les surfaces **historique figé** (waterfall, monitor par produit, emails) lisent CE champ ; les surfaces **configuration actuelle** (tableau de coûts, audit) lisent l'état courant. Legacy/missing → estimée (conservateur).
+
+### 66. Invalidation du flag + durcissements — `feat(customs)`
+- **Problème** : le flag pourrit si un autre chemin (édition, CSV) change la catégorie sans le remettre à false ; PostgREST n'écrase que les colonnes fournies (payload sans catégorie → dé-confirmation silencieuse) ; un gros CSV fait exploser l'URL du lookup `.in()`.
+- **Solution & pourquoi** : `applyCustomsInvalidation` (costs_save, costs_import_csv) → catégorie changée = flag false, identique = préservé ; **catégorie absente du payload = préservé** (durcissement) ; lookup **chunké par 100** (URL bornée). Audit **option (b)** : produit confirmé → l'audit ADOPTE la catégorie confirmée (calcul + affichage) pour ne jamais montrer deux taux ; « confirmé » = la variante scannée a une ligne `customs_confirmed=true` (join `node.id` ≡ `variant_costs.variant_id`, mêmes GID Shopify). **Aucune écriture de `product_profitability_state`** ; recalcul réutilisé tel quel (jamais les marges confirmées).
 
 ---
 

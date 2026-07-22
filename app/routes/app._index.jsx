@@ -24,6 +24,8 @@ import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { recalcEstimatedMargins } from "../lib/recalcEstimatedMargins.server.js";
+import { classificationStatus, customsIndicator, resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
+import { applyCustomsInvalidation, confirmCustomsCategory } from "../lib/customsClassification.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
 import { resolveEntitlement } from "../lib/plan.server";
@@ -1142,6 +1144,8 @@ export const action = async ({ request }) => {
       upserts.push({ shop_domain: session.shop, variant_id: row.variant_id, product_id: row.product_id ?? null, ...value, source: "confirmed", updated_at: new Date().toISOString() });
     }
     if (upserts.length) {
+      // Éditer la CATÉGORIE par ce chemin (≠ confirm_customs_category) invalide la classification douanière.
+      await applyCustomsInvalidation(supabase, session.shop, upserts);
       const { error } = await supabase.from("variant_costs").upsert(upserts, { onConflict: "shop_domain,variant_id" });
       if (error) return { success: false, error: error.message };
     }
@@ -1163,11 +1167,22 @@ export const action = async ({ request }) => {
     const upserts = rows.map(r => ({ shop_domain: session.shop, variant_id: r.variant_id, ...r.value, source: "imported", updated_at: new Date().toISOString() }));
     let saved = 0;
     if (upserts.length) {
+      // Un CSV qui écrase une catégorie invalide la classification (le cas « confirmé sur une valeur jamais vue »).
+      await applyCustomsInvalidation(supabase, session.shop, upserts);
       const { error } = await supabase.from("variant_costs").upsert(upserts, { onConflict: "shop_domain,variant_id" });
       if (error) return { success: false, error: error.message };
       saved = upserts.length;
     }
     return { success: true, saved, errors };
+  }
+
+  // ── Fiabilité douane : CONFIRMER la classification d'un PRODUIT (catégorie validée + flag) ──
+  // Le SEUL chemin qui met customs_confirmed=true. UN SEUL UPDATE atomique sur TOUTES les variantes du
+  // produit : écrit la catégorie choisie (fan-out sans boucle — indispensable après un import partiel où
+  // les variantes divergent) ET le flag. rateChanged (pur) dit si le taux a bougé → l'UI PROPOSE le
+  // recalcul existant (jamais silencieux, jamais les marges confirmées). AUCUNE écriture d'état d'alerting.
+  if (body._action === "confirm_customs_category") {
+    return await confirmCustomsCategory({ supabase, shop: session.shop, productId: body.product_id, categorie: body.categorie });
   }
 
   // ── Brique B : backfill commandes 30 j → order_margins (effets de bord isolés) ──
@@ -1299,7 +1314,7 @@ export const action = async ({ request }) => {
                   id title productType
                   category { name }
                   variants(first: 1) {
-                    edges { node { price inventoryItem { unitCost { amount } } } }
+                    edges { node { id price inventoryItem { unitCost { amount } } } }
                   }
                 }
               }
@@ -1320,6 +1335,18 @@ export const action = async ({ request }) => {
       }
     }
 
+    // Classification douanière ACTUELLE de la variante SCANNÉE (famille b). Confirmée ⇒ l'audit ADOPTE
+    // la catégorie confirmée (calcul ET affichage) → jamais deux taux pour le même produit. Une variante
+    // SANS ligne variant_costs ⇒ estimé (jamais d'optimisme sur un trou de jointure). Chargé AVANT le
+    // calcul car la catégorie effective entre dans computeMargin (le chiffre winners/risky/losers peut
+    // donc bouger pour les produits confirmés — c'est le chiffre VRAI, conséquence assumée).
+    // ⚠ BORNE CONNUE : limite PostgREST (~1000 lignes, pas de range ici). ICP bêta = petit catalogue →
+    // pagination = sur-ingénierie prématurée. Au-delà, des variantes confirmées seraient traitées
+    // « estimées » ET leur catégorie confirmée ignorée dans computeMargin (cf. dette documentée RECAP).
+    const { data: vcRows } = await supabase.from("variant_costs")
+      .select("variant_id, categorie, customs_confirmed").eq("shop_domain", session.shop);
+    const vcByVariant = new Map((vcRows ?? []).map((r) => [r.variant_id, r]));
+
     // Catégorisation auto : shopifyTypeToCategory importé de lib/variantCosts.js
     // (source unique, partagée avec la saisie des coûts — plus de copie locale).
     const products = allProducts
@@ -1330,17 +1357,19 @@ export const action = async ({ request }) => {
         if (!cost || !price) return null;
         const resolvedCategory  = shopifyTypeToCategory(node.category?.name, node.productType, node.title);
         const mappedCategory    = resolvedCategory ?? "Autre";
-        const isDefaultCategory = !resolvedCategory;
+        // Catégorie EFFECTIVE : confirmée si la variante scannée a une ligne customs_confirmed=true.
+        const { category: effectiveCategory, estimated } = resolveAuditCategory(variant?.id ? vcByVariant.get(variant.id) : null, mappedCategory);
+        const isDefaultCategory = estimated && !resolvedCategory;
         // Même moteur que le dashboard. Les taux audit sont en DÉCIMAL → ×100 pour computeMargin (percents).
         // shipping explicite (flat catalogue) + qty ; ni ads ni frais fixes en audit.
         const m = computeMargin({
           prixAchat: cost, prixVente: price,
-          categorie: mappedCategory, shipping: shippingCost,
+          categorie: effectiveCategory, shipping: shippingCost,
           shopifyFee: shopifyFee * 100, stripeFee: processorRate * 100, processorFixedFee,
           retours: returnsRate * 100,
           vatRegime, shopTaxesIncluded, shippingModel, qty,
         });
-        return { id: node.id, title: node.title, price, cost, coutRendu: m.coutRendu, netMargin: m.margeNette, netPct: m.margeNettePercent, mappedCategory, isDefaultCategory, productType: node.productType ?? "" };
+        return { id: node.id, title: node.title, price, cost, coutRendu: m.coutRendu, netMargin: m.margeNette, netPct: m.margeNettePercent, mappedCategory: effectiveCategory, isDefaultCategory, customsEstimated: estimated, productType: node.productType ?? "" };
       })
       .filter(Boolean)
       .sort((a, b) => b.netPct - a.netPct);
@@ -1431,6 +1460,8 @@ DÉFINITIONS CANONIQUES (emploie-les strictement) :
 • Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente
 
 DEVISE : tous les montants ci-dessous sont en ${currency}. Emploie EXCLUSIVEMENT ${currency} dans ta réponse — ne convertis jamais et n'utilise aucune autre devise (surtout pas l'euro si ${currency} n'est pas EUR).
+
+CLASSIFICATION DOUANE : le montant de droits de douane provient de la catégorie déclarée (${safeCategory}), une ESTIMATION selon la nomenclature TARIC — pas une classification confirmée. Ne présente jamais ce montant comme certain ; rappelle qu'il dépend de la catégorie douanière exacte du produit.
 
 DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
@@ -1686,7 +1717,9 @@ function LineGroupCard({ group }) {
               {d.key === "coutRendu" && wf.cost_detail.map((cd) => (
                 <div key={cd.key} style={{ ...lblRow, paddingLeft: "14px", fontSize: "11px" }}>
                   <span style={{ color: "#8C9196" }}>
-                    {cd.key === "douane" ? `dont douane${cd.rate ? ` (${formatPct(cd.rate * 100)} %)` : ""}` : `dont TVA import (non récupérable${cd.rate ? `, ${formatPct(cd.rate * 100)} %` : ""})`}
+                    {cd.key === "douane"
+                      ? <>dont douane{cd.rate ? ` (${formatPct(cd.rate * 100)} %)` : ""}{lb.customs_estimated && <span style={{ color: "#B98900", fontWeight: 600 }} title="Classification estimée au moment du calcul — taux non confirmé."> · taux estimé</span>}</>
+                      : `dont TVA import (non récupérable${cd.rate ? `, ${formatPct(cd.rate * 100)} %` : ""})`}
                   </span>
                   <span style={{ ...val, color: "#8C9196" }}>{m(cd.amount)}</span>
                 </div>
@@ -1955,6 +1988,8 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <td style={{ ...td, wordBreak: "break-word" }}>
                           <span style={{ display: "inline-block", width: "12px", fontSize: "10px", color: "#6D7175", transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
                           {title(p.product_id)}
+                          {/* Pire cas classification douanière FIGÉE des lignes du produit. */}
+                          <CustomsEstimatedTag estimated={p.customsEstimated} />
                         </td>
                         {/* Ventes = Cmd + Qté fusionnées (« 3 cmd · 5 u »). CA net déplacé dans le dépli. */}
                         <td style={td} title="Commandes · unités vendues (effectives)">{p.orders} cmd · {p.effective_qty} u</td>
@@ -2083,6 +2118,83 @@ function AlertingQuotaBanner({ isExpert, isPro, alertingActive, alertingCap, ord
   );
 }
 
+// ── Fiabilité douane : indicateur discret « taux estimé — à confirmer » ────────────────────────
+// estimated=false ⇒ null (classification confirmée : AUCUN changement d'affichage, par contrat).
+// Ambre sobre (pas rouge), adossé à la nomenclature TARIC déjà citée (jamais de chapitre inventé).
+function CustomsEstimatedTag({ estimated }) {
+  if (!estimated) return null;
+  const ind = customsIndicator("estimated");
+  return (
+    <span title="Le taux de douane dépend de la catégorie, encore estimée. Confirmez-la dans « Suivi des coûts » pour un taux fiable (selon la nomenclature TARIC)."
+      style={{ fontSize: "10px", fontWeight: "600", color: "#B98900", background: "#FFF9EC", border: "1px solid #B9890033", borderRadius: "8px", padding: "1px 6px", whiteSpace: "nowrap", marginLeft: "6px" }}>
+      {ind.label}
+    </span>
+  );
+}
+
+// ── Fiabilité douane : confirmation de la classification PAR PRODUIT (configuration actuelle) ───
+// Ne liste que les produits dont la classification est ESTIMÉE (pire cas : ≥1 variante non confirmée).
+// Divergence de catégories entre variantes ⇒ AUCUNE présélection, choix explicite obligatoire + mention
+// du conflit (on ne valide jamais une valeur que le marchand n'a pas vue). Sur rateChanged, on dit
+// EXPLICITEMENT que les marges à coûts confirmés gardent l'ancien taux (aucune promesse de tout corriger).
+function CustomsClassificationPanel({ rows, onConfirmed }) {
+  const confirmFetcher = useFetcher();
+  // Remonte le résultat AU PARENT (succès OU erreur) : le feedback survit à la disparition du panneau
+  // (dernier produit confirmé → products vide → ce composant retourne null ; le nudge, lui, persiste).
+  useEffect(() => { if (confirmFetcher.data) onConfirmed?.(confirmFetcher.data); }, [confirmFetcher.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [choice, setChoice] = useState({});
+  const [expanded, setExpanded] = useState(false);
+  const products = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) {
+      if (!r.product_id) continue;
+      let g = m.get(r.product_id);
+      if (!g) { g = { product_id: r.product_id, title: r.product_title, cats: new Set(), estimated: false }; m.set(r.product_id, g); }
+      g.cats.add(r.categorie);
+      if (r.customs_confirmed !== true) g.estimated = true;
+    }
+    return [...m.values()].filter((g) => g.estimated);
+  }, [rows]);
+  if (products.length === 0) return null;
+  // Blocage UX : au-delà de 3 produits, replié par défaut (ligne résumé) → ne pas enterrer le tableau.
+  const collapsed = products.length > 3 && !expanded;
+  const submit = (pid, cat) => confirmFetcher.submit({ _action: "confirm_customs_category", product_id: pid, categorie: cat }, { method: "POST", encType: "application/json" });
+  return (
+    <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FBFBFC", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Classification douanière — {products.length} produit(s) à confirmer</span>
+        {products.length > 3 && (
+          <button onClick={() => setExpanded((e) => !e)} style={{ padding: "3px 10px", background: "#fff", color: "#6D7175", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "11px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>{collapsed ? "Déplier" : "Replier"}</button>
+        )}
+      </div>
+      <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px", lineHeight: "1.5" }}>
+        Le taux de douane dépend de la <strong>catégorie</strong> (selon la nomenclature TARIC). Confirmez-la pour fiabiliser vos marges — les marges déjà à coûts confirmés ne changeront pas.
+      </div>
+      {!collapsed && (
+        <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {products.map((g) => {
+            const divergent = g.cats.size > 1;
+            const chosen = choice[g.product_id] ?? (divergent ? "" : [...g.cats][0]);
+            return (
+              <div key={g.product_id} style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12px", color: "#202223", fontWeight: "600", flex: "1 1 160px" }}>{g.title}</span>
+                {divergent && <span style={{ fontSize: "10px", fontWeight: "600", color: "#B98900" }}>⚠ catégories divergentes</span>}
+                <select value={chosen} onChange={(e) => setChoice({ ...choice, [g.product_id]: e.target.value })}
+                  style={{ fontSize: "12px", padding: "5px 8px", borderRadius: "6px", border: "1px solid #C9CCCF", fontFamily: "inherit" }}>
+                  {divergent && <option value="">— choisir une catégorie —</option>}
+                  {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>)}
+                </select>
+                <button onClick={() => submit(g.product_id, chosen)} disabled={!chosen || confirmFetcher.state !== "idle"}
+                  style={{ padding: "5px 12px", background: chosen ? "#008060" : "#E4E5E7", color: chosen ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: chosen ? "pointer" : "default", fontFamily: "inherit" }}>Confirmer</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, isPro, alertingActive, alertingCap, ordersThisMonth, ordersPrevMonth, onUpgrade, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
@@ -2095,6 +2207,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const feesFetcher    = useFetcher();
   const thresholdFetcher = useFetcher();
   const fileRef = useRef(null);
+  // Feedback de confirmation douanière HISSÉ ici : persiste même quand le panneau disparaît (dernier
+  // produit confirmé). Le nudge rateChanged reste affiché jusqu'à fermeture explicite par le marchand.
+  const [customsFeedback, setCustomsFeedback] = useState(null);
 
   // D2 : taux fees éditables, pré-remplis au format que le marchand reconnaît
   // (virgule FR, sans zéros superflus : 2 → "2", 1.5 → "1,5", 0.25 → "0,25").
@@ -2343,6 +2458,21 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         isExpert={isExpert}
         onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
 
+      {/* Fiabilité douane : bandeau de feedback PERSISTANT (survit à la disparition du panneau) + panneau */}
+      {customsFeedback && (
+        <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", display: "flex", alignItems: "flex-start", gap: "10px",
+          background: customsFeedback.success ? (customsFeedback.rateChanged ? "#FFF9EC" : "#F1F8F5") : "#FFF4F4",
+          border: `1px solid ${customsFeedback.success ? (customsFeedback.rateChanged ? "#B9890033" : "#00806033") : "#D72C0D33"}` }}>
+          <div style={{ flex: 1, fontSize: "12px", color: "#202223", lineHeight: "1.5" }}>
+            {customsFeedback.success ? (
+              <>✓ Classification confirmée.{customsFeedback.rateChanged && <span style={{ color: "#B98900" }}> Le taux de douane a changé. Vos marges à <strong>coûts confirmés</strong> conservent l'ancien taux (vérités auditées, non recalculées) ; pour réaligner les marges à coûts estimés, utilisez « Corriger les marges calculées sans coût » ci-dessus.</span>}</>
+            ) : <span style={{ color: "#D72C0D" }}>{customsFeedback.error}</span>}
+          </div>
+          <button onClick={() => setCustomsFeedback(null)} title="Fermer" style={{ background: "none", border: "none", color: "#6D7175", cursor: "pointer", fontSize: "16px", lineHeight: 1, fontFamily: "inherit", flexShrink: 0 }}>×</button>
+        </div>
+      )}
+      <CustomsClassificationPanel rows={rows} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />
+
       {/* Barre d'actions */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
         <button onClick={exportTemplate} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↓ Exporter le modèle CSV</button>
@@ -2411,6 +2541,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
                     <td style={{ padding: "6px" }}><select value={r.categorie} onChange={e => editRow(r.variant_id, "categorie", e.target.value)} style={inputStyle}>{CATEGORIE_KEYS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
                     <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
                       <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{dirty.has(r.variant_id) ? "Modifié" : pill.label}</span>
+                      {/* Classification douane (état ACTUEL de la variante) — confirmée ⇒ rien. */}
+                      {classificationStatus(r.customs_confirmed) === "estimated" &&
+                        <div style={{ fontSize: "9px", fontWeight: "600", color: "#B98900", marginTop: "3px" }} title="Catégorie non confirmée : le taux de douane est estimé.">douane estimée</div>}
                     </td>
                   </tr>
                 );
@@ -3052,7 +3185,7 @@ export default function Index() {
                           <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>
                         ))}
                       </select>
-                      <div style={hintStyle}>Taux appliqué : {customsRateDisplay}%</div>
+                      <div style={hintStyle}>Taux appliqué : {customsRateDisplay}% <span style={{ color: "#B98900" }}>— estimé selon la catégorie choisie (TARIC)</span></div>
                     </FieldGroup>
                     <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché — renseignez votre coût réel si vous le connaissez.">
                       <select value={form.paysImport} onChange={update("paysImport")} style={inputStyle}>
@@ -3638,8 +3771,9 @@ export default function Index() {
                                   <span style={{ marginLeft: "6px", fontSize: "10px", color: "#B98900", background: "#FFF9EC", padding: "1px 5px", borderRadius: "4px", fontWeight: "600", verticalAlign: "middle" }}>doublon</span>
                                 )}
                               </div>
-                              <div style={{ fontSize: "11px", color: p.isDefaultCategory ? "#B98900" : "#8A8F98", marginTop: "2px" }}>
-                                {p.mappedCategory}{p.isDefaultCategory ? " — estimation" : ""}
+                              <div style={{ fontSize: "11px", color: p.customsEstimated ? "#B98900" : "#8A8F98", marginTop: "2px" }}
+                                   title={p.customsEstimated ? "Classification non confirmée : le taux de douane est estimé. Confirmez-la dans « Suivi des coûts »." : ""}>
+                                {p.mappedCategory}{p.customsEstimated ? " — taux estimé, à confirmer" : ""}
                               </div>
                             </div>
                             <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{money(p.price)}</div>

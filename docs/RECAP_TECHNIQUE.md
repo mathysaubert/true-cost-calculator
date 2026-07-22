@@ -279,6 +279,7 @@ Une ligne `order_margins` porte un **snapshot figé** des coûts + la marge calc
 - **`missing` jamais compté 0 ni perte** : une ligne sans coût est rangée à part, exclue des agrégats/rentabilité — « la compter 0 ou perte serait faux ».
 - **Multi‑devises (`MIXED`) jamais sommé** : somme cross‑devise interdite → produit exclu de l'alerting et du re‑baseline.
 - **`no-undef` jamais masqué** : un vrai import manquant se corrige, on ne désactive pas la règle pour faire passer le gate.
+- **Classification douanière — flag séparé, orthogonal aux coûts** (chantier douane) : `variant_costs.customs_confirmed` ≠ `source`. Le statut est **figé au snapshot** (jamais résolu au rendu, sinon une confirmation efface le signal sur un historique au mauvais taux) ; **invalidé** dès qu'un autre chemin change la catégorie (catégorie absente du payload ⇒ préservé) ; l'audit **adopte** la catégorie confirmée (jamais deux taux pour un même produit). Aucune écriture de `product_profitability_state` ; recalcul réutilisé (jamais les marges confirmées).
 
 ---
 
@@ -330,6 +331,8 @@ Tout l'affichage passe par `feesCurrency` (loader `app._index.jsx`) : `shop.curr
 - **Token offline** : les scripts locaux (`scripts/`) 401 quand le token a expiré → ouvrir l'app d'abord. Le vrai cron n'a pas ce souci (`unauthenticated.admin` rafraîchit).
 - **`engine.js` 0 diff** : la contrainte est un contrat implicite de non‑régression. Toute évolution du calcul doit se faire *autour* du moteur (adaptateur), jamais dedans, sauf changement métier volontaire (et alors mettre à jour les ancres des invariants).
 - **eslint gate** : ne jamais re‑desserrer `no-undef`/`no-unused-vars` pour faire passer le build — ces règles attrapent exactement ce que les tests (purs) ne voient pas.
+- **Borne PostgREST (classification douane)** : le chargement `variant_costs` de l'audit (`run_audit`) n'est **pas paginé** (limite ~1000 lignes). ICP bêta = petit catalogue → pagination = sur‑ingénierie prématurée. **Au‑delà**, des variantes confirmées seraient traitées « estimées » ET leur catégorie confirmée ignorée dans `computeMargin` (faux affichage + faux calcul, aucune erreur levée). Commentaire explicite au point de chargement ; à paginer si le catalogue grossit.
+- **Référents indicateur douane monitor vs audit** (assumé) : après ajout d'une variante Shopify post‑confirmation, le panneau (pire cas produit) peut réclamer une confirmation pendant que l'audit (variante scannée) n'affiche rien — référents différents, chacun vrai sur ce qu'il calcule. L'indicateur audit suit la variante dont le chiffre affiché découle : choix voulu, conservé.
 
 ---
 

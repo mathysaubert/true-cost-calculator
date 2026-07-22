@@ -4,6 +4,7 @@
 // fait QUE grouper et sommer line_net_margin / line_net_revenue / effective_qty
 // déjà calculés par engine.js à l'ingestion. (C'est le pendant lecture du BUG 1 :
 // jamais de prixVente−coutRendu inline.)
+import { frozenClassificationStatus } from "./customsClassification.js";
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; };
 // Arrondi au centime appliqué à CHAQUE ligne AVANT sommation (agrégats d'affichage seulement). Garantit
@@ -56,6 +57,8 @@ export function lineBreakdown(r) {
     order_created_at: r.order_created_at ?? null,
     currency:         r.currency_code ?? null,
     cost_source:      r.cost_source ?? null,
+    // Statut de classification douanière FIGÉ (lu du snapshot, jamais de l'état actuel de la variante).
+    customs_estimated: frozenClassificationStatus(r.cost_snapshot_json) === "estimated",
     // identité revenu (valeurs stockées)
     net_unit_revenue: num(r.net_unit_revenue),
     line_net_revenue: num(r.line_net_revenue),
@@ -195,12 +198,14 @@ export function aggregateOrderMargins(rows = []) {
   for (const r of valid) {
     const key = r.product_id ?? "__unknown__";
     let p = prodMap.get(key);
-    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [], costPosts: Object.fromEntries(POST_KEYS.map((k) => [k, 0])), breakdownLines: 0 }; prodMap.set(key, p); }
+    if (!p) { p = { product_id: r.product_id ?? null, orderIds: new Set(), effective_qty: 0, net_revenue: 0, net_margin: 0, currencySet: new Set(), lines: [], costPosts: Object.fromEntries(POST_KEYS.map((k) => [k, 0])), breakdownLines: 0, customsEstimated: false }; prodMap.set(key, p); }
     p.orderIds.add(r.order_id);
     p.effective_qty += num(r.effective_qty);
     p.net_revenue   += round2(r.line_net_revenue); // arrondi PAR LIGNE → la colonne produit s'additionne juste
     p.net_margin    += round2(r.line_net_margin);
     if (r.currency_code) p.currencySet.add(r.currency_code);
+    // Pire cas classification douanière : ≥1 ligne au statut FIGÉ estimé ⇒ le produit porte l'indicateur.
+    if (frozenClassificationStatus(r.cost_snapshot_json) === "estimated") p.customsEstimated = true;
     p.lines.push(lineBreakdown(r));
     const bd = r.margin_breakdown_json;
     if (bd) { const q = num(r.effective_qty); for (const k of POST_KEYS) p.costPosts[k] += num(bd[k]) * q; p.breakdownLines++; }
@@ -217,6 +222,8 @@ export function aggregateOrderMargins(rows = []) {
     // postes de coût agrégés (€ produit) + dispo du détail (pour le poste dominant de l'alerte)
     costPosts:          p.costPosts,
     breakdownAvailable: p.breakdownLines > 0,
+    // ≥1 ligne à classification douanière estimée (figée) → l'UI/mail affiche « taux estimé ».
+    customsEstimated:   p.customsEstimated,
     // lignes les plus récentes d'abord (order_created_at desc), chacune son dépli
     lines:         p.lines.sort((a, b) => (a.order_created_at < b.order_created_at ? 1 : a.order_created_at > b.order_created_at ? -1 : 0)),
     // Dépli GROUPÉ par décomposition identique (Option A) — le rendu itère là-dessus, plus sur lines.

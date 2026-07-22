@@ -119,6 +119,10 @@ const snapshotCosts = (c) => ({
   prix_achat: c.prix_achat, port_entrant: c.port_entrant, qty_par_lot: c.qty_par_lot,
   cout_emballage: c.cout_emballage, vat_regime: c.vat_regime, shipping_model: c.shipping_model,
   pays_import: c.pays_import, categorie: c.categorie, source: c.source,
+  // Statut de CLASSIFICATION douanière FIGÉ au moment du calcul (ingestion ET recalcul passent ici).
+  // L'indicateur « taux estimé » lira CE champ, pas l'état actuel de la variante — sinon une confirmation
+  // ultérieure ferait disparaître le signal sur des marges historiques calculées au mauvais taux.
+  customs_confirmed: c.customs_confirmed === true,
 });
 
 // ── Brique B : fige la sortie computeMargin (PAR UNITÉ) en breakdown persistable ────

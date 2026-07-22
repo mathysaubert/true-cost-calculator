@@ -102,6 +102,9 @@ async function runForShop(shop) {
       const p = byId.get(b.product_id);
       b.topCost = dominantCostPost(p?.costPosts);
       b.breakdownAvailable = p?.breakdownAvailable ?? false;
+      // Enrichissement AFFICHAGE seul (après la décision) : pire cas classification douanière du produit.
+      // N'entre NI dans computeProfitabilityChanges NI dans stateRow → basculements/état inchangés.
+      b.customsEstimated = p?.customsEstimated ?? false;
     }
     // ── C4b : plafond d'alerting au volume — DÉCISION d'envoi/avance (fonctions PURES, lot17) ──
     // Tout ce qui précède (sync, agg, diff, seeds/maj) est INCHANGÉ ; seul CE bloc décide s'il faut
