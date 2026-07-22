@@ -24,7 +24,8 @@ import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { recalcEstimatedMargins } from "../lib/recalcEstimatedMargins.server.js";
-import { classificationStatus, customsIndicator, resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
+import { classificationStatus, resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
+import { CustomsEstimatedTag, CustomsClassificationPanel } from "../components/customsUi.jsx";
 import { applyCustomsInvalidation, confirmCustomsCategory } from "../lib/customsClassification.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
@@ -2118,82 +2119,7 @@ function AlertingQuotaBanner({ isExpert, isPro, alertingActive, alertingCap, ord
   );
 }
 
-// ── Fiabilité douane : indicateur discret « taux estimé — à confirmer » ────────────────────────
-// estimated=false ⇒ null (classification confirmée : AUCUN changement d'affichage, par contrat).
-// Ambre sobre (pas rouge), adossé à la nomenclature TARIC déjà citée (jamais de chapitre inventé).
-function CustomsEstimatedTag({ estimated }) {
-  if (!estimated) return null;
-  const ind = customsIndicator("estimated");
-  return (
-    <span title="Le taux de douane dépend de la catégorie, encore estimée. Confirmez-la dans « Suivi des coûts » pour un taux fiable (selon la nomenclature TARIC)."
-      style={{ fontSize: "10px", fontWeight: "600", color: "#B98900", background: "#FFF9EC", border: "1px solid #B9890033", borderRadius: "8px", padding: "1px 6px", whiteSpace: "nowrap", marginLeft: "6px" }}>
-      {ind.label}
-    </span>
-  );
-}
-
-// ── Fiabilité douane : confirmation de la classification PAR PRODUIT (configuration actuelle) ───
-// Ne liste que les produits dont la classification est ESTIMÉE (pire cas : ≥1 variante non confirmée).
-// Divergence de catégories entre variantes ⇒ AUCUNE présélection, choix explicite obligatoire + mention
-// du conflit (on ne valide jamais une valeur que le marchand n'a pas vue). Sur rateChanged, on dit
-// EXPLICITEMENT que les marges à coûts confirmés gardent l'ancien taux (aucune promesse de tout corriger).
-function CustomsClassificationPanel({ rows, onConfirmed }) {
-  const confirmFetcher = useFetcher();
-  // Remonte le résultat AU PARENT (succès OU erreur) : le feedback survit à la disparition du panneau
-  // (dernier produit confirmé → products vide → ce composant retourne null ; le nudge, lui, persiste).
-  useEffect(() => { if (confirmFetcher.data) onConfirmed?.(confirmFetcher.data); }, [confirmFetcher.data]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [choice, setChoice] = useState({});
-  const [expanded, setExpanded] = useState(false);
-  const products = useMemo(() => {
-    const m = new Map();
-    for (const r of rows) {
-      if (!r.product_id) continue;
-      let g = m.get(r.product_id);
-      if (!g) { g = { product_id: r.product_id, title: r.product_title, cats: new Set(), estimated: false }; m.set(r.product_id, g); }
-      g.cats.add(r.categorie);
-      if (r.customs_confirmed !== true) g.estimated = true;
-    }
-    return [...m.values()].filter((g) => g.estimated);
-  }, [rows]);
-  if (products.length === 0) return null;
-  // Blocage UX : au-delà de 3 produits, replié par défaut (ligne résumé) → ne pas enterrer le tableau.
-  const collapsed = products.length > 3 && !expanded;
-  const submit = (pid, cat) => confirmFetcher.submit({ _action: "confirm_customs_category", product_id: pid, categorie: cat }, { method: "POST", encType: "application/json" });
-  return (
-    <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FBFBFC", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Classification douanière — {products.length} produit(s) à confirmer</span>
-        {products.length > 3 && (
-          <button onClick={() => setExpanded((e) => !e)} style={{ padding: "3px 10px", background: "#fff", color: "#6D7175", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "11px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>{collapsed ? "Déplier" : "Replier"}</button>
-        )}
-      </div>
-      <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px", lineHeight: "1.5" }}>
-        Le taux de douane dépend de la <strong>catégorie</strong> (selon la nomenclature TARIC). Confirmez-la pour fiabiliser vos marges — les marges déjà à coûts confirmés ne changeront pas.
-      </div>
-      {!collapsed && (
-        <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          {products.map((g) => {
-            const divergent = g.cats.size > 1;
-            const chosen = choice[g.product_id] ?? (divergent ? "" : [...g.cats][0]);
-            return (
-              <div key={g.product_id} style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", color: "#202223", fontWeight: "600", flex: "1 1 160px" }}>{g.title}</span>
-                {divergent && <span style={{ fontSize: "10px", fontWeight: "600", color: "#B98900" }}>⚠ catégories divergentes</span>}
-                <select value={chosen} onChange={(e) => setChoice({ ...choice, [g.product_id]: e.target.value })}
-                  style={{ fontSize: "12px", padding: "5px 8px", borderRadius: "6px", border: "1px solid #C9CCCF", fontFamily: "inherit" }}>
-                  {divergent && <option value="">— choisir une catégorie —</option>}
-                  {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>)}
-                </select>
-                <button onClick={() => submit(g.product_id, chosen)} disabled={!chosen || confirmFetcher.state !== "idle"}
-                  style={{ padding: "5px 12px", background: chosen ? "#008060" : "#E4E5E7", color: chosen ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: chosen ? "pointer" : "default", fontFamily: "inherit" }}>Confirmer</button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+// Composants douane extraits (rendables/testables) : app/components/customsUi.jsx.
 
 function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, isPro, alertingActive, alertingCap, ordersThisMonth, ordersPrevMonth, onUpgrade, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
@@ -2471,7 +2397,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           <button onClick={() => setCustomsFeedback(null)} title="Fermer" style={{ background: "none", border: "none", color: "#6D7175", cursor: "pointer", fontSize: "16px", lineHeight: 1, fontFamily: "inherit", flexShrink: 0 }}>×</button>
         </div>
       )}
-      <CustomsClassificationPanel rows={rows} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />
+      {!loading && <CustomsClassificationPanel rows={rows} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />}
 
       {/* Barre d'actions */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
