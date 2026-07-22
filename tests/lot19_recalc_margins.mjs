@@ -1,15 +1,19 @@
 // ════════════════════════════════════════════════════════════════════════════════
-//  Recalcul des marges historiques — DÉCISIONS PURES (Brique 1, fondation)
-//  Verrouille : (1) quelle origine de coût est recalculable (défaut IMMUABLE sûr) ;
-//  (2) quelles lignes supprimer (recalculable ET dans la fenêtre 30j sur computed_at) ;
+//  Recalcul des marges historiques — DÉCISIONS PURES (Briques 1 & 2)
+//  Verrouille : (1) origine recalculable (défaut IMMUABLE sûr) ; (2) lignes supprimables
+//  (recalculable ET order_created_at ∈ fenêtre sync) + produits touchés + réconciliation ;
 //  (3) le résumé marchand qui compare deux états produit (basculements + troncature).
-//  Rien n'appelle encore ces fonctions — c'est voulu. engine.js intouché.
+//  Fonctions branchées par recalcEstimatedMargins.server.js. engine.js intouché.
 //  node tests/lot19_recalc_margins.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
 import {
   isRecalcableCostSource,
+  isDeletableLine,
   selectDeletableLines,
+  touchedProductIds,
+  lineKey,
+  missingLines,
   formatProductNames,
   buildRecalcSummary,
 } from "../app/lib/recalcMargins.js";
@@ -29,30 +33,62 @@ console.log("\n── isRecalcableCostSource : recalculable ⇔ estimated|missin
   ok(isRecalcableCostSource(undefined)   === false, "undefined → IMMUABLE");
 }
 
-// ── selectDeletableLines : recalculable ET dans la fenêtre 30j (computed_at) ──
-console.log("\n── selectDeletableLines : recalculable ∧ fenêtre 30j ──");
+// ── isDeletableLine / selectDeletableLines : recalculable ∧ fenêtre sync (order_created_at) ──
+console.log("\n── selectDeletableLines : recalculable ∧ fenêtre order_created_at ──");
 {
   const now = new Date("2026-07-22T00:00:00Z");
   const iso = (daysAgo) => new Date(Date.UTC(2026, 6, 22) - daysAgo * 86_400_000).toISOString();
   const rows = [
-    { order_id: "o1", line_item_id: "l1", cost_source: "estimated", computed_at: iso(5) },   // ✓ recalc, dans fenêtre
-    { order_id: "o2", line_item_id: "l2", cost_source: "missing",   computed_at: iso(29) },  // ✓ recalc, limite fenêtre
-    { order_id: "o3", line_item_id: "l3", cost_source: "estimated", computed_at: iso(31) },  // ✗ hors fenêtre → garde
-    { order_id: "o4", line_item_id: "l4", cost_source: "confirmed", computed_at: iso(2) },   // ✗ immuable
-    { order_id: "o5", line_item_id: "l5", cost_source: "imported",  computed_at: iso(1) },   // ✗ immuable
-    { order_id: "o6", line_item_id: "l6", cost_source: "missing",   computed_at: null },     // ✗ sans computed_at → garde
+    { order_id: "o1", line_item_id: "l1", cost_source: "estimated", order_created_at: iso(5) },   // ✓ recalc, dans fenêtre
+    { order_id: "o2", line_item_id: "l2", cost_source: "missing",   order_created_at: iso(29) },  // ✓ recalc, limite fenêtre
+    { order_id: "o3", line_item_id: "l3", cost_source: "estimated", order_created_at: iso(31) },  // ✗ hors fenêtre → non re-syncable
+    { order_id: "o4", line_item_id: "l4", cost_source: "confirmed", order_created_at: iso(2) },   // ✗ immuable
+    { order_id: "o5", line_item_id: "l5", cost_source: "imported",  order_created_at: iso(1) },   // ✗ immuable
+    { order_id: "o6", line_item_id: "l6", cost_source: "missing",   order_created_at: null },     // ✗ sans date → on garde
   ];
   const del = selectDeletableLines(rows, now);
-  const ids = del.map((d) => d.order_id);
-  ok(ids.join(",") === "o1,o2", "ne supprime QUE o1,o2 (recalculables ET dans la fenêtre)");
-  ok(del.every((d) => "order_id" in d && "line_item_id" in d), "retourne {order_id, line_item_id} minimal");
-  ok(del.length === 2, "confirmed/imported/hors-fenêtre/sans-computed_at : tous préservés");
+  ok(del.map((d) => d.order_id).join(",") === "o1,o2", "ne supprime QUE o1,o2 (recalculables ∧ dans la fenêtre)");
+  ok(del.every((d) => d.cost_source && d.order_created_at !== undefined), "retourne les LIGNES COMPLÈTES (pour capture/restauration)");
+  ok(del.length === 2, "confirmed/imported/hors-fenêtre/sans-date : tous préservés");
+
+  ok(isDeletableLine(rows[0], now) === true, "isDeletableLine : estimated récent → supprimable");
+  ok(isDeletableLine(rows[2], now) === false, "isDeletableLine : hors fenêtre (order_created_at) → NON supprimable (perte évitée)");
+  ok(isDeletableLine(rows[3], now) === false, "isDeletableLine : confirmed → jamais supprimable");
+  ok(isDeletableLine({ cost_source: "estimated" }, now) === false, "isDeletableLine : sans order_created_at → on garde");
 
   ok(selectDeletableLines(rows, "pas une date").length === 0, "horloge invalide ⇒ ne rien supprimer");
   ok(selectDeletableLines(null, now).length === 0, "rows null ⇒ [] (null-safe)");
   ok(selectDeletableLines(rows, now, { windowDays: 0 }).length === 0, "fenêtre 0j ⇒ rien de re-synchronisable");
-  const large = selectDeletableLines(rows, now, { windowDays: 60 });
-  ok(large.map((d) => d.order_id).join(",") === "o1,o2,o3", "fenêtre 60j ⇒ o3 rentre aussi");
+  ok(selectDeletableLines(rows, now, { windowDays: 60 }).map((d) => d.order_id).join(",") === "o1,o2,o3", "fenêtre 60j ⇒ o3 rentre aussi");
+}
+
+// ── touchedProductIds : produits impactés (null exclu) ──
+console.log("\n── touchedProductIds : produits impactés ──");
+{
+  const rows = [
+    { order_id: "o1", product_id: "p1" }, { order_id: "o2", product_id: "p1" },
+    { order_id: "o3", product_id: "p2" }, { order_id: "o4", product_id: null },
+  ];
+  const t = touchedProductIds(rows);
+  ok(t.size === 2 && t.has("p1") && t.has("p2"), "p1 (dédupé) + p2 ; product_id null exclu");
+  ok(touchedProductIds(null).size === 0, "null-safe → set vide");
+}
+
+// ── lineKey + missingLines : réconciliation (lignes non recréées à restaurer) ──
+console.log("\n── missingLines : réconciliation capture ↔ présent ──");
+{
+  const captured = [
+    { order_id: "o1", line_item_id: "l1" }, // recréée par le sync
+    { order_id: "o2", line_item_id: "l2" }, // traînard hors fenêtre → à restaurer
+    { order_id: "o3", line_item_id: "l3" }, // à restaurer
+  ];
+  const present = new Set([lineKey({ order_id: "o1", line_item_id: "l1" }), lineKey({ order_id: "oX", line_item_id: "lX" })]);
+  const restore = missingLines(captured, present);
+  ok(restore.map((r) => r.order_id).join(",") === "o2,o3", "restaure o2,o3 (absentes après sync), pas o1 (recréée)");
+  ok(lineKey({ order_id: "a", line_item_id: "b" }) === lineKey({ order_id: "a", line_item_id: "b" }), "lineKey déterministe");
+  ok(lineKey({ order_id: "a", line_item_id: "b" }) !== lineKey({ order_id: "ab", line_item_id: "" }), "lineKey sans collision de concaténation");
+  ok(missingLines(captured, []).length === 3, "sync KO (rien de présent) → toutes restaurées = rollback complet");
+  ok(missingLines([], present).length === 0, "aucune capture → rien à restaurer");
 }
 
 // ── formatProductNames : troncature « max 5 + et N autres » ──

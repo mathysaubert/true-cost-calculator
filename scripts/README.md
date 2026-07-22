@@ -38,6 +38,42 @@ node --env-file=.env scripts/inject_profitable_state.mjs            # PREVIEW (c
 node --env-file=.env scripts/inject_profitable_state.mjs --inject   # écrit last_state='profitable' (1 ligne)
 ```
 
+## `recalc_estimated_margins.mjs` — teste le cycle de recalcul (Brique 2)
+
+Prouve le **cycle complet** du recalcul des marges (`app/lib/recalcEstimatedMargins.server.js`, = l'action
+`recalc_estimated_margins`) **sans envoyer d'email** : capture → DELETE des lignes recalculables
+(`estimated`/`missing`) dans la fenêtre 30j → re-sync (recrée avec les coûts actuels) → réconcilie-restaure →
+re-baseline **muet** de `product_profitability_state` → résumé « passé à perte ». **Preview par défaut** ;
+n'exécute (DELETE + re-sync Shopify réels) qu'avec `--run <shop>`. Après exécution, il **rejoue la détection
+du cron** et vérifie qu'**aucun basculement** ne subsiste (donc aucun email au prochain run).
+
+> ⚠ Le re-sync exige un token offline **valide** : si expiré (~quotidien), ouvre l'app dans le dev store
+> pour le rafraîchir, puis relance (sinon `admin_unauthorized`).
+
+```bash
+node --env-file=.env scripts/recalc_estimated_margins.mjs                        # PREVIEW (recalculables par boutique)
+node --env-file=.env scripts/recalc_estimated_margins.mjs --run xxx.myshopify.com   # cycle complet + preuve « aucun email »
+```
+
+## `recalc_live_proof.mjs` — PREUVE LIVE que le recalcul CORRIGE (réversible)
+
+Monte un vrai scénario de **marge fausse** sur le dev store et prouve que `recalc_estimated_margins`
+la **corrige**, réversiblement. Prend un produit **réellement en perte**, injecte une marge **fausse
+(profitable)** dans une de ses lignes (repassée `estimated`) + aligne `product_profitability_state`
+sur ce mensonge, puis lance le recalcul et **vérifie** : marge corrigée (fausse→réelle), `lignesRecalculees > 0`,
+résumé qui **nomme** le produit passé à perte, **aucun email**, et un cron ultérieur **sans fausse
+transition** (avec le contraste : sans re-baseline, il aurait alerté). Backup pristine → `--restore`
+annule (auto-restauration en cas d'échec).
+
+> ⚠ Le recalcul re-synchronise Shopify → **token offline valide requis** : si expiré, ouvre l'app
+> dans le dev store pour le rafraîchir, puis relance (aucune écriture tant que le token n'est pas validé).
+
+```bash
+node --env-file=.env scripts/recalc_live_proof.mjs             # PREVIEW (cible + marge réelle)
+node --env-file=.env scripts/recalc_live_proof.mjs --run       # cycle complet + toutes les preuves
+node --env-file=.env scripts/recalc_live_proof.mjs --restore   # revient à l'exact pristine
+```
+
 ## `purge_order_margins.mjs` — ⚠ DESTRUCTIF
 
 **Supprime** des lignes en base. Mode **preview par défaut** (aucune suppression tant que `--delete`

@@ -23,6 +23,7 @@ import {
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
+import { recalcEstimatedMargins } from "../lib/recalcEstimatedMargins.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
 import { resolveEntitlement } from "../lib/plan.server";
@@ -1177,6 +1178,18 @@ export const action = async ({ request }) => {
     // Le bouton fournit l'admin de session online ; le cron, l'admin offline. Comportement
     // strictement identique — extraction littérale, zéro changement de logique (cf. Brique 2).
     return await syncShopOrders({ admin, supabase, shop: session.shop });
+  }
+
+  // ── Recalcul des marges estimées/manquantes (Brique 2) — action SERVEUR, pas encore branchée à l'UI ──
+  // Supprime les lignes recalculables (estimated|missing) dans la fenêtre sync, re-synchronise pour les
+  // recréer avec les coûts ACTUELS, re-baseline product_profitability_state EN MUET (aucun email), renvoie
+  // le résumé « passé à perte ». Toute la logique (capture→sync→réconcilie→restaure) vit dans le module
+  // serveur ; ici, uniquement l'auth, le rate-limit et la délégation. Rien dans l'UI ne l'appelle (Brique 3).
+  if (body._action === "recalc_estimated_margins") {
+    // Rate-limit comme run_audit (défense en profondeur, fail-open). Plus strict : opération lourde (re-sync complet).
+    const allowed = await checkRateLimit(session.shop, "recalc_estimated_margins", 3);
+    if (!allowed) return { success: false, error: "Trop de recalculs aujourd'hui. Réessayez demain." };
+    return await recalcEstimatedMargins({ admin, supabase, shop: session.shop });
   }
 
   // ── Brique B (re-run) : rétro-remplit margin_breakdown_json des lignes ANTÉRIEURES ──
