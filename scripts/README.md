@@ -68,9 +68,13 @@ annule (auto-restauration en cas d'échec).
 > ⚠ Le recalcul re-synchronise Shopify → **token offline valide requis** : si expiré, ouvre l'app
 > dans le dev store pour le rafraîchir, puis relance (aucune écriture tant que le token n'est pas validé).
 
+`--setup` injecte la marge fausse **et s'arrête** — pour déclencher la correction **depuis le bouton
+de l'app** (parcours réel). `--run` fait tout automatiquement (injecte + recalcule + vérifie).
+
 ```bash
 node --env-file=.env scripts/recalc_live_proof.mjs             # PREVIEW (cible + marge réelle)
-node --env-file=.env scripts/recalc_live_proof.mjs --run       # cycle complet + toutes les preuves
+node --env-file=.env scripts/recalc_live_proof.mjs --setup     # injecte la marge fausse, s'arrête (test bouton app)
+node --env-file=.env scripts/recalc_live_proof.mjs --run       # cycle complet autonome + toutes les preuves
 node --env-file=.env scripts/recalc_live_proof.mjs --restore   # revient à l'exact pristine
 ```
 

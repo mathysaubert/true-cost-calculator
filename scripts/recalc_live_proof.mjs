@@ -10,9 +10,11 @@
 // produit passé à perte ; (4a) recalc n'envoie AUCUN email ; (4b) un cron APRÈS ne voit AUCUNE fausse
 // transition (état re-baseliné cohérent) — avec le CONTRASTE : sans re-baseline, il aurait alerté.
 //
-// LECTURE SEULE par défaut. Backup pristine → --run est réversible via --restore (et auto-restore si échec).
+// LECTURE SEULE par défaut. Backup pristine → toute écriture est réversible via --restore.
 //   node --env-file=.env scripts/recalc_live_proof.mjs                       # PREVIEW : cible + marge réelle
-//   node --env-file=.env scripts/recalc_live_proof.mjs --run                 # cycle complet + preuves
+//   node --env-file=.env scripts/recalc_live_proof.mjs --setup               # injecte la marge fausse et S'ARRÊTE
+//                                                                            #   (recalcul déclenché depuis le BOUTON de l'app)
+//   node --env-file=.env scripts/recalc_live_proof.mjs --run                 # cycle complet AUTONOME + preuves
 //   node --env-file=.env scripts/recalc_live_proof.mjs --restore             # revient à l'état pristine
 // (shop par défaut : true-cost-dev.myshopify.com ; sinon passe le domaine en argument.)
 import fs from "node:fs";
@@ -23,7 +25,9 @@ import { aggregateOrderMargins } from "../app/lib/orderHistory.js";
 import { computeProfitabilityChanges } from "../app/lib/profitabilityAlert.js";
 
 const SHOP = process.argv.find((a) => a.endsWith(".myshopify.com")) ?? "true-cost-dev.myshopify.com";
-const MODE = process.argv.includes("--run") ? "run" : process.argv.includes("--restore") ? "restore" : "preview";
+const MODE = process.argv.includes("--run") ? "run"
+  : process.argv.includes("--setup") ? "setup"
+  : process.argv.includes("--restore") ? "restore" : "preview";
 const BACKUP = new URL("./.recalc_proof_backup.json", import.meta.url);
 const CAP = 5000;
 
@@ -60,7 +64,9 @@ async function preview() {
   console.log(`  Cible : ${t.product.product_id}`);
   console.log(`  Marge RÉELLE du produit (coûts actuels) : ${money(t.product.net_margin)} ${t.product.currency ?? ""}  → en PERTE`);
   console.log(`  Ligne à polluer : order_id=${t.line.order_id} line_item_id=${t.line.line_item_id} (cost_source=${t.line.cost_source}, marge=${money(t.line.line_net_margin)})`);
-  console.log(`\n  Pour lancer la preuve complète (écrit puis corrige, réversible) :`);
+  console.log(`\n  Pour injecter la marge fausse et tester le BOUTON de l'app (réversible) :`);
+  console.log(`    node --env-file=.env scripts/recalc_live_proof.mjs --setup`);
+  console.log(`  Ou la preuve complète autonome (injecte + recalcule + vérifie) :`);
   console.log(`    node --env-file=.env scripts/recalc_live_proof.mjs --run\n`);
   process.exit(0);
 }
@@ -81,7 +87,73 @@ async function restoreFrom(b) {
   else await supabase.from("product_profitability_state").delete().eq("shop_domain", SHOP).eq("product_id", b.productId);
 }
 
-// ── RUN : setup réversible → recalc → vérifications ────────────────────────────────────────────
+// ── INJECTION réversible d'une marge FAUSSE (profitable) sur UN produit réellement en perte ─────
+// Repasse UNE ligne en cost_source='estimated' avec un COÛT PLACEHOLDER faux (snapshot prix_achat
+// dérisoire) + une marge assez positive pour faire basculer l'agrégat produit au-dessus de 0, et
+// aligne product_profitability_state sur ce mensonge ('profitable'). Sauvegarde le pristine (ligne
+// complète + pps) AVANT toute écriture → 100 % réversible via --restore. Retourne le contexte.
+async function injectFake(now) {
+  const rows0 = await readRows();
+  const t = pickTarget(rows0, now);
+  if (!t) { console.error("❌ Aucun produit en perte avec une ligne dans la fenêtre — impossible de monter le scénario."); process.exit(5); }
+  const pid = t.product.product_id;
+  const realMargin = t.product.net_margin;                       // marge RÉELLE (perte) que le recalcul restaurera
+  const pristineLine = rows0.find((r) => r.order_id === t.line.order_id && r.line_item_id === t.line.line_item_id);
+  const pristinePps = await readPps(pid);
+  const backup = { shop: SHOP, productId: pid, line: pristineLine,
+    pps: pristinePps ? { shop_domain: SHOP, product_id: pid, ...pristinePps } : null };
+  fs.writeFileSync(BACKUP, JSON.stringify(backup, null, 2));      // pristine sauvé AVANT d'écrire
+
+  const fakeProductMargin = Math.abs(realMargin) + 100;          // > 0 garanti
+  const bump = fakeProductMargin - realMargin;                   // ce qu'il faut ajouter à la ligne pour flipper le total
+  const fakeLineMargin = Number(pristineLine.line_net_margin ?? 0) + bump;
+  const eq = Math.max(1, Number(pristineLine.effective_qty ?? 1));
+  const fakeSnapshot = { ...(pristineLine.cost_snapshot_json ?? {}), prix_achat: 0.01, source: "estimated" }; // coût placeholder faux
+  const upd = await supabase.from("order_margins").update({
+    cost_source: "estimated",
+    line_net_margin: fakeLineMargin,
+    unit_net_margin: fakeLineMargin / eq,
+    cost_snapshot_json: fakeSnapshot,
+    margin_breakdown_json: null,                                 // évite un waterfall incohérent (repli monitor)
+  }).eq("shop_domain", SHOP).eq("order_id", t.line.order_id).eq("line_item_id", t.line.line_item_id);
+  if (upd.error) throw new Error(`injection ligne : ${upd.error.message}`);
+  await supabase.from("product_profitability_state").upsert([{
+    shop_domain: SHOP, product_id: pid, last_state: "profitable",
+    last_margin: fakeProductMargin, currency_code: t.product.currency ?? null, last_checked_at: now.toISOString(),
+  }], { onConflict: "shop_domain,product_id" });
+
+  const rowsAvant = await readRows();
+  return { pid, variantId: t.line.variant_id, realMargin, fakeProductMargin: productMargin(rowsAvant, pid), rowsAvant };
+}
+
+// Nom du produit — best-effort via l'admin offline (sauté proprement si token expiré).
+async function resolveTitle(pid) {
+  try {
+    const { admin } = await offlineAdmin(SHOP);
+    if (!(await probeToken(admin)).ok) return null;
+    const r = await admin.graphql(`query($id:ID!){ product(id:$id){ title } }`, { variables: { id: pid } });
+    return (await r.json())?.data?.product?.title ?? null;
+  } catch { return null; }
+}
+
+// ── SETUP : injecte la marge fausse et S'ARRÊTE (le recalcul se déclenche depuis le BOUTON de l'app) ──
+async function setup() {
+  const { pid, variantId, realMargin, fakeProductMargin } = await injectFake(new Date());
+  const title = await resolveTitle(pid);
+  console.log(`\n══ MARGE FAUSSE INJECTÉE (réversible) — ${SHOP} ═══════════════════════`);
+  console.log(`  Produit  : ${title ? `« ${title} »  ` : ""}${pid}`);
+  console.log(`  Variante : ${variantId ?? "?"}`);
+  console.log(`  Ligne repassée en cost_source='estimated' + coût placeholder faux (prix_achat 0,01).`);
+  console.log(`  Marge produit AFFICHÉE maintenant (FAUSSE) : ${money(fakeProductMargin)}  → paraît RENTABLE`);
+  console.log(`  Marge produit RÉELLE (coûts actuels)       : ${money(realMargin)}  → en PERTE`);
+  console.log(`  product_profitability_state aligné sur 'profitable' (état pollué cohérent).`);
+  console.log(`\n  → Dans l'app : onglet « Suivi des coûts » → « Corriger les marges calculées sans coût ».`);
+  console.log(`     Attendu : ce produit nommé « passé à perte », marge corrigée vers ${money(realMargin)}.`);
+  console.log(`  → Pour tout annuler : node --env-file=.env scripts/recalc_live_proof.mjs --restore\n`);
+  process.exit(0);
+}
+
+// ── RUN : setup réversible → recalcul (AUTO) → vérifications — tout en un (preuve autonome) ─────────
 async function run() {
   const now = new Date();
 
@@ -96,41 +168,11 @@ async function run() {
     process.exit(4);
   }
 
-  const rows0 = await readRows();
-  const t = pickTarget(rows0, now);
-  if (!t) { console.error("❌ Aucun produit en perte avec ligne dans la fenêtre — impossible de monter le scénario."); process.exit(5); }
-  const pid = t.product.product_id;
-  const realMargin = t.product.net_margin;                 // marge RÉELLE (perte) que recalc doit restaurer
-
-  // 1. BACKUP pristine (ligne complète + pps existante ou null).
-  const pristineLine = rows0.find((r) => r.order_id === t.line.order_id && r.line_item_id === t.line.line_item_id);
-  const pristinePps = await readPps(pid);
-  const backup = { shop: SHOP, productId: pid, line: pristineLine,
-    pps: pristinePps ? { shop_domain: SHOP, product_id: pid, ...pristinePps } : null };
-  fs.writeFileSync(BACKUP, JSON.stringify(backup, null, 2));
-
   try {
-    // 2. INJECTION — marge FAUSSE (profitable) : flip la ligne en 'estimated' + marge assez positive pour
-    //    faire basculer l'agrégat produit au-dessus de 0, et aligne pps sur ce mensonge ('profitable').
-    const fakeProductMargin = Math.abs(realMargin) + 100;  // > 0 garanti
-    const bump = fakeProductMargin - realMargin;            // ce qu'il faut ajouter à la ligne pour flipper le total
-    const fakeLineMargin = Number(pristineLine.line_net_margin ?? 0) + bump;
-    const eq = Math.max(1, Number(pristineLine.effective_qty ?? 1));
-    const upd = await supabase.from("order_margins").update({
-      cost_source: "estimated",
-      line_net_margin: fakeLineMargin,
-      unit_net_margin: fakeLineMargin / eq,
-    }).eq("shop_domain", SHOP).eq("order_id", t.line.order_id).eq("line_item_id", t.line.line_item_id);
-    if (upd.error) throw new Error(`injection ligne : ${upd.error.message}`);
-    await supabase.from("product_profitability_state").upsert([{
-      shop_domain: SHOP, product_id: pid, last_state: "profitable",
-      last_margin: fakeProductMargin, currency_code: t.product.currency ?? null, last_checked_at: now.toISOString(),
-    }], { onConflict: "shop_domain,product_id" });
-
-    const rowsAvant = await readRows();
+    const { pid, realMargin, fakeProductMargin, rowsAvant } = await injectFake(now);
     console.log(`\n══ AVANT (état pollué) ═══════════════════════════════════════════════`);
     console.log(`  Produit ${pid}`);
-    console.log(`  Marge produit AFFICHÉE (fausse) : ${money(productMargin(rowsAvant, pid))}  → paraît RENTABLE`);
+    console.log(`  Marge produit AFFICHÉE (fausse) : ${money(fakeProductMargin)}  → paraît RENTABLE`);
     console.log(`  Marge produit RÉELLE (coûts actuels) : ${money(realMargin)}  → en PERTE`);
     console.log(`  product_profitability_state : ${(await readPps(pid))?.last_state}  (mensonge cohérent avec l'affichage)`);
 
@@ -187,12 +229,15 @@ async function run() {
     process.exit(ko === 0 ? 0 : 6);
   } catch (e) {
     console.error(`\n❌ Échec (${e?.message}) — restauration automatique de l'état pristine…`);
-    try { await restoreFrom(backup); fs.rmSync(BACKUP); console.error("   ✅ Restauré. Aucune donnée laissée polluée.\n"); }
-    catch (er) { console.error(`   ⚠ Restauration KO (${er?.message}). Backup conservé : relance --restore.\n`); }
+    try {
+      if (fs.existsSync(BACKUP)) { await restoreFrom(JSON.parse(fs.readFileSync(BACKUP, "utf8"))); fs.rmSync(BACKUP); }
+      console.error("   ✅ Restauré. Aucune donnée laissée polluée.\n");
+    } catch (er) { console.error(`   ⚠ Restauration KO (${er?.message}). Backup conservé : relance --restore.\n`); }
     process.exit(7);
   }
 }
 
 if (MODE === "run") await run();
+else if (MODE === "setup") await setup();
 else if (MODE === "restore") await restore();
 else await preview();
