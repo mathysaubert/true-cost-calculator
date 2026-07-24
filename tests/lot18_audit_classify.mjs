@@ -60,11 +60,11 @@ console.log("\n── auditLabels : cohérence libellé ≡ calcul ──");
 {
   const L = auditLabels(25);
   ok(L.winners === "marge ≥ 25 %", `winners → « ${L.winners} » (pas « > 15 % »)`);
-  ok(L.risky === "marge 0–25 %", `risky → « ${L.risky} »`);
+  ok(L.risky === "marge 0 à 25 %", `risky → « ${L.risky} »`);
   ok(L.losers === "marge < 0 %", "losers → « marge < 0 % »");
 
   const L0 = auditLabels(0);
-  ok(L0.risky === "seuil à 0 % — bande inactive", `seuil 0 : libellé risky lisible, pas « marge 0–0 % » absurde (${L0.risky})`);
+  ok(L0.risky === "seuil à 0 %, bande inactive", `seuil 0 : libellé risky lisible, pas « marge 0 à 0 % » absurde (${L0.risky})`);
   ok(L0.winners === "marge ≥ 0 %", "seuil 0 : winners → « marge ≥ 0 % »");
 
   const Ld = auditLabels(25.5);

@@ -34,7 +34,7 @@ export function customsRateChanged(oldCategorie, newCategorie) {
 // ESTIMÉE ⇒ libellé court adossé à la nomenclature TARIC déjà citée (jamais de chapitre inventé).
 export function customsIndicator(status) {
   if (status !== "estimated") return null;
-  return { short: "Taux estimé", label: "Taux estimé — à confirmer", ref: "selon la nomenclature TARIC" };
+  return { short: "Taux estimé", label: "Taux estimé, à confirmer", ref: "selon la nomenclature TARIC" };
 }
 
 // ── Invalidation à l'écriture (chemins costs_save / costs_import_csv) ──────────────────────────

@@ -19,6 +19,7 @@
 - [XI. Activation & dette de groupe (polish UI)](#xi-activation--dette-de-groupe-polish-ui)
 - [XII. Recalcul des marges historiques](#xii-recalcul-des-marges-historiques)
 - [XIII. Fiabilité perçue des taux de douane](#xiii-fiabilité-perçue-des-taux-de-douane)
+- [XIV. Simplification du langage (règle d'or)](#xiv-simplification-du-langage-règle-dor)
 
 ---
 
@@ -396,6 +397,25 @@
 - **Cause racine** : `CustomsClassificationPanel` itère `rows` dans son `useMemo` (`for (const r of rows)`), or `CostTracker` initialise `const [rows, setRows] = useState(null)` (« pas encore chargé », `app._index.jsx:2231`). Au **1er rendu**, avant la réponse de `listFetcher`, `rows === null` → `for (const r of null)` → `TypeError: rows is not iterable` (« rows » minifié en « i »), qui crashe l'onglet entier. Le tableau existant était gardé par `loading` (`rows === null`) ; le panneau, rendu inconditionnellement, ne l'était pas.
 - **Solution & pourquoi** : garde défensive `for (const r of (rows ?? []))` **+** garde de rendu `{!loading && <CustomsClassificationPanel …/>}` (cohérent avec le tableau). Les deux composants douane extraits dans **`app/components/customsUi.jsx`** (rendables/testables en isolation — sans import de `shopify.server`). Nouveau harness **`scripts/render_check.mjs`** (Vite SSR + memory router pour le contexte `useFetcher`) : le crash a été **reproduit sur le composant réel** (`rows=null` → `TypeError: rows is not iterable`) puis le fix **prouvé sur le composant réel** (états null/vide/chargé/confirmé/divergent). `engine.js` 0 diff.
 - **Leçon durable** : la classe de bug (itération/spread/destructuring au rendu sur une valeur potentiellement `null`/`undefined`) est **invisible aux tests purs** — ils ne rendent aucun composant, et « vérification par traçage de code » n'est plus une preuve recevable pour du rendu. Nouveau standard ajouté à **`CLAUDE.md`** : « Tout changement d'UI exige un rendu local réel des surfaces touchées avant commit — les tests purs ne prouvent pas le rendu. » Audit de tout le diff `fdc53e1` mené pour la même classe : un seul site vulnérable (le panneau, fixé), tous les autres gardés.
+
+---
+
+## XIV. Simplification du langage (règle d'or)
+
+*Chantier langage / typo / alignements livré en un commit unique. `engine.js` 0 diff (exception des hints processeurs consignée). Aucune fonctionnalité, aucun calcul, aucune donnée, aucune structure touchés — libellés et CSS d'alignement uniquement.*
+
+### 68. Tout le texte marchand compréhensible en une lecture — `refactor(ux)`
+- **Problème** : au test utilisateur, ~20 % de compréhension. Le vocabulaire développeur/comptable avait fui dans l'UI (« snapshot figé, lecture pure, valeurs stockées », « intrants figés à l'ingestion », « décomposition », « CIF », « assujetti », « de minimis », « break-even »), la landing était restée en placeholders **anglais** du template Shopify (« Product feature… », « Log in »), et le tiret cadratin servait de ponctuation dans des dizaines de chaînes en prose.
+- **Règle d'or** : un débutant ouvrant sa première boutique doit comprendre chaque libellé / tooltip / message en **une** lecture, sans dictionnaire. Distinction posée : jargon e-commerce que la cible connaît (ROAS, CPA, dropshipping, SKU) = **gardé** + une explication à la 1ʳᵉ occurrence par surface ; jargon comptable / fiscal / logistique / technique = **traduit** ; vocabulaire développeur = **banni** (ne doit jamais apparaître).
+- **Solution & pourquoi** :
+  - **Glossaire de bijection** (un concept = un terme canonique + formes courtes déclarées) — table complète et référentielle dans `RECAP_TECHNIQUE.md`.
+  - **Traductions clés** : « Coût rendu (CIF) » → « Coût réel total » ; « TVA import » → « TVA à l'import » ; « Modèle logistique » → « Comment vous expédiez » ; « Budget ads » → « Part de pub dans vos ventes » ; « Break-Even ROAS » → « ROAS minimum pour être rentable » ; « Marge dispo/unité » → « Reste pour la pub » ; régime TVA explicité (« Assujetti à la TVA (vous facturez et récupérez la TVA) »).
+  - **Typo** : tirets cadratins/demi-cadratins en ponctuation éliminés par **reformulation** (virgule / deux-points / parenthèses), jamais 1:1 mécanique ; plages « 20–25 % » → « 20 à 25 % » ; séparateurs d'options → « · ». **Intouchables** : signes moins des déductions (U+2212), traits d'union français (au-delà, e-commerce), placeholders « pas de valeur » (`—` en cellule vide), noms produits, clés de catégories, commentaires, docs.
+  - **Landing** réécrite en français (3 bénéfices concrets, labels de formulaire FR, aucune devise en dur).
+  - **Prompt IA** : définitions canoniques alignées + **bloc « consignes de style de sortie »** ajouté (phrases courtes, 0 tiret cadratin, 0 jargon comptable, devise de la boutique uniquement). `normLevier` (couche route, `engine.js` intouché) traduit **à la consommation** les libellés que le moteur bake dans `s.levier` : « Budget ads suspendu » → « Publicité suspendue », « € » → devise réelle — même patron que la normalisation de devise déjà en place.
+  - **Alignements** : bloc « Vos taux de frais » (`app._index.jsx:2260`) — le hint `/transaction` sous le 3ᵉ champ cassait l'alignement `flex-end`, sorti de la ligne flex ; bloc « Marge réelle sur vos commandes » (`app._index.jsx:2329`) — feedbacks intercalés entre les 2 boutons (le 2ᵉ sautait selon l'état), restructuré en titre au-dessus + 2 groupes « bouton + feedback empilé » alignés par le haut.
+- **Garde-fous tests** : lots réécrits verrouillant les **nouveaux** libellés avec sévérité **≥** l'ancienne — lot2 (+2 asserts anti `—`/`CIF` sur notes IA ET ventilation), lot4 (+1 assert : 0 tiret cadratin sur 116 ROAS balayés), lot10 (+1 assert gabarit + parité texte≡HTML re-prouvée), lot12 (+3 asserts : grâce / suspension / resolved), lot18 & lot20 (chaînes mises à jour 1:1). **Aucun assert supprimé sans remplaçant.** Suite complète verte + `npm run build` vert ; rendu réel des composants douane extraits (`render_check.mjs`) OK.
+- **Réserve honnête** : le rendu **pixel** des deux blocs ré-alignés n'est pas prouvé automatiquement (`app._index.jsx` importe `shopify.server`, non rendable en isolation ; `render_check.mjs` ne couvre que les composants extraits). Contrôle compensatoire : smoke visuel complet immédiatement après déploiement.
 
 ---
 

@@ -74,8 +74,8 @@ export function computeCpaAdvice(roas) {
   const anyViable = statuses.some((s) => s.label === "Viable");
   const citables  = statuses.filter((s) => s.label !== "Difficile");
   return (roasInviable(roas) || !anyViable)
-    ? "Aucune plateforme publicitaire n'est viable à ce ROAS — privilégiez l'acquisition organique (UGC, SEO, réseaux sociaux) plutôt que la publicité payante."
-    : `CPA exploitable sur ${citables.map((s) => s.name).join(", ")} — concentrez-y votre budget et optimisez vos créatives.`;
+    ? "Aucune plateforme publicitaire n'est viable à ce ROAS. Privilégiez l'acquisition organique (UGC, SEO, réseaux sociaux) plutôt que la publicité payante."
+    : `CPA exploitable sur ${citables.map((s) => s.name).join(", ")}. Concentrez-y votre budget et optimisez vos créatives.`;
 }
 
 // Phrase d'ambiance sous le chiffre ROAS — branchée sur le verdict agrégé, JAMAIS
@@ -83,9 +83,9 @@ export function computeCpaAdvice(roas) {
 // quand Meta était Difficile → contradiction d'écran, même classe que BUG 2).
 export function computeRoasPhrase(roas) {
   switch (roasReachability(roas)) {
-    case "facile": return "Ce seuil est atteignable — la plupart des plateformes publicitaires peuvent le tenir.";
-    case "tendu":  return "Ce seuil est tendu — peu de plateformes le soutiennent, vos campagnes devront être très optimisées.";
-    default:       return "Ce seuil est difficile à maintenir — votre marge publicitaire est très serrée.";
+    case "facile": return "Ce seuil est atteignable : la plupart des plateformes publicitaires peuvent le tenir.";
+    case "tendu":  return "Ce seuil est tendu : peu de plateformes le soutiennent, vos campagnes devront être très optimisées.";
+    default:       return "Ce seuil est difficile à maintenir : votre marge publicitaire est très serrée.";
   }
 }
 

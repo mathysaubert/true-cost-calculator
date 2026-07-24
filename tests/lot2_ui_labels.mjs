@@ -46,35 +46,37 @@ function calcNetMargin(prixAchat, prixVente, cat, pays, shopifyFee, stripeFee, f
   return revenu - coutRendu - shopifyCost - stripeCost - retoursCost - (fr + emb);
 }
 
-// Reproduit la logique de label du prompt IA (Edit 7 Lot 2)
+// Reproduit la logique de note douane du prompt IA (app._index.jsx). Libellés SIMPLIFIÉS après le
+// chantier langage : aucun tiret cadratin (ponctuation → virgule), aucun « CIF ».
 function iaDouaneLabel(prixAchat, douane, shippingModel, now) {
   const sm = shippingModel ?? "stock";
   const pa = parseFloat(prixAchat);
   if (sm === "dropshipping") {
-    if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur — tarif % plein)";
+    if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur, tarif % plein)";
     return now < EU_DROPSHIP_DUTY_REFORM_DATE
-      ? " (faible valeur — exonéré jusqu'au 30/06/2026)"
-      : " (faible valeur — forfait 3€ post-01/07/2026)";
+      ? " (faible valeur, exonéré jusqu'au 30/06/2026)"
+      : " (faible valeur, forfait douanier UE depuis le 01/07/2026)";
   }
   return "";
 }
 
-// Reproduit la logique de label de la ventilation UI (Edit 8 Lot 2)
+// Reproduit la logique du libellé douane de la ventilation UI (app._index.jsx). SIMPLIFIÉ : « exonéré »
+// affiché « gratuit », « % sur CIF » → « % sur le produit + port », aucun tiret cadratin.
 function uiDouaneLabel(prixAchat, douane, customsRate, shippingModel, now) {
   const sm = shippingModel ?? "stock";
   const pa = prixAchat ?? 0;
   if (douane === 0) {
     if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
       return now < EU_DROPSHIP_DUTY_REFORM_DATE
-        ? `+ Droits de douane (exonéré jusqu'au 30/06/2026)`
-        : `+ Droits de douane (faible valeur — exonéré)`;
+        ? `+ Droits de douane (gratuit jusqu'au 30/06/2026)`
+        : `+ Droits de douane (faible valeur, gratuit)`;
     }
-    return `+ Droits de douane (exonéré)`;
+    return `+ Droits de douane (gratuit)`;
   }
   if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
-    return `+ Droits de douane (forfait 3€/article — réforme UE)`;
+    return `+ Droits de douane (forfait de 3 € par article, réforme UE)`;
   }
-  return `+ Droits de douane (${(customsRate*100).toFixed(0)} % sur CIF)`;
+  return `+ Droits de douane (${(customsRate*100).toFixed(0)} % sur le produit + port)`;
 }
 
 const PRE  = new Date("2026-06-16T00:00:00Z");
@@ -133,11 +135,14 @@ section("T3 : Labels dynamiques prompt IA");
   const l3 = iaDouaneLabel(2.44, d3, "dropshipping", POST);
   const l4 = iaDouaneLabel(40,   d4, "stock",        POST);
 
-  assert(l1.includes("30/06/2026"),     `Dropship 40€ pré (faible val) : "${l1}"`);
-  assert(l1b.includes("haute valeur"),  `Dropship 200€ post (haute val) : "${l1b}"`);
-  assert(l2.includes("30/06/2026"),     `Dropship 2.44€ pré: "${l2}"`);
-  assert(l3.includes("forfait 3€"),     `Dropship 2.44€ post: "${l3}"`);
-  assert(l4 === "",                     `Stock post : label vide "${l4}"`);
+  assert(l1.includes("30/06/2026"),          `Dropship 40€ pré (faible val) : "${l1}"`);
+  assert(l1b.includes("haute valeur"),       `Dropship 200€ post (haute val) : "${l1b}"`);
+  assert(l2.includes("30/06/2026"),          `Dropship 2.44€ pré: "${l2}"`);
+  assert(l3.includes("forfait douanier UE"), `Dropship 2.44€ post (forfait UE) : "${l3}"`);
+  assert(l4 === "",                          `Stock post : label vide "${l4}"`);
+  // Langage simplifié : aucune note IA douane ne contient de tiret cadratin/demi-cadratin ni « CIF »
+  assert(![l1, l1b, l2, l3].some(l => l.includes("—") || l.includes("–") || l.includes("CIF")),
+    "Notes IA douane : 0 tiret cadratin, 0 « CIF »");
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -145,25 +150,25 @@ section("T3 : Labels dynamiques prompt IA");
 // ════════════════════════════════════════════════════════════════════════════════
 section("T4 : Labels dynamiques ventilation UI");
 {
-  // Dropship faible valeur pré : "exonéré jusqu'au..."
+  // Dropship faible valeur pré : "gratuit jusqu'au..."
   const l1 = uiDouaneLabel(2.44, 0, 0.03, "dropshipping", PRE);
   assert(l1.includes("30/06/2026"), `Dropship faible val pré : "${l1}"`);
 
-  // Dropship faible valeur post : droits = 3€ → "forfait 3€"
+  // Dropship faible valeur post : droits = 3€ → "forfait de 3 € par article"
   const l2 = uiDouaneLabel(2.44, 3, 0.03, "dropshipping", POST);
-  assert(l2.includes("forfait 3€"), `Dropship faible val post : "${l2}"`);
+  assert(l2.includes("forfait de 3"), `Dropship faible val post : "${l2}"`);
 
-  // Dropship haute valeur post : droits = (200+8)×5% = 10.4 → "% sur CIF"
+  // Dropship haute valeur post : droits = (200+8)×5% = 10.4 → "% sur le produit + port"
   const l3 = uiDouaneLabel(200, 10.4, 0.05, "dropshipping", POST);
-  assert(l3.includes("% sur CIF"), `Dropship haute val post : "${l3}"`);
+  assert(l3.includes("sur le produit + port"), `Dropship haute val post : "${l3}"`);
 
-  // Stock, droits 2.40 → "% sur CIF"
+  // Stock, droits 2.40 → "% sur le produit + port"
   const l4 = uiDouaneLabel(40, 2.40, 0.05, "stock", PRE);
-  assert(l4.includes("% sur CIF"), `Stock pré : "${l4}"`);
+  assert(l4.includes("sur le produit + port"), `Stock pré : "${l4}"`);
 
-  // Aucune référence à "de minimis" ou "150" dans les nouveaux labels
-  assert(![l1, l2, l3, l4].some(l => l.includes("minimis") || l.includes("150")),
-    "Aucun label ne contient 'de minimis' ou '150'");
+  // Langage simplifié : aucun libellé ne contient 'de minimis', '150', « CIF » ni tiret cadratin/demi-cadratin
+  assert(![l1, l2, l3, l4].some(l => l.includes("minimis") || l.includes("150") || l.includes("CIF") || l.includes("—") || l.includes("–")),
+    "Libellés ventilation douane : 0 'de minimis'/'150'/'CIF'/tiret cadratin");
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

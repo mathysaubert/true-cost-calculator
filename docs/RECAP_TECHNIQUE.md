@@ -289,6 +289,26 @@ Une ligne `order_margins` porte un **snapshot figé** des coûts + la marge calc
 
 Tout l'affichage passe par `feesCurrency` (loader `app._index.jsx`) : `shop.currencyCode` (primaire) → devise de la 1re commande → `"EUR"`. Helper `money = (n) => formatMoney(n, feesCurrency)` ; les marges se formatent via la devise **par commande** (`p.currency`). **Restent volontairement en € (les convertir serait faux)** : la douane forfaitaire UE (0€/3€ forfait réglementaire) et les barèmes processeurs EU (« Stripe EU 1,5 % + 0,25€ » — libellés en € par le processeur). Les **plans** s'affichent en **USD** (devise de billing Shopify). Voir [`currency_display.md`].
 
+### Bijection du lexique marchand (référence pour toute chaîne future)
+
+Chantier « simplification du langage » (ère XIV) : **un concept = un terme canonique**, avec des formes courtes **déclarées** (pas de synonyme sauvage). Toute nouvelle chaîne marchand doit s'y conformer. Jargon e-commerce que la cible connaît (ROAS, CPA, dropshipping, SKU) = gardé + explication à la 1ʳᵉ occurrence. Jargon comptable/fiscal/technique et vocabulaire développeur = bannis.
+
+| Concept | Terme canonique | Formes courtes déclarées | Emplacements |
+|---|---|---|---|
+| Coût d'achat + port + douane (+ TVA si franchise) | **Coût réel total** | « Coût réel par unité » (simulation), colonne courte « Coût réel/unité » (waterfall) | ligne de déduction calc, ventilation, prompt IA (données + définitions) |
+| TVA payée à l'import | **TVA à l'import** | « (remboursée) » (assujetti) / « (non remboursée) » (franchise / email de perte) | ventilation, waterfall, tooltips régime, email de perte, prompt IA |
+| Mode d'expédition | **Comment vous expédiez** | colonne « Expédition » | champ calc/simulation, params audit, colonne coûts |
+| Part de publicité dans le CA | **Part de pub dans vos ventes** | « − Publicité » (déduction), « Aucun budget pub », « Publicité suspendue » (levier IA via `normLevier`) | champ calc, déductions, validation, audit |
+| Marge restante pour l'acquisition | **Reste pour la pub** (colonne) | tooltip portant la définition complète | colonne bijection monitor |
+| ROAS d'équilibre | **ROAS minimum pour être rentable** | — | carte Expert (×3 occurrences) |
+| Statut de classification douane | **Taux estimé, à confirmer** | badge « Taux estimé » | tag douane, panneau de confirmation |
+| Régime de TVA | **Assujetti à la TVA** / **Franchise de TVA** | aides « (vous facturez et récupérez la TVA) » / « (vous ne facturez pas la TVA) » | champs calc + simulation, tooltips |
+| Droits de douane | **Droits de douane** (`X % sur le produit + port`, `forfait de 3 € par article`, `gratuit`) | — | ventilation, prompt IA |
+
+**Exceptions consignées** (non conformes, assumées) : les *hints* de `PAYMENT_PROCESSORS` (`engine.js:20-24`) portent `—` + `€` en dur → **`engine.js` 0 diff prime**, non touchés. Le levier `Budget ads suspendu` (`engine.js:176`) est **neutralisé à la consommation** par `normLevier` (couche route) avant d'atteindre le prompt IA.
+
+**Typo** : tiret cadratin/demi-cadratin en ponctuation = **banni** (reformulé en `,` / `:` / parenthèses, jamais 1:1) ; plages « A–B » → « A à B » ; séparateurs d'options → « · ». **Intouchables** : signe moins des déductions (U+2212 `−`), traits d'union français (au-delà, e-commerce), placeholders « pas de valeur » (`—` en cellule vide), noms produits, clés de catégories, commentaires, `docs/`, `CLAUDE.md`.
+
 ### Les trois notions de seuil (ne jamais reconfondre)
 
 1. **`shop_plans.profitability_threshold_pct`** (défaut 0) — libellé UI **« Seuil de rentabilité »**. Pilote **deux** features alignées : les **alertes email B7** ET la **classification de l'audit catalogue** (`auditClassify.js`). C'est la source unique de « rentable ».
@@ -333,6 +353,24 @@ Tout l'affichage passe par `feesCurrency` (loader `app._index.jsx`) : `shop.curr
 - **eslint gate** : ne jamais re‑desserrer `no-undef`/`no-unused-vars` pour faire passer le build — ces règles attrapent exactement ce que les tests (purs) ne voient pas.
 - **Borne PostgREST (classification douane)** : le chargement `variant_costs` de l'audit (`run_audit`) n'est **pas paginé** (limite ~1000 lignes). ICP bêta = petit catalogue → pagination = sur‑ingénierie prématurée. **Au‑delà**, des variantes confirmées seraient traitées « estimées » ET leur catégorie confirmée ignorée dans `computeMargin` (faux affichage + faux calcul, aucune erreur levée). Commentaire explicite au point de chargement ; à paginer si le catalogue grossit.
 - **Référents indicateur douane monitor vs audit** (assumé) : après ajout d'une variante Shopify post‑confirmation, le panneau (pire cas produit) peut réclamer une confirmation pendant que l'audit (variante scannée) n'affiche rien — référents différents, chacun vrai sur ce qu'il calcule. L'indicateur audit suit la variante dont le chiffre affiché découle : choix voulu, conservé.
+- **Dette — `lot2_ui_labels.mjs` réimplémente localement la logique des libellés douane** (`iaDouaneLabel`, `uiDouaneLabel`) au lieu d'importer le code réel de `app._index.jsx` (non importable : couplé à `shopify.server`/JSX). Les chaînes y sont **recopiées à la main** et réalignées manuellement à chaque changement : une dérive du code réel **ne serait pas détectée** par ce lot. Connu et assumé (le coût d'extraire ces fonctions dépasse le risque tant que les libellés sont stables). À convertir en import réel si ces libellés bougent souvent.
+
+### Chantier futur — exactitude réglementaire douanière (backlog, `engine.js` à ce jour 0 diff)
+
+Reporté volontairement (aucune correction moteur tant que ce chantier n'est pas ouvert, avec mise à jour assumée des invariants). Au programme :
+
+**Écarts déjà reportés (audit lecture seule) :**
+- **Forfait réforme UE = par UNITÉ, pas par ligne** (`engine.js:60‑69`, `getCustomsDuty` appelé par unité ; dropshipping force `qty=1`). Vraie règle : 3 € par ligne tarifaire par colis. Multi‑unités identiques dans un colis → le monitor sur‑compte (`3 € × qté` au lieu de `3 €`). Impact : commande de 3 unités = 9 € affiché vs 3 € réels, marge sous‑estimée de 6 €.
+- **Taxe petits colis française (TPC, 2 €/article) non modélisée** (aucune constante `engine.js`). Dropshipping France depuis mars 2026 : coût sous‑estimé de 2 €/article. Recherche à mener : qui la supporte (DDP côté vendeur vs DDU côté client).
+- **Pays « UE » = douane + TVA import appliquées à tort** (`engine.js:100‑104` : douane/TVA par catégorie, `paysImport` ne sert qu'au port). Sourcing UE = libre circulation → ni douane ni TVA import ; requalifier la ligne « TVA import » en TVA fournisseur.
+
+**Taux à vérifier sur RITA (douane.gouv.fr) / Access2Markets :**
+- **Électronique 5 %** — accord ITA : la plupart des produits tech sont à **0 %**.
+- **Cosmétique 10 %** — chapitre 33 UE très largement **exempt**.
+- **Maroquinerie 3 %** — juste pour le cuir ; sacs synthétiques ≈ **9,7 %** → **SOUS‑estimation, direction dangereuse** (marge affichée trop optimiste).
+- **Jouets 0 %** — certains ≈ **4,7 %**.
+
+**Origines préférentielles ignorées :** UE (libre circulation), **Turquie en union douanière** (pourtant proposée comme pays d'import → douane nulle possible), autres accords de libre‑échange. Le moteur applique le taux plein quelle que soit l'origine.
 
 ---
 

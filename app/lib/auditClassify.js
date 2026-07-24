@@ -49,8 +49,8 @@ export function auditLabels(thresholdPct = 0) {
   return {
     threshold: t,
     winners: `marge ≥ ${fmtPct(t)} %`,
-    // t = 0 : bande vide ⇒ on l'annonce au lieu d'afficher un « marge 0–0 % » absurde.
-    risky: t > 0 ? `marge 0–${fmtPct(t)} %` : "seuil à 0 % — bande inactive",
+    // t = 0 : bande vide ⇒ on l'annonce au lieu d'afficher un « marge 0 à 0 % » absurde.
+    risky: t > 0 ? `marge 0 à ${fmtPct(t)} %` : "seuil à 0 %, bande inactive",
     losers: "marge < 0 %",
   };
 }

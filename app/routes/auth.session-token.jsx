@@ -26,18 +26,18 @@ export const loader = async ({ request }) => {
   <h2 style="color:#c0392b">Authentication Loop Detected</h2>
   <p>The app is stuck in an authentication redirect loop (${bounceCount} bounces). This almost always means one of these:</p>
   <ol>
-    <li><strong>SHOPIFY_API_SECRET is wrong on Vercel</strong> — the JWT can't be verified</li>
-    <li><strong>App is not installed in this store</strong> — Token Exchange fails with <code>invalid_subject_token</code></li>
+    <li><strong>SHOPIFY_API_SECRET is wrong on Vercel</strong>: the JWT can't be verified</li>
+    <li><strong>App is not installed in this store</strong>: Token Exchange fails with <code>invalid_subject_token</code></li>
   </ol>
   <h3>How to fix:</h3>
-  <p><strong>Option 1 — Verify SHOPIFY_API_SECRET:</strong></p>
+  <p><strong>Option 1 · Verify SHOPIFY_API_SECRET:</strong></p>
   <ol>
     <li>Go to <a href="https://partners.shopify.com" target="_top">Shopify Partners</a> → Your App → <em>API credentials</em></li>
     <li>Copy the <strong>API secret key</strong> (not the API key)</li>
     <li>Update <code>SHOPIFY_API_SECRET</code> in Vercel → Settings → Environment Variables</li>
     <li>Redeploy</li>
   </ol>
-  <p><strong>Option 2 — Re-install the app:</strong></p>
+  <p><strong>Option 2 · Re-install the app:</strong></p>
   <ol>
     <li>In Shopify Partners, click <em>Test your app</em> → select your dev store</li>
     <li>Complete the installation flow</li>

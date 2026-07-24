@@ -28,6 +28,8 @@ console.log("\n── digest mixte ──");
   ok(html.includes("Snowboard Hydrogen") && html.includes("Bonnet"), "titres produits affichés");
   ok(text.includes("-12,40") && text.includes("+8,10"), "montants : perte signée, rétabli avec +");
   ok(!/marge nette cumulée/.test(text), "plus de jargon 'marge nette cumulée'");
+  // Chantier langage : titres d'entrée sans tiret cadratin → le gabarit lui-même n'en ajoute aucun.
+  ok(!/[—–]/.test(html) && !/[—–]/.test(text), "typo : le gabarit du mail n'ajoute aucun tiret cadratin/demi-cadratin");
 }
 
 // ── GARDE anti-wording trompeur : ni causalité, ni date, ni verbe de conseil ──
@@ -51,7 +53,7 @@ console.log("\n── poste de coût dominant (topCost) ──");
       topCost: { label: "la douane", amount: 6.24, achatPort: 32 }, bdAvail: true })],
   });
   ok(text.includes("la douane") && text.includes("6,24"), "surcharge dominante affichée (douane, 6,24)");
-  ok(text.includes("Coût d'achat + port") && text.includes("32,00"), "coût d'achat + port exposé séparément");
+  ok(text.includes("Coût d'achat et port") && text.includes("32,00"), "coût d'achat et port exposé séparément");
   ok(!text.includes("détail des coûts n'apparaît"), "breakdown dispo → pas de note fallback");
 }
 
@@ -62,7 +64,7 @@ console.log("\n── fallback : breakdown absent ──");
     shop: "s", basculements: [b({ id: "gid://shopify/Product/8", to: "loss", margin: -3, cur: "EUR", title: "Mug", bdAvail: false })],
   });
   ok(/détail des coûts n'apparaît/.test(text) && /Suivi des coûts/.test(text), "note fallback présente (explique l'absence + remède)");
-  ok(!text.includes("le poste le plus lourd"), "aucune ligne de coût dominant (topCost absent)");
+  ok(!text.includes("votre plus gros coût"), "aucune ligne de coût dominant (topCost absent)");
 }
 
 // ── fallback nom produit (titre absent) ──
@@ -115,12 +117,12 @@ console.log("\n── texte brut ≡ HTML : mêmes chiffres ──");
     shop: "s", thresholdPct: 80,
     basculements: [
       b({ id: "gid://shopify/Product/1", to: "loss", margin: -4.05, cur: "USD", title: "Coque",
-        topCost: { label: "la TVA à l'import non récupérable", amount: 9.2, achatPort: 40 }, bdAvail: true }),
+        topCost: { label: "la TVA à l'import (non remboursée)", amount: 9.2, achatPort: 40 }, bdAvail: true }),
       b({ id: "gid://shopify/Product/2", to: "loss", margin: 729.27, pct: 60.8, cur: "USD", title: "Snow" }),
     ],
   });
   ok(html.length > 0 && text.length > 0, "html ET texte non vides (jamais HTML-only)");
-  for (const fig of ["-4,05", "40,00", "9,20", "TVA à l'import non récupérable", "+729,27", "60,8"]) {
+  for (const fig of ["-4,05", "40,00", "9,20", "TVA à l'import (non remboursée)", "+729,27", "60,8"]) {
     ok(html.includes(fig) && text.includes(fig), `« ${fig} » présent dans le HTML ET le texte`);
   }
 }

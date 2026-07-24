@@ -38,7 +38,7 @@ const productName = (b) => b.title ?? `Produit ${String(b.product_id ?? "").spli
 // CONSTAT, jamais conseil : le libellé n'est qu'un nom de poste + un montant.
 const POST_LABELS = {
   douane:      "la douane",
-  tvaNetCost:  "la TVA à l'import non récupérable",
+  tvaNetCost:  "la TVA à l'import (non remboursée)",
   shopifyCost: "les frais Shopify",
   stripeCost:  "les frais de paiement",
   retoursCost: "les retours",
@@ -83,7 +83,7 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const lossLine = (b) => {
     let s = `${productName(b)} : ${money(b.margin, b.currency)} (tout compris).`;
     if (b.topCost) {
-      s += ` Coût d'achat + port : ${money(b.topCost.achatPort, b.currency)} ; au-delà, le poste le plus lourd : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
+      s += ` Coût d'achat et port : ${money(b.topCost.achatPort, b.currency)}. Ensuite, votre plus gros coût : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
       // Pire cas : si le poste dominant est la douane ET ≥1 ligne contributrice porte une classification
       // estimée, on le signale — sans dramatiser (le taux dépend de la catégorie, encore non validée).
       if (b.topCost.key === "douane" && b.customsEstimated) s += " (taux de douane estimé)";
@@ -96,15 +96,15 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   // Objet adaptatif : mène avec le plus grave présent. FACTUEL, aucun emoji (un pictogramme
   // d'avertissement dans l'objet est un signal de spam ; la gravité est dans le contenu).
   const subject = realLosses.length
-    ? `${shop} — ${realLosses.length} produit${realLosses.length > 1 ? "s" : ""} vendu${realLosses.length > 1 ? "s" : ""} à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
+    ? `${shop} : ${realLosses.length} produit${realLosses.length > 1 ? "s" : ""} vendu${realLosses.length > 1 ? "s" : ""} à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
     : thin.length
-    ? `${shop} — ${thin.length} produit${thin.length > 1 ? "s" : ""} sous votre objectif de marge`
-    : `${shop} — ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} repassé${recoveries.length > 1 ? "s" : ""} rentable${recoveries.length > 1 ? "s" : ""}`;
+    ? `${shop} : ${thin.length} produit${thin.length > 1 ? "s" : ""} sous votre objectif de marge`
+    : `${shop} : ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} repassé${recoveries.length > 1 ? "s" : ""} rentable${recoveries.length > 1 ? "s" : ""}`;
 
   // Note fallback : au moins un produit à perte sans détail de coûts (commandes pré-Brique B).
   const missingDetail = realLosses.some((b) => b.breakdownAvailable === false);
-  const noteText = "Le détail des coûts n'apparaît pas pour certains produits : leurs commandes ont été analysées avant cette fonctionnalité. Complétez-le depuis l'onglet « Suivi des coûts ».";
-  const closing = (realLosses.length || thin.length) ? "À vous de décider quoi ajuster — vous seul connaissez votre marché." : "";
+  const noteText = "Le détail des coûts n'apparaît pas pour certains produits : leurs commandes sont plus anciennes que cette fonction. Complétez-le depuis l'onglet « Suivi des coûts ».";
+  const closing = (realLosses.length || thin.length) ? "À vous de décider quoi ajuster : vous seul connaissez votre marché." : "";
 
   const lines = ["D'après les commandes que True Cost Calculator suit pour vous :", ""];
   if (realLosses.length) lines.push("Vous perdez de l'argent sur :", ...realLosses.map((b) => `• ${lossLine(b)}`), "");
@@ -112,7 +112,7 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoLine(b)}`), "");
   if (closing) lines.push(closing);
   if (appUrl) lines.push("", `Voir le suivi de marge dans l'app : ${appUrl}`);
-  if (missingDetail) lines.push("", `— ${noteText}`);
+  if (missingDetail) lines.push("", `Note : ${noteText}`);
   const text = lines.join("\n").trim();
 
   const section = (titre, items, render) => items.length

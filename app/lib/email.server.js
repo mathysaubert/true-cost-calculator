@@ -12,8 +12,8 @@ import { renderDunningEmail, renderDunningResolvedEmail } from "./dunning.js";
 const FROM = process.env.RESEND_FROM || "True Cost Calculator <onboarding@resend.dev>";
 
 export async function sendLossAlert({ to, shop, basculements, thresholdPct = 0 }) {
-  if (!to) { console.warn(`[Alert] email absent pour ${shop} — envoi ignoré`); return false; }
-  if (!process.env.RESEND_API_KEY) { console.error("[Alert] RESEND_API_KEY manquant — envoi ignoré"); return false; }
+  if (!to) { console.warn(`[Alert] email absent pour ${shop}, envoi ignoré`); return false; }
+  if (!process.env.RESEND_API_KEY) { console.error("[Alert] RESEND_API_KEY manquant, envoi ignoré"); return false; }
   if (!basculements?.length) return false;
 
   try {
@@ -39,9 +39,9 @@ export async function sendLossAlert({ to, shop, basculements, thresholdPct = 0 }
 // frozenSince/now : âge du gel → texte conditionnel (grâce en cours vs expirée). Simple passe-plat
 // vers renderDunningEmail ; now undefined → défaut Date.now() côté rendu (param par défaut).
 export async function sendDunningEmail({ to, shop, plan, confirmationUrl, frozenSince = null, now = undefined }) {
-  if (!to) { console.warn(`[Dunning] email absent pour ${shop} — envoi ignoré`); return false; }
-  if (!process.env.RESEND_API_KEY) { console.error("[Dunning] RESEND_API_KEY manquant — envoi ignoré"); return false; }
-  if (!confirmationUrl) { console.error(`[Dunning] lien de régularisation absent pour ${shop} — envoi ignoré`); return false; }
+  if (!to) { console.warn(`[Dunning] email absent pour ${shop}, envoi ignoré`); return false; }
+  if (!process.env.RESEND_API_KEY) { console.error("[Dunning] RESEND_API_KEY manquant, envoi ignoré"); return false; }
+  if (!confirmationUrl) { console.error(`[Dunning] lien de régularisation absent pour ${shop}, envoi ignoré`); return false; }
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
@@ -57,8 +57,8 @@ export async function sendDunningEmail({ to, shop, plan, confirmationUrl, frozen
 
 // ── Dunning : confirmation "c'est réglé" (retour à active) ───────────────────
 export async function sendDunningResolved({ to, shop, plan }) {
-  if (!to) { console.warn(`[Dunning] email absent pour ${shop} — confirmation ignorée`); return false; }
-  if (!process.env.RESEND_API_KEY) { console.error("[Dunning] RESEND_API_KEY manquant — confirmation ignorée"); return false; }
+  if (!to) { console.warn(`[Dunning] email absent pour ${shop}, confirmation ignorée`); return false; }
+  if (!process.env.RESEND_API_KEY) { console.error("[Dunning] RESEND_API_KEY manquant, confirmation ignorée"); return false; }
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);

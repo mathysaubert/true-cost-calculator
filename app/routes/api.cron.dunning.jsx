@@ -113,7 +113,7 @@ async function runForShop(shop, now) {
 
     // 5b. Destinataire. Sans email on ne peut PAS relancer → on n'avance RIEN (réessai au run suivant).
     const to = await resolveEmail(admin);
-    if (!to) { console.warn(`[Dunning] email absent ${shop} — relance impossible`); r.noEmail = true; return r; }
+    if (!to) { console.warn(`[Dunning] email absent ${shop}, relance impossible`); r.noEmail = true; return r; }
 
     // 5c. ENVOI puis — G2 STRICT — n'avancer compteur/date qu'APRÈS un envoi réussi.
     // frozenSince = âge du gel de l'épisode → le mail sait si la grâce court encore (accès maintenu)

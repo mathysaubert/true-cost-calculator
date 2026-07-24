@@ -1,5 +1,5 @@
 export const meta = () => [
-  { title: "Politique de confidentialité — True Cost Calculator" },
+  { title: "Politique de confidentialité · True Cost Calculator" },
 ];
 
 export default function Privacy() {
@@ -7,7 +7,7 @@ export default function Privacy() {
     <div style={{ maxWidth: "760px", margin: "0 auto", padding: "48px 24px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#202223", lineHeight: "1.7" }}>
       <h1 style={{ fontSize: "28px", fontWeight: "700", marginBottom: "4px" }}>Politique de confidentialité</h1>
       <p style={{ fontSize: "14px", color: "#6D7175", marginBottom: "40px" }}>
-        True Cost Calculator — Sprintweb — Dernière mise à jour : 1er juin 2026
+        True Cost Calculator · Sprintweb · Dernière mise à jour : 1er juin 2026
       </p>
 
       <Section title="1. Qui sommes-nous">
@@ -39,10 +39,10 @@ export default function Privacy() {
 
       <Section title="4. Services tiers">
         <ul>
-          <li><strong>Supabase</strong> — stockage de la base de données (hébergé en Europe)</li>
-          <li><strong>Anthropic Claude API</strong> — génération des recommandations IA (les données transmises ne sont pas utilisées pour entraîner les modèles)</li>
-          <li><strong>Sentry</strong> — surveillance des erreurs techniques</li>
-          <li><strong>Vercel</strong> — hébergement de l'application</li>
+          <li><strong>Supabase</strong> : stockage de la base de données (hébergé en Europe)</li>
+          <li><strong>Anthropic Claude API</strong> : génération des recommandations IA (les données transmises ne sont pas utilisées pour entraîner les modèles)</li>
+          <li><strong>Sentry</strong> : surveillance des erreurs techniques</li>
+          <li><strong>Vercel</strong> : hébergement de l'application</li>
         </ul>
       </Section>
 

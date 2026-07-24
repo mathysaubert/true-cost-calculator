@@ -48,13 +48,13 @@ export function CustomsClassificationPanel({ rows, onConfirmed }) {
   return (
     <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FBFBFC", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Classification douanière — {products.length} produit(s) à confirmer</span>
+        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Classification douanière : {products.length} produit(s) à confirmer</span>
         {products.length > 3 && (
           <button onClick={() => setExpanded((e) => !e)} style={{ padding: "3px 10px", background: "#fff", color: "#6D7175", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "11px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>{collapsed ? "Déplier" : "Replier"}</button>
         )}
       </div>
       <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px", lineHeight: "1.5" }}>
-        Le taux de douane dépend de la <strong>catégorie</strong> (selon la nomenclature TARIC). Confirmez-la pour fiabiliser vos marges — les marges déjà à coûts confirmés ne changeront pas.
+        Le taux de douane dépend de la <strong>catégorie</strong> (selon la nomenclature TARIC). Confirmez-la pour fiabiliser vos marges : les marges déjà à coûts confirmés ne changeront pas.
       </div>
       {!collapsed && (
         <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -67,8 +67,8 @@ export function CustomsClassificationPanel({ rows, onConfirmed }) {
                 {divergent && <span style={{ fontSize: "10px", fontWeight: "600", color: "#B98900" }}>⚠ catégories divergentes</span>}
                 <select value={chosen} onChange={(e) => setChoice({ ...choice, [g.product_id]: e.target.value })}
                   style={{ fontSize: "12px", padding: "5px 8px", borderRadius: "6px", border: "1px solid #C9CCCF", fontFamily: "inherit" }}>
-                  {divergent && <option value="">— choisir une catégorie —</option>}
-                  {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>)}
+                  {divergent && <option value="">Choisir une catégorie</option>}
+                  {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => <option key={cat} value={cat}>{cat} · douane {formatPct(rate * 100)} %</option>)}
                 </select>
                 <button onClick={() => submit(g.product_id, chosen)} disabled={!chosen || confirmFetcher.state !== "idle"}
                   style={{ padding: "5px 12px", background: chosen ? "#008060" : "#E4E5E7", color: chosen ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: chosen ? "pointer" : "default", fontFamily: "inherit" }}>Confirmer</button>

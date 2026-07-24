@@ -81,7 +81,7 @@ export async function recalcEstimatedMargins({ admin, supabase, shop, now = new 
     if (res.error) console.error("[Recalc] restauration :", res.error.message);
   }
   if (!sync?.success) {
-    return { success: false, error: `Synchronisation échouée (${sync?.error ?? "?"}) — lignes restaurées, aucune perte.`, restored: toRestore.length };
+    return { success: false, error: `Synchronisation échouée (${sync?.error ?? "?"}) : lignes restaurées, aucune perte.`, restored: toRestore.length };
   }
 
   // 5. APRÈS — état FINAL (post-restauration si des traînards ont été restaurés, sinon la lecture post-sync suffit).

@@ -288,7 +288,7 @@ function AlertBanner({ violations, threshold }) {
         <div style={{ fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
           {violations.slice(0, 3).map((v, i) => (
             <div key={i}>
-              <strong>{v.product_title ?? v.category}</strong> — marge actuelle : <strong style={{ color: "#D72C0D" }}>{formatPct(v.net_margin_percent)} %</strong>
+              <strong>{v.product_title || `Calcul du ${new Date(v.created_at).toLocaleDateString("fr-FR")}`}</strong>, marge actuelle : <strong style={{ color: "#D72C0D" }}>{formatPct(v.net_margin_percent)} %</strong>
             </div>
           ))}
           {violations.length > 3 && <div>et {violations.length - 3} autre{violations.length - 3 > 1 ? "s" : ""}…</div>}
@@ -368,7 +368,7 @@ function ExpertGate({ onUpgrade }) {
       <div style={{ fontSize: "32px", marginBottom: "14px" }}>🔒</div>
       <div style={{ fontSize: "17px", fontWeight: "700", color: "#202223", marginBottom: "8px" }}>Fonctionnalité Expert</div>
       <div style={{ fontSize: "14px", color: "#6D7175", marginBottom: "24px", lineHeight: "1.6" }}>
-        Réservée au plan <strong>Expert — 69$/mois</strong>.
+        Réservée au plan <strong>Expert (69 $/mois)</strong>.
       </div>
       <button onClick={onUpgrade} style={{ padding: "12px 28px", background: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
         Voir le plan Expert →
@@ -416,8 +416,8 @@ const AD_PLATFORMS = AD_PLATFORM_RANGES.map((r) => ({ ...r, ...AD_PLATFORM_DISPL
 // Habillage (couleur/icône/hint) d'un statut plateforme. Le LABEL vient de
 // platformLabel (lib/roas.js) — source unique, jamais re-décidé ici.
 const PLATFORM_STYLE = {
-  Viable:    { color: "#008060", bg: "#F1F8F5", border: "#00806033", icon: "✓", hint: "Votre seuil est sous le ROAS moyen — cette plateforme peut couvrir vos coûts." },
-  Limite:    { color: "#B98900", bg: "#FFF9EC", border: "#B9890033", icon: "⚠", hint: "Votre seuil est dans la fourchette — les campagnes devront être bien optimisées." },
+  Viable:    { color: "#008060", bg: "#F1F8F5", border: "#00806033", icon: "✓", hint: "Votre seuil est sous le ROAS moyen : cette plateforme peut couvrir vos coûts." },
+  Limite:    { color: "#B98900", bg: "#FFF9EC", border: "#B9890033", icon: "⚠", hint: "Votre seuil est dans la fourchette : les campagnes devront être bien optimisées." },
   Difficile: { color: "#D72C0D", bg: "#FFF4F4", border: "#D72C0D33", icon: "✗", hint: "Votre seuil dépasse le ROAS habituel de cette plateforme." },
 };
 function platformStatus(roas, min, max) {
@@ -488,7 +488,7 @@ function BreakEvenROAS({ results, onGoToSimulation, feesCurrency = "EUR" }) {
       <div style={{ padding: "24px 28px", borderRadius: "12px", background: "linear-gradient(135deg,rgba(255,255,255,0.97) 0%,rgba(250,248,255,0.97) 100%)", border: `1px solid ${roasColor}44`, boxShadow: "0 4px 20px rgba(0,0,0,0.06)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
           <span style={{ fontSize: "16px" }}>📈</span>
-          <span style={{ fontSize: "13px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.6px" }}>Break-Even ROAS</span>
+          <span style={{ fontSize: "13px", fontWeight: "700", color: "#202223", textTransform: "uppercase", letterSpacing: "0.6px" }}>ROAS minimum pour être rentable</span>
           <span style={{ padding: "2px 8px", borderRadius: "10px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", fontSize: "10px", fontWeight: "700" }}>EXPERT</span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: "16px", marginBottom: "14px" }}>
@@ -531,7 +531,7 @@ function BreakEvenROAS({ results, onGoToSimulation, feesCurrency = "EUR" }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223", marginBottom: "1px" }}>{name}</div>
-                  <div style={{ fontSize: "11px", color: "#6D7175" }}>{sub} · ROAS courant : <strong>{min}x – {max}x</strong> (indicatif)</div>
+                  <div style={{ fontSize: "11px", color: "#6D7175" }}>{sub} · ROAS courant : <strong>{min}x à {max}x</strong> (indicatif)</div>
                 </div>
                 <div style={{ flexShrink: 0, textAlign: "right" }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "20px", background: s.color + "18", border: `1px solid ${s.color}33`, marginBottom: "3px" }}>
@@ -956,8 +956,8 @@ export const action = async ({ request }) => {
     );
     // Avertissements NON bloquants (valeurs enregistrées) : disent la CONSÉQUENCE. Taux réels ~1–3 %.
     const feeWarnings = [];
-    if (shopifyFee > 10) feeWarnings.push(`Taux Shopify inhabituellement élevé (${shopifyFee} %) — il sera déduit de chaque marge calculée. Vérifiez (le réel est ~2 %).`);
-    if (procFee > 5)     feeWarnings.push(`Taux processeur inhabituellement élevé (${procFee} %) — déduit de chaque marge calculée. Vérifiez (le réel est ~1,5 %).`);
+    if (shopifyFee > 10) feeWarnings.push(`Taux Shopify inhabituellement élevé (${shopifyFee} %) : il sera déduit de chaque marge calculée. Vérifiez (le réel est ~2 %).`);
+    if (procFee > 5)     feeWarnings.push(`Taux processeur inhabituellement élevé (${procFee} %) : déduit de chaque marge calculée. Vérifiez (le réel est ~1,5 %).`);
     return feeWarnings.length ? { success: true, warning: feeWarnings.join(" ") } : { success: true };
   }
 
@@ -976,7 +976,7 @@ export const action = async ({ request }) => {
     // Avertissement non bloquant > 40 % : dit la CONSÉQUENCE (le marchand doit comprendre ce qu'il
     // déclenche). En e-commerce physique la marge nette dépasse rarement 20–30 %.
     return n > 40
-      ? { success: true, warning: "Seuil élevé : la plupart de vos produits vont basculer « sous le seuil » — l'alerte quotidienne se déclenchera massivement et le suivi CPA les marquera « Acquisition impossible ». En e-commerce physique, la marge nette dépasse rarement 20–30 %." }
+      ? { success: true, warning: "Seuil élevé : la plupart de vos produits vont basculer « sous le seuil ». L'alerte quotidienne se déclenchera massivement et le suivi CPA les marquera « Acquisition impossible ». En e-commerce physique, la marge nette dépasse rarement 20 à 30 %." }
       : { success: true };
   }
 
@@ -1021,9 +1021,9 @@ export const action = async ({ request }) => {
       ]);
       const bl = computeCpaTargets(aggregateOrderMargins(omRes.data ?? []), { thresholdPct: planRes.data?.profitability_threshold_pct ?? 0 }).blended;
       if (bl && n > bl.cpaMax)
-        warnings.push(`Vous déclarez un CPA supérieur à votre plafond (${formatMoney(bl.cpaMax, bl.currency)}) — vérifiez la saisie, ou c'est un dépassement réel : vous vendez à perte sur l'acquisition.`);
+        warnings.push(`Vous déclarez un CPA supérieur à votre plafond (${formatMoney(bl.cpaMax, bl.currency)}) : vérifiez la saisie, ou c'est un dépassement réel, vous vendez à perte sur l'acquisition.`);
     } catch (e) { console.error("[CPA] plafond warn:", e?.message); }
-    if (n > 80) warnings.push("CPA élevé pour du e-commerce B2C — probable faute de frappe à vérifier.");
+    if (n > 80) warnings.push("CPA élevé pour du e-commerce B2C : probable faute de frappe à vérifier.");
 
     return warnings.length ? { success: true, warning: warnings.join(" ") } : { success: true };
   }
@@ -1385,7 +1385,7 @@ export const action = async ({ request }) => {
   if (body._action === "set_alert") {
     const threshold = parseFloat(body.threshold);
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
-      return { success: false, error: "Seuil invalide (0–100)." };
+      return { success: false, error: "Seuil invalide (0 à 100)." };
     }
     await supabase.from("margin_alerts").upsert(
       { shop_domain: session.shop, threshold, updated_at: new Date().toISOString() },
@@ -1441,11 +1441,17 @@ export const action = async ({ request }) => {
 
     // Devise de la boutique (postée par le client depuis feesCurrency = shop.currencyCode). Défaut SÛR :
     // EUR si absente/malformée → la reco n'est JAMAIS bloquée (dégrade proprement, req. 6). money() formate
-    // dans cette devise (plus formatEur en dur). normLevier normalise le € que le moteur bake dans s.levier
-    // (engine.js intouché) vers la devise réelle — sauf EUR où « € » reste naturel.
+    // dans cette devise (plus formatEur en dur). normLevier normalise, à la CONSOMMATION (engine.js
+    // intouché, 0 diff), les libellés que le moteur bake dans s.levier : le « € » vers la devise réelle
+    // (sauf EUR où « € » reste naturel) ET le terme technique « Budget ads suspendu » vers un français
+    // simple (« Publicité suspendue »), pour que le prompt IA ne porte jamais ce jargon.
     const currency = /^[A-Z]{3}$/.test(String(body.feesCurrency ?? "")) ? body.feesCurrency : "EUR";
     const money = (v) => formatMoney(v, currency);
-    const normLevier = (l) => (currency === "EUR" ? l : String(l).replace(/€/g, currency));
+    const normLevier = (l) => {
+      let s = String(l).replace(/Budget ads suspendu/g, "Publicité suspendue");
+      if (currency !== "EUR") s = s.replace(/€/g, currency);
+      return s;
+    };
 
     const scenariosBlock = scenList.map((s, i) =>
       s.prixCible !== undefined
@@ -1457,28 +1463,28 @@ export const action = async ({ request }) => {
 
 DÉFINITIONS CANONIQUES (emploie-les strictement) :
 • Marge apparente = (Prix vente − Prix fournisseur) / Prix vente
-• Marge brute = (Prix vente − Coût rendu total) / Prix vente — exclut Shopify, Stripe, emballage, retours, ads
-• Marge nette = (Prix vente − Coût rendu − TOUS frais vente − Frais fixes) / Prix vente
+• Marge brute = (Prix vente − Coût réel total) / Prix vente : hors frais Shopify, frais de paiement, emballage, retours et publicité
+• Marge nette = (Prix vente − Coût réel total − tous les frais de vente − frais fixes) / Prix vente
 
-DEVISE : tous les montants ci-dessous sont en ${currency}. Emploie EXCLUSIVEMENT ${currency} dans ta réponse — ne convertis jamais et n'utilise aucune autre devise (surtout pas l'euro si ${currency} n'est pas EUR).
+DEVISE : tous les montants ci-dessous sont en ${currency}. Emploie EXCLUSIVEMENT ${currency} dans ta réponse : ne convertis jamais et n'utilise aucune autre devise (surtout pas l'euro si ${currency} n'est pas EUR).
 
-CLASSIFICATION DOUANE : le montant de droits de douane provient de la catégorie déclarée (${safeCategory}), une ESTIMATION selon la nomenclature TARIC — pas une classification confirmée. Ne présente jamais ce montant comme certain ; rappelle qu'il dépend de la catégorie douanière exacte du produit.
+CLASSIFICATION DOUANE : le montant de droits de douane provient de la catégorie déclarée (${safeCategory}), une ESTIMATION selon la nomenclature TARIC, pas une classification confirmée. Ne présente jamais ce montant comme certain ; rappelle qu'il dépend de la catégorie douanière exacte du produit.
 
 DONNÉES DU CALCUL :
 - Produit : ${safeTitle} | Catégorie : ${safeCategory} | Import : ${safeCountry}
-- Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA import = coût sec)" : "Assujetti (TVA import récupérable, neutralisée)"}
+- Régime TVA : ${vatRegime === "franchise" ? "Franchise en base (TVA à l'import = coût sec)" : "Assujetti (TVA à l'import récupérable, neutralisée)"}
 - Prix fournisseur : ${money(prixAchat)} | Prix de vente : ${money(prixVente)}
 - Douane : ${money(m.douane)}${(() => {
       const sm = shippingModel ?? "stock";
       const pa = parseFloat(prixAchat);
       if (sm === "dropshipping") {
-        if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur — tarif % plein)";
+        if (pa > LOW_VALUE_PARCEL_CEILING) return " (haute valeur, tarif % plein)";
         return new Date() < EU_DROPSHIP_DUTY_REFORM_DATE
-          ? " (faible valeur — exonéré jusqu'au 30/06/2026)"
-          : " (faible valeur — forfait douanier UE post-01/07/2026)";
+          ? " (faible valeur, exonéré jusqu'au 30/06/2026)"
+          : " (faible valeur, forfait douanier UE depuis le 01/07/2026)";
       }
       return ""; // stock : tarif % standard, aucune note particulière
-    })()} | TVA import : ${money(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${money(m.shipping)} | Coût rendu net : ${money(m.coutRendu)}
+    })()} | TVA à l'import : ${money(m.tvaImport)}${vatRegime !== "franchise" ? " (récupérable)" : ""} | Port : ${money(m.shipping)} | Coût réel total : ${money(m.coutRendu)}
 - ${safeProcessor} : ${stripeFee} %+${money(processorFixedFee)} → ${money(m.stripeCost)} | Shopify : ${shopifyFee} % → ${money(m.shopifyCost)} | Retours : ${retours} % → ${money(m.retoursCost)} | Ads : ${ads} % → ${money(m.adsCost)}
 - Emballage : ${money(coutEmballage)} | Frais retour : ${money(fraisRetour)}
 - ${buildMargeLine(m, currency)}
@@ -1488,12 +1494,18 @@ DONNÉES DU CALCUL :
 SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
 ${scenariosBlock}
 
-INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (montants en ${currency}, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage — la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
+INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (montants en ${currency}, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage : la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
 
 Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette résultante décroissante. Pour chaque action, cite sa marge nette exacte et précise Rentable=OUI/NON. Si marge actuelle ≤ 0 et qu'aucun scénario seul ne la rend positive, recommande la combinaison listée.
 
+STYLE DE RÉPONSE (obligatoire) :
+- Écris pour un débutant qui ouvre sa première boutique. Chaque phrase doit être comprise du premier coup, sans dictionnaire.
+- Phrases courtes, mots simples. Aucun jargon comptable, fiscal ou technique (pas de « CIF », « intrants », « assujetti », « de minimis », « coût sec »). Pour nommer un coût, emploie des mots courants : droits de douane, TVA à l'import, frais Shopify, frais de paiement, retours, emballage, publicité.
+- N'emploie JAMAIS le tiret long « — » ni « – » comme ponctuation : sépare tes phrases par une virgule, un deux-points ou un point.
+- N'utilise que la devise ${currency}, jamais une autre.
+
 Réponds UNIQUEMENT avec ce JSON (sans markdown) :
-{"analyse":"2 phrases max sur les 2 postes dominants — cite leurs montants exacts depuis les données","actions":["levier → marge nette X ${currency} (Y%) | Rentable=Z — contexte métier concis","...","..."]}`;
+{"analyse":"2 phrases max sur les 2 postes de coût les plus lourds, avec leurs montants exacts copiés depuis les données","actions":["levier → marge nette X ${currency} (Y%) | Rentable=Z, explication métier courte","...","..."]}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 18000);
@@ -1523,7 +1535,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
         const errText = await resp.text().catch(() => "");
         // Credit exhaustion (402) must be tracked — owner needs to know before it silently breaks for all users
         if (resp.status === 402 || errText.toLowerCase().includes("credit") || errText.toLowerCase().includes("billing")) {
-          captureException(new Error(`[AI] Crédits Anthropic épuisés — HTTP ${resp.status}: ${errText.slice(0, 300)}`));
+          captureException(new Error(`[AI] Crédits Anthropic épuisés (HTTP ${resp.status}): ${errText.slice(0, 300)}`));
         } else {
           console.error("[AI] Anthropic error:", resp.status, errText.slice(0, 200));
         }
@@ -1535,7 +1547,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
       return { analyse: parsed.analyse, actions: parsed.actions };
     } catch (e) {
       if (e?.name === "AbortError") {
-        console.error("[AI] Timeout — pas de réponse Anthropic après 18s");
+        console.error("[AI] Timeout, pas de réponse Anthropic après 18s");
       } else {
         console.error("[AI] Failed:", e?.message);
       }
@@ -1562,7 +1574,7 @@ Réponds UNIQUEMENT avec ce JSON (sans markdown) :
   if ([shopifyFeeV, stripeFeeV, returnsRateV, adsRateV, customsRateV].some(
     v => !Number.isFinite(v) || v < 0 || v > 100
   )) {
-    return { success: false, error: "Taux invalide (0–100)." };
+    return { success: false, error: "Taux invalide (0 à 100)." };
   }
   if (!Number.isFinite(shippingCostV) || shippingCostV < 0 || shippingCostV > 9999) {
     return { success: false, error: "Frais de port invalides." };
@@ -1643,7 +1655,7 @@ function DualLineChart({ byDay, fmt }) {
       {/* F9 : < 2 points → jamais une courbe qui semble cassée. Point unique intentionnel + message explicite. */}
       {byDay.length < 2 && (
         <div style={{ marginTop: "6px", fontSize: "11px", color: "#6D7175", fontStyle: "italic" }}>
-          Une seule journée de données — la tendance apparaîtra avec plus de commandes.
+          Une seule journée de données : la tendance apparaîtra avec plus de commandes.
         </div>
       )}
     </div>
@@ -1655,11 +1667,11 @@ function DualLineChart({ byDay, fmt }) {
 // réconcilient au centime ; les intrants figés (snapshot) sont du CONTEXTE, jamais sommés.
 // Les postes douane/TVA import/frais Shopify/Stripe ne sont PAS stockés → non détaillés
 // ici (les détailler exigerait de rejouer le moteur = BUG 1). On le DIT, on ne masque pas.
-const REGIME_LABEL = { assujetti: "TVA assujetti", franchise: "TVA franchise" };
+const REGIME_LABEL = { assujetti: "Assujetti à la TVA", franchise: "Franchise de TVA" };
 const MODEL_LABEL  = { dropshipping: "Dropshipping", stock: "Stock" };
 // Waterfall (Brique B) : libellés des postes NIVEAU 1 (somment vers unit_net_margin).
 const WF_DED_LABEL = {
-  coutRendu:   "Coût rendu (CIF)",
+  coutRendu:   "Coût réel/unité",
   shopifyCost: "Frais Shopify",
   stripeCost:  "Frais Stripe",
   retoursCost: "Retours",
@@ -1692,7 +1704,7 @@ function LineGroupCard({ group }) {
           les commandes du groupe — affiché UNE seule fois. Ce qui varie est listé dans le tableau plus bas. */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
         <span style={{ fontSize: "11px", fontWeight: "700", color: "#202223" }}>
-          {multi ? `${group.count} commandes · même décomposition` : `Commande ${lb.order_id ? lb.order_id.split("/").pop() : "—"}`}
+          {multi ? `${group.count} commandes · même calcul` : `Commande ${lb.order_id ? lb.order_id.split("/").pop() : "?"}`}
         </span>
         <span style={{ padding: "1px 7px", borderRadius: "9px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{pill.label}</span>
       </div>
@@ -1700,9 +1712,9 @@ function LineGroupCard({ group }) {
       {/* Économie UNITAIRE commune — identique sur toutes les commandes du groupe (par construction
           de l'empreinte). C'est la partie qui, avant, était répétée N fois. */}
       <div style={{ marginBottom: "10px" }}>
-        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Économie unitaire{multi ? " (identique sur ces commandes)" : ""}</div>
-        <div style={lblRow}><span style={lbl}>Prix de vente net unitaire{wf?.revenue_is_ht ? " (TTC)" : ""}</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
-        <div style={{ ...lblRow, fontWeight: "700" }}><span style={{ color: "#202223" }}>Marge nette unitaire</span><span style={{ ...val, color: lb.unit_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.unit_net_margin)}</span></div>
+        <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Par unité vendue</div>
+        <div style={lblRow}><span style={lbl}>Prix de vente net par unité{wf?.revenue_is_ht ? " (TTC)" : ""}</span><span style={val}>{m(lb.net_unit_revenue)}</span></div>
+        <div style={{ ...lblRow, fontWeight: "700" }}><span style={{ color: "#202223" }}>Marge nette par unité</span><span style={{ ...val, color: lb.unit_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.unit_net_margin)}</span></div>
       </div>
 
       {/* Waterfall poste-par-poste SOUS unit_net_margin (Brique B) — LECTURE PURE du JSON.
@@ -1710,7 +1722,7 @@ function LineGroupCard({ group }) {
           valeur unit_net_margin STOCKÉE (jamais une somme client → zéro dérive). W1/W2/W3. */}
       {wf && (
         <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
-          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Décomposition de la marge nette unitaire</div>
+          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" }}>Détail de votre marge</div>
           <div style={lblRow}><span style={lbl}>{wf.revenue_is_ht ? "Prix de vente net (HT)" : "Prix de vente net"}</span><span style={val}>{m(wf.revenu)}</span></div>
           {wf.deductions.map((d) => (
             <div key={d.key}>
@@ -1719,8 +1731,8 @@ function LineGroupCard({ group }) {
                 <div key={cd.key} style={{ ...lblRow, paddingLeft: "14px", fontSize: "11px" }}>
                   <span style={{ color: "#8C9196" }}>
                     {cd.key === "douane"
-                      ? <>dont douane{cd.rate ? ` (${formatPct(cd.rate * 100)} %)` : ""}{lb.customs_estimated && <span style={{ color: "#B98900", fontWeight: 600 }} title="Classification estimée au moment du calcul — taux non confirmé."> · taux estimé</span>}</>
-                      : `dont TVA import (non récupérable${cd.rate ? `, ${formatPct(cd.rate * 100)} %` : ""})`}
+                      ? <>dont douane{cd.rate ? ` (${formatPct(cd.rate * 100)} %)` : ""}{lb.customs_estimated && <span style={{ color: "#B98900", fontWeight: 600 }} title="Catégorie estimée au moment du calcul, taux à confirmer."> · taux estimé</span>}</>
+                      : `dont TVA à l'import (non remboursée${cd.rate ? `, ${formatPct(cd.rate * 100)} %` : ""})`}
                   </span>
                   <span style={{ ...val, color: "#8C9196" }}>{m(cd.amount)}</span>
                 </div>
@@ -1730,12 +1742,12 @@ function LineGroupCard({ group }) {
           {/* W1 : TVA import avancée puis récupérée (assujetti) — JAMAIS sommée, jamais "non récupérable". */}
           {wf.tva_advanced && (
             <div style={{ ...lblRow, fontSize: "11px" }}>
-              <span style={{ color: "#8C9196" }}>TVA import — avancée puis récupérée, non déduite de la marge</span>
+              <span style={{ color: "#8C9196" }}>TVA à l'import : vous l'avancez, l'État vous la rembourse ; elle ne compte pas dans votre marge</span>
               <span style={{ ...val, color: "#8C9196" }}>{m(wf.tva_advanced.amount)}</span>
             </div>
           )}
           <div style={{ ...lblRow, borderTop: "1px solid #E4E5E7", marginTop: "2px", paddingTop: "5px", fontWeight: "700" }}>
-            <span style={{ color: "#202223" }}>= Marge nette unitaire</span>
+            <span style={{ color: "#202223" }}>= Marge nette par unité</span>
             <span style={{ ...val, color: lb.unit_net_margin < 0 ? "#D72C0D" : "#008060" }}>{m(lb.unit_net_margin)}</span>
           </div>
           {/* Note TVA collectée (gate W3) — note-only, aucun montant. Absente si non assujetti+TTC. */}
@@ -1750,7 +1762,7 @@ function LineGroupCard({ group }) {
       {/* Contexte : intrants figés (coûts SAISIS), jamais sommés — pas une décomposition */}
       {sub && (
         <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
-          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>Intrants figés à l'ingestion (coûts saisis)</div>
+          <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>Coûts utilisés pour ce calcul</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", fontSize: "11px", color: "#6D7175" }}>
             <span>Prix d'achat&nbsp;<strong style={{ color: "#202223" }}>{m(sub.prix_achat)}</strong>{sub.qty_par_lot > 1 ? ` / lot de ${sub.qty_par_lot}` : ""}</span>
             <span>Port entrant&nbsp;<strong style={{ color: "#202223" }}>{m(sub.port_entrant)}</strong></span>
@@ -1768,10 +1780,10 @@ function LineGroupCard({ group }) {
       {!lb.has_breakdown && (
         <>
           <div style={{ marginTop: "8px", fontSize: "10px", color: "#8C9196", fontStyle: "italic", lineHeight: "1.5" }}>
-            Douane, TVA import et frais Shopify/Stripe sont intégrés dans la marge nette unitaire et ne sont pas stockés séparément — non détaillés ici (lecture pure, aucun recalcul).
+            La douane, la TVA à l'import et les frais Shopify/Stripe sont déjà inclus dans la marge nette par unité. Ils ne sont pas affichés poste par poste pour cette commande.
           </div>
           <div style={{ marginTop: "4px", fontSize: "10px", color: "#8C9196", lineHeight: "1.5" }}>
-            Détail poste-par-poste indisponible sur les commandes antérieures à cette version.
+            Le détail par poste n'est pas disponible pour les commandes plus anciennes.
           </div>
         </>
       )}
@@ -1831,7 +1843,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
   // principale Polaris (~640px) sans écraser les pills : « Cmd » + « Qté » fusionnés en « Ventes », et
   // « CA net » sorti du tableau (déplacé dans le dépli, bloc CA net par commande). Somme = 100 % → la
   // table épouse son conteneur. « dispo » à 18 % ≈ 115px à 640px → le pill « Aucun budget pub » (~110px)
-  // tient sans chevaucher « État ». Deux jeux : 6 colonnes (Expert, avec « Marge dispo/unité ») et 5 (sans).
+  // tient sans chevaucher « État ». Deux jeux : 6 colonnes (Expert, avec « Reste pour la pub ») et 5 (sans).
   const cw = isExpert
     ? { prod: "30%", ventes: "12%", marge: "16%", pct: "12%", dispo: "20%", etat: "10%" }
     : { prod: "36%", ventes: "14%", marge: "20%", pct: "14%", etat: "16%" };
@@ -1849,7 +1861,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
         <div style={{ padding: "14px" }}>
           {orderMarginsCapped && (
             <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#B98900", marginBottom: "12px" }}>
-              Affichage limité aux <strong>{orderMarginsCap}</strong> lignes les plus récentes sur <strong>{orderMarginsTotal}</strong> au total — les agrégats et la courbe ci-dessous <strong>ne couvrent pas toute la fenêtre</strong>.
+              Affichage limité aux <strong>{orderMarginsCap}</strong> lignes les plus récentes sur <strong>{orderMarginsTotal}</strong> au total : les agrégats et la courbe ci-dessous <strong>ne couvrent pas toute la fenêtre</strong>.
             </div>
           )}
 
@@ -1862,14 +1874,14 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {agg.costCompletion.needing > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "10px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
                   <strong style={{ color: "#7C3AED" }}>{agg.costCompletion.needing} sur {agg.costCompletion.total}</strong>
-                  variante(s) suivie(s) tournent sur un coût estimé ou manquant — confirme-les pour une marge exacte.
+                  variante(s) suivie(s) tournent sur un coût estimé ou manquant : confirme-les pour une marge exacte.
                   <button onClick={onGoToCosts} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>Confirmer les coûts ↑</button>
                 </div>
               )}
 
               {agg.multiCurrency && (
                 <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
-                  Plusieurs devises sur la fenêtre ({agg.currencies.join(", ")}) — totaux globaux et courbe désactivés (jamais de somme cross-devise). Voir le détail par produit, chacun dans sa devise.
+                  Plusieurs devises sur la fenêtre ({agg.currencies.join(", ")}) : totaux globaux et courbe désactivés (jamais de somme cross-devise). Voir le détail par produit, chacun dans sa devise.
                 </div>
               )}
 
@@ -1889,7 +1901,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   intrusif ; le reste du monitor (agrégats, courbe, table) reste visible pour tous. */}
               {!isExpert && (
                 <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED22", fontSize: "12px", color: "#6D7175", marginBottom: "8px" }}>
-                  <strong style={{ color: "#7C3AED" }}>Pilotage d'acquisition</strong> — CPA maximum par commande, plafond par produit et alerte de dépassement sont réservés au plan <strong>Expert</strong>.
+                  <strong style={{ color: "#7C3AED" }}>Pilotage d'acquisition</strong> : CPA maximum par commande, plafond par produit et alerte de dépassement sont réservés au plan <strong>Expert</strong>.
                 </div>
               )}
               {/* Signaux INCONDITIONNELS (indépendants du tri) + plafond blended. Tout vient de
@@ -1897,7 +1909,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {isExpert && cpaTargets?.noAcqCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
-                  produit(s) ne peuvent financer aucune publicité — leur marge (même positive) est trop faible pour absorber un coût d'acquisition. C'est une mesure de capacité pub, distincte de « à perte ». Voir la colonne « Marge dispo/unité », qui distingue les cas.
+                  produit(s) ne peuvent financer aucune publicité : leur marge (même positive) est trop faible pour payer un client acquis en pub. C'est une mesure de capacité de pub, différente de « vendu à perte ». Voir la colonne « Reste pour la pub », qui distingue les cas.
                 </div>
               )}
               {isExpert && cpaTargets?.blended && (() => {
@@ -1911,7 +1923,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                     <div style={{ marginBottom: "12px", padding: "12px 14px", borderRadius: "8px", background: "#D72C0D", color: "#fff" }}>
                       <div style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.95 }}>⚠ Vous vendez à perte sur l'acquisition</div>
                       <div style={{ fontSize: "24px", fontWeight: "800", marginTop: "2px" }}>Dépassement : {formatMoney(ec.gapAmount, cpaTargets.blended.currency)}</div>
-                      <div style={{ fontSize: "12px", marginTop: "4px", opacity: 0.95 }}>Votre CPA déclaré dépasse votre plafond — chaque acquisition coûte plus que ce que la marge permet.</div>
+                      <div style={{ fontSize: "12px", marginTop: "4px", opacity: 0.95 }}>Votre CPA déclaré dépasse votre plafond : chaque acquisition coûte plus que ce que la marge permet.</div>
                     </div>
                   )}
 
@@ -1926,7 +1938,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                     </>
                   ) : (
                     <>
-                      <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (blended)</div>
+                      <div style={{ fontSize: "11px", color: "#6D7175" }}>CPA max (moyenne de la boutique)</div>
                       <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223" }}>{formatMoney(cpaTargets.blended.cpaMax, cpaTargets.blended.currency)}</div>
                       <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "2px" }}>Plafond par commande, sur {cpaTargets.blended.orders} commande(s) · ≈ {cpaTargets.blended.avgBasket} unité(s)/commande.</div>
                     </>
@@ -1935,10 +1947,10 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   {/* Échantillon faible : SUBORDONNÉ (texte simple, sans fond) quand l'alerte rouge est présente.
                       Sans objet si noBudget (aucun plafond à fiabiliser) → masqué. */}
                   {!cpaTargets.blended.noBudget && cpaTargets.blended.lowSample && (overspend ? (
-                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px" }}>Plafond sur {cpaTargets.blended.orders} commande(s) — indicatif ; la colonne « Marge dispo/unité » ne dépend pas du volume.</div>
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px" }}>Plafond sur {cpaTargets.blended.orders} commande(s), à titre indicatif. La colonne « Reste pour la pub » ne dépend pas du volume.</div>
                   ) : (
                     <div style={{ fontSize: "12px", color: "#B98900", marginTop: "6px", padding: "8px 10px", background: "#FFF9EC", borderRadius: "6px" }}>
-                      Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable — chiffre <strong>indicatif</strong>, il se stabilisera avec le volume. La colonne « Marge dispo/unité » ci-dessous, elle, ne dépend pas du nombre de commandes : c'est le niveau fiable pour décider.
+                      Trop peu de commandes ({cpaTargets.blended.orders}) pour un plafond fiable : ce chiffre est <strong>indicatif</strong>, il se stabilisera avec le volume. La colonne « Reste pour la pub » ci-dessous, elle, ne dépend pas du nombre de commandes : c'est le niveau fiable pour décider.
                     </div>
                   ))}
 
@@ -1952,11 +1964,11 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                   )}
 
                   {currentCpaDeclaredLabel && (
-                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {currentCpaDeclaredLabel} — valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px" }}>CPA déclaré le {currentCpaDeclaredLabel} : valeur que vous avez saisie, comparée à une marge mesurée. Un repère, à réactualiser quand vos campagnes changent.</div>
                   )}
                   {/* Rappel « plafond par commande » : sans objet quand il n'y a pas de plafond (noBudget). */}
                   {!cpaTargets.blended.noBudget && (
-                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable — si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne catalogue : un mix de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Marge dispo/unité ») pour enchérir juste.</strong></div>
+                    <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "8px", lineHeight: "1.5" }}>Plafond <strong>par commande</strong> : il suppose un panier stable ; si vos commandes portent moins d'unités, votre plafond réel baisse. Et c'est une moyenne du catalogue : un mélange de marges très différentes le rend trompeur si vous concentrez vos pubs sur un produit. <strong>Descendez au produit (colonne « Reste pour la pub ») pour enchérir juste.</strong></div>
                   )}
                 </div>
                 );
@@ -1976,7 +1988,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px", tableLayout: "fixed" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                    <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.ventes }}>Ventes</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }}>Marge dispo/unité</th>}<th style={{ ...th, width: cw.etat }}>État</th>
+                    <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.ventes }}>Ventes</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }} title={`Ce qu'il vous reste sur chaque vente une fois tous vos coûts payés ET votre objectif de marge (${formatPct(thresholdPct)} %) atteint. C'est votre budget publicité par vente. C'est la marge au-delà de votre objectif, pas la marge avant de perdre de l'argent.`}>Reste pour la pub</th>}<th style={{ ...th, width: cw.etat }}>État</th>
                   </tr></thead>
                   <tbody>
                     {products.map(p => {
@@ -1996,7 +2008,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <td style={td} title="Commandes · unités vendues (effectives)">{p.orders} cmd · {p.effective_qty} u</td>
                         <td style={{ ...td, fontWeight: "600", color: p.net_margin < 0 ? "#D72C0D" : "#008060" }}>{formatMoney(p.net_margin, p.currency)}</td>
                         <td style={td}>{p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}</td>
-                        {/* Marge dispo/unité (B5) — colonne Expert uniquement (C3). Switch PUR sur
+                        {/* Reste pour la pub (B5) — colonne Expert uniquement (C3). Switch PUR sur
                             cpaByProduct[pkey].state (serveur). Zéro calcul. */}
                         {isExpert && (
                         <td style={td}>
@@ -2004,8 +2016,8 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                             const c = cpaByProduct?.[pkey];
                             if (!c) return <span style={{ color: "#6D7175" }}>—</span>;
                             if (c.state === "value_destroyed") return (
-                              <span title="Toutes les unités vendues ont été remboursées et l'opération laisse une perte (frais/retours) — aucune marge par unité à calculer."
-                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>Remboursé — perte</span>
+                              <span title="Toutes les unités vendues ont été remboursées et l'opération laisse une perte (frais/retours) : aucune marge par unité à calculer."
+                                    style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#B98900" }}>Remboursé (perte)</span>
                             );
                             // Libellé COURT (tient sur une ligne dans la colonne) ; la nuance longue vit dans le title=.
                             // Vocabulaire « budget pub » aligné avec le bloc CPA blended ci-dessus et le bandeau.
@@ -2014,7 +2026,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                                     style={{ display: "inline-block", whiteSpace: "nowrap", padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>Aucun budget</span>
                             );
                             if (c.state === "ok") return formatMoney(c.margeDispoUnite, p.currency);
-                            return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises — pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) — pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
+                            return <span title={c.state === "mixed_currency" ? "Produit vendu en plusieurs devises : pas de montant unique possible (aucune somme cross-devise)." : "Toutes les unités ont été remboursées (opération neutre) : pas de marge par unité à calculer."} style={{ color: "#6D7175" }}>—</span>;
                           })()}
                         </td>
                         )}
@@ -2029,7 +2041,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
                         <tr style={{ background: "#FFFFFF" }}>
                           <td colSpan={isExpert ? 6 : 5} style={{ padding: "10px 14px" }}>
                             <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px" }}>
-                              Détail par décomposition — les commandes économiquement identiques sont regroupées (snapshot figé, lecture pure, valeurs stockées).
+                              Détail par commande. Les commandes au calcul identique sont regroupées. Ces chiffres ont été enregistrés au moment de la commande : ils ne bougent plus, même si vous modifiez vos coûts ensuite.
                             </div>
                             {p.lineGroups.map(g => <LineGroupCard key={g.key} group={g} />)}
                           </td>
@@ -2045,7 +2057,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {/* Coûts manquants — à part, jamais dans les sommes */}
               {agg.missingCount > 0 && (
                 <div style={{ marginTop: "12px", padding: "12px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#202223" }}>
-                  <strong style={{ color: "#B98900" }}>{agg.missingCount} ligne(s) à coûts manquants</strong> — exclues des agrégats et de la courbe (aucune marge inventée).{" "}
+                  <strong style={{ color: "#B98900" }}>{agg.missingCount} ligne(s) à coûts manquants</strong> : exclues des agrégats et de la courbe (aucune marge inventée).{" "}
                   <button onClick={onGoToCosts} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>Renseigner les coûts ↑</button>
                 </div>
               )}
@@ -2085,7 +2097,7 @@ function AlertingQuotaBanner({ isExpert, isPro, alertingActive, alertingCap, ord
       <div style={{ padding: "14px 16px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #E8D9A8", marginBottom: "20px" }}>
         <div style={{ fontSize: "13px", fontWeight: "600", color: "#8A6D00", marginBottom: "4px" }}>Alertes de perte en pause ce mois-ci</div>
         <div style={{ fontSize: "13px", color: "#5C5C5C", lineHeight: "1.6" }}>
-          Vous avez suivi <strong>{nf(ordersPrevMonth)}</strong> commandes le mois dernier, au-delà des <strong>{capLabel}</strong> couvertes par le plan {planName}. Vos calculs, votre monitor et vos données restent accessibles — seul l'envoi d'alertes de perte par e-mail est suspendu ce mois-ci.
+          Vous avez suivi <strong>{nf(ordersPrevMonth)}</strong> commandes le mois dernier, au-delà des <strong>{capLabel}</strong> couvertes par le plan {planName}. Vos calculs, votre monitor et vos données restent accessibles : seul l'envoi d'alertes de perte par e-mail est suspendu ce mois-ci.
         </div>
         {upgrade}
       </div>
@@ -2227,7 +2239,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
       <AlertingQuotaBanner isExpert={isExpert} isPro={isPro} alertingActive={alertingActive} alertingCap={alertingCap} ordersThisMonth={ordersThisMonth} ordersPrevMonth={ordersPrevMonth} onUpgrade={onUpgrade} />
       <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
         Renseignez une fois, par variante, les coûts que Shopify ne connaît pas. Ils alimenteront le suivi de marge réelle sur vos vraies commandes.
-        Les valeurs <strong>estimées</strong> sont pré-remplies (coût Shopify, catégorie, réglages boutique) — toute marge qui en dépend sera signalée « coûts estimés » tant que vous ne les avez pas confirmées.
+        Les valeurs <strong>estimées</strong> sont pré-remplies (coût Shopify, catégorie, réglages boutique) : toute marge qui en dépend sera signalée « coûts estimés » tant que vous ne les avez pas confirmées.
       </div>
 
       {/* Réglage boutique : pays d'import par défaut */}
@@ -2244,17 +2256,16 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Vos taux de frais</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
           <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Frais Shopify (% du CA)</div>
+            <div style={{ marginBottom: "4px" }}>Frais Shopify (% des ventes)</div>
             <input type="text" inputMode="decimal" value={feeForm.shopify_fee_pct} onChange={setFee("shopify_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 2" />
           </label>
           <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Taux processeur (% du CA)</div>
+            <div style={{ marginBottom: "4px" }}>Frais du processeur (% des ventes)</div>
             <input type="text" inputMode="decimal" value={feeForm.processor_fee_pct} onChange={setFee("processor_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 1,5" />
           </label>
           <label style={{ fontSize: "11px", color: "#6D7175" }}>
             <div style={{ marginBottom: "4px" }}>Fixe processeur (par transaction)</div>
             <input type="text" inputMode="decimal" value={feeForm.processor_fixed_fee} onChange={setFee("processor_fixed_fee")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 0,25" />
-            <div style={hintStyle}>{formatMoney(parseFloat(String(feeForm.processor_fixed_fee).replace(",", ".")) || 0, feesCurrency)}/transaction</div>
           </label>
           <button
             onClick={() => feesFetcher.submit({ _action: "set_fees", ...feeForm }, { method: "POST", encType: "application/json" })}
@@ -2267,7 +2278,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {feesFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{feesFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Ces taux s'appliquent aux prochaines synchronisations. Les commandes déjà analysées conservent les taux en vigueur au moment de leur calcul.
+          Frais fixe du processeur : {formatMoney(parseFloat(String(feeForm.processor_fixed_fee).replace(",", ".")) || 0, feesCurrency)} par transaction. Ces taux s'appliquent aux prochaines synchronisations. Les commandes déjà analysées conservent les taux en vigueur au moment de leur calcul.
         </div>
       </div>
 
@@ -2276,7 +2287,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil de rentabilité</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
           <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% du CA)</div>
+            <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% des ventes)</div>
             <input type="text" inputMode="decimal" value={thresholdForm} onChange={e => setThresholdForm(e.target.value)} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 15" />
           </label>
           <button
@@ -2316,31 +2327,37 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {cpaFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{cpaFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord — sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
+          Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord, sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
         </div>
       </div>
       )}
 
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
-        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Marge réelle sur vos commandes</span>
-        <button
-          onClick={() => backfillFetcher.submit({ _action: "backfill_orders" }, { method: "POST", encType: "application/json" })}
-          disabled={backfillFetcher.state !== "idle"}
-          style={{ padding: "7px 14px", background: backfillFetcher.state !== "idle" ? "#E4E5E7" : "#7C3AED", color: backfillFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: backfillFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
-          {backfillFetcher.state !== "idle" ? "Synchronisation…" : "Synchroniser les commandes (30 j)"}
-        </button>
-        {backfillFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {backfillFetcher.data.ingested ?? 0} ligne(s) sur {backfillFetcher.data.orders ?? 0} commande(s).</span>}
-        {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
-        {/* Brique B : rétro-remplir le détail poste-par-poste des commandes déjà synchronisées. */}
-        <button
-          onClick={() => breakdownFetcher.submit({ _action: "backfill_breakdowns" }, { method: "POST", encType: "application/json" })}
-          disabled={breakdownFetcher.state !== "idle"}
-          style={{ padding: "7px 14px", background: "#fff", color: breakdownFetcher.state !== "idle" ? "#6D7175" : "#7C3AED", border: `1px solid ${breakdownFetcher.state !== "idle" ? "#C9CCCF" : "#7C3AED66"}`, borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: breakdownFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
-          {breakdownFetcher.state !== "idle" ? "Complétion…" : "Compléter le détail des marges"}
-        </button>
-        {breakdownFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {breakdownFetcher.data.filled ?? 0} détail(s) complété(s){(breakdownFetcher.data.skipped ?? 0) > 0 ? ` · ${breakdownFetcher.data.skipped} ignoré(s)` : ""} sur {breakdownFetcher.data.scanned ?? 0} ligne(s) sans détail.</span>}
-        {breakdownFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{breakdownFetcher.data.error}</span>}
+      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Marge réelle sur vos commandes</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button
+              onClick={() => backfillFetcher.submit({ _action: "backfill_orders" }, { method: "POST", encType: "application/json" })}
+              disabled={backfillFetcher.state !== "idle"}
+              style={{ padding: "7px 14px", background: backfillFetcher.state !== "idle" ? "#E4E5E7" : "#7C3AED", color: backfillFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: backfillFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+              {backfillFetcher.state !== "idle" ? "Synchronisation…" : "Synchroniser les commandes (30 j)"}
+            </button>
+            {backfillFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {backfillFetcher.data.ingested ?? 0} ligne(s) sur {backfillFetcher.data.orders ?? 0} commande(s).</span>}
+            {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
+          </div>
+          {/* Brique B : rétro-remplir le détail poste-par-poste des commandes déjà synchronisées. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button
+              onClick={() => breakdownFetcher.submit({ _action: "backfill_breakdowns" }, { method: "POST", encType: "application/json" })}
+              disabled={breakdownFetcher.state !== "idle"}
+              style={{ padding: "7px 14px", background: "#fff", color: breakdownFetcher.state !== "idle" ? "#6D7175" : "#7C3AED", border: `1px solid ${breakdownFetcher.state !== "idle" ? "#C9CCCF" : "#7C3AED66"}`, borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: breakdownFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+              {breakdownFetcher.state !== "idle" ? "Complétion…" : "Compléter le détail des marges"}
+            </button>
+            {breakdownFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {breakdownFetcher.data.filled ?? 0} détail(s) complété(s){(breakdownFetcher.data.skipped ?? 0) > 0 ? ` · ${breakdownFetcher.data.skipped} ignoré(s)` : ""} sur {breakdownFetcher.data.scanned ?? 0} ligne(s) sans détail.</span>}
+            {breakdownFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{breakdownFetcher.data.error}</span>}
+          </div>
+        </div>
       </div>
 
       {/* Brique 3 : correction des marges figées sur un coût estimé/manquant. Bloc NEUTRE (subordonné à
@@ -2371,7 +2388,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {recalcFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{recalcFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Recalcule la marge des commandes synchronisées <strong>avant que leurs coûts soient renseignés</strong>, à partir de vos coûts actuels. Les marges dont le coût est <strong>confirmé ou importé</strong> ne changent pas — elles sont déjà exactes. Seules les commandes des <strong>30 derniers jours</strong> sont concernées ; au-delà, les marges restent figées.
+          Recalcule la marge des commandes synchronisées <strong>avant que leurs coûts soient renseignés</strong>, à partir de vos coûts actuels. Les marges dont le coût est <strong>confirmé ou importé</strong> ne changent pas : elles sont déjà exactes. Seules les commandes des <strong>30 derniers jours</strong> sont concernées ; au-delà, les marges restent figées.
         </div>
       </div>
 
@@ -2442,7 +2459,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
                 <th style={th}>Qté/lot</th>
                 <th style={th}>Emballage ({feesCurrency})</th>
                 <th style={th}>TVA</th>
-                <th style={th}>Logistique</th>
+                <th style={th}>Expédition</th>
                 <th style={th}>Pays</th>
                 <th style={th}>Catégorie</th>
                 <th style={th}>État</th>
@@ -2659,7 +2676,7 @@ export default function Index() {
     const shopifyFeeVal       = validatePercentage(form.shopifyFee,          "Frais Shopify",        errs);
     const stripeFeeVal        = validatePercentage(form.stripeFee,           "Frais Stripe",         errs);
     const retoursVal          = validatePercentage(form.retours,             "Taux de retours",      errs);
-    const adsVal              = validatePercentage(form.ads,                 "Budget ads",           errs);
+    const adsVal              = validatePercentage(form.ads,                 "Part de pub dans vos ventes", errs);
     const fraisRetourVal      = validateOptionalAmount(form.fraisRetour,         "Frais de retour",  errs);
     const coutEmballageVal    = validateOptionalAmount(form.coutEmballage,       "Coût d'emballage", errs);
     const processorFixedFeeVal = validateOptionalAmount(form.processorFixedFee ?? "0.25", "Frais fixes processeur", errs);
@@ -2669,7 +2686,7 @@ export default function Index() {
     if (prixAchat > prixVente) warns.push("Attention : vous vendez moins cher que vous achetez.");
     else if (prixAchat === prixVente) warns.push("Prix achat = prix vente : marge 0% avant frais.");
     const totalPct = shopifyFeeVal + stripeFeeVal + retoursVal + adsVal;
-    if (totalPct > 100) warns.push(`Frais cumulés (${formatPct(totalPct)} %) dépassent 100 % du CA.`);
+    if (totalPct > 100) warns.push(`Vos frais cumulés (${formatPct(totalPct)} %) dépassent 100 % de vos ventes.`);
 
     const shippingModel  = form.shippingModel ?? "stock"; // toggle ajouté en Lot 2
     // Source unique : le moteur partagé. Le dashboard n'a plus sa propre arithmétique.
@@ -2783,12 +2800,12 @@ export default function Index() {
     const totalVarPct = (shopifyFee ?? 0) + (stripeFee ?? 0) + (retours ?? 0) + (ads ?? 0);
     const sim = simulateSellingPrice(prixAchat, simForm.categorie, simForm.paysImport, targetMargin, { shopifyFee, stripeFee, retours, ads, fraisRetour, coutEmballage, processorFixedFee, vatRegime: simForm.vatRegime ?? "assujetti", shippingModel: simForm.shippingModel ?? "dropshipping" });
     if (!sim) {
-      setSimErrors([`Impossible : marge cible (${formatPct(targetMargin)} %) + frais variables (${formatPct(totalVarPct)} %) = ${formatPct(targetMargin + totalVarPct)} % ≥ 100 %. Le dénominateur est nul ou négatif — aucun prix de vente ne peut atteindre cet objectif. Réduisez les frais ou la marge cible.`]);
+      setSimErrors([`Impossible : marge cible (${formatPct(targetMargin)} %) + frais variables (${formatPct(totalVarPct)} %) = ${formatPct(targetMargin + totalVarPct)} % ≥ 100 %. Aucun prix de vente ne peut atteindre cet objectif. Réduisez les frais ou la marge cible.`]);
       setSimResult(null);
       return;
     }
     setSimErrors([]);
-    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, paymentProcessor: simForm.paymentProcessor, prixVenteRec: sim.prixVenteMin * 1.10 });
+    setSimResult({ ...sim, prixAchat, targetMargin, shopifyFee, stripeFee, processorFixedFee, retours, ads, fraisRetour, coutEmballage, paymentProcessor: simForm.paymentProcessor, vatRegime: simForm.vatRegime ?? "assujetti", prixVenteRec: sim.prixVenteMin * 1.10 });
   }, [simForm]);
 
   // Alert threshold save
@@ -2830,13 +2847,13 @@ export default function Index() {
     ["subscribe", "subscribe_expert"].includes(navigation.json?._action);
   const isSavingAlert = alertFetcher.state !== "idle";
 
-  const subscribeBtn = (label = "Passer au Pro — 29$/mois") => (
+  const subscribeBtn = (label = "Passer au Pro (29 $/mois)") => (
     <button onClick={handleSubscribe} disabled={isSubscribing}
       style={{ padding: "10px 24px", background: "#008060", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: isSubscribing ? "default" : "pointer", fontFamily: "inherit", opacity: isSubscribing ? 0.7 : 1 }}>
       {isSubscribing ? "Redirection…" : label}
     </button>
   );
-  const subscribeExpertBtn = (label = "Passer au plan Expert — 69$/mois") => (
+  const subscribeExpertBtn = (label = "Passer au plan Expert (69 $/mois)") => (
     <button onClick={handleSubscribeExpert} disabled={isSubscribing}
       style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED 0%,#5B21B6 100%)", color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: "600", cursor: isSubscribing ? "default" : "pointer", fontFamily: "inherit", opacity: isSubscribing ? 0.7 : 1, boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
       {isSubscribing ? "Redirection…" : label}
@@ -2889,7 +2906,7 @@ export default function Index() {
         <s-section heading={`Bienvenue dans True Cost Calculator ${isExpert ? "Expert" : "Pro"} !`}>
           <div style={{ padding: "16px 20px", borderRadius: "8px", background: "#F1F8F5", border: "1px solid #008060", fontSize: "14px", color: "#202223", lineHeight: "1.6" }}>
             {isExpert
-              ? <>Surveillance sans limite de volume activée. Vous avez aussi l'audit du catalogue — vos produits classés du pire au plus rentable — et le <strong>budget pub maximum par produit</strong>.</>
+              ? <>Surveillance sans limite de volume activée. Vous avez aussi l'audit du catalogue (vos produits classés du pire au plus rentable) et le <strong>budget pub maximum par produit</strong>.</>
               : <>Alertes de perte jusqu'à <strong>1 000 commandes/mois</strong>, plus l'historique complet de l'évolution de vos marges.</>}
           </div>
         </s-section>
@@ -2926,7 +2943,7 @@ export default function Index() {
                 <div style={title}>{noOrders ? "Aucune commande sur les 30 derniers jours" : "Analyse terminée"}</div>
                 <div style={text}>
                   {noOrders
-                    ? "Dès votre prochaine vente, revenez ici : vous verrez votre marge nette réelle — frais Shopify, paiement, retours et TVA compris — sur vos vraies commandes."
+                    ? "Dès votre prochaine vente, revenez ici : vous verrez votre marge nette réelle (frais Shopify, paiement, retours et TVA compris) sur vos vraies commandes."
                     : "Vos commandes ont été analysées, mais aucune ligne exploitable n'a été trouvée sur les 30 derniers jours. Revenez après votre prochaine vente."}
                 </div>
               </div>
@@ -2996,7 +3013,7 @@ export default function Index() {
             {showUpgrade && !isPro ? (
               <div style={{ padding: "24px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "28px", maxWidth: "620px", marginLeft: "auto", marginRight: "auto" }}>
-                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223", lineHeight: "1.4", marginBottom: "8px" }}>Calculez votre marge nette réelle — droits de douane, TVA import, frais Shopify &amp; Stripe, retours et pub inclus.</div>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "#202223", lineHeight: "1.4", marginBottom: "8px" }}>Calculez votre vraie marge nette : douane, TVA à l'import, frais Shopify et Stripe, retours et pub compris.</div>
                   <div style={{ fontSize: "14px", color: "#6D7175" }}>Choisissez le volume de surveillance adapté à votre boutique.</div>
                 </div>
                 <div className="tcc-upgrade-plans" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", maxWidth: "780px", margin: "0 auto 28px" }}>
@@ -3006,7 +3023,7 @@ export default function Index() {
                     <div style={{ fontSize: "24px", fontWeight: "700", color: "#202223", marginBottom: "14px" }}>0$/mois</div>
                     {[
                       "Votre marge nette réelle sur chaque commande, tous coûts cachés déduits",
-                      "Soyez alerté par e-mail dès qu'un produit passe à perte — jusqu'à 200 commandes/mois",
+                      "Soyez alerté par e-mail dès qu'un produit passe à perte (jusqu'à 200 commandes/mois)",
                       "Définissez votre seuil : sous quel % de marge un produit doit vous alerter",
                       "Calculs de marge manuels illimités",
                     ].map(f => (
@@ -3055,7 +3072,7 @@ export default function Index() {
                   </div>
                 </div>
                 <div style={{ maxWidth: "640px", margin: "0 auto 24px", padding: "0 12px", fontSize: "12px", lineHeight: "1.65", color: "#57606A", textAlign: "center" }}>
-                  Aucune coupure brutale : au-delà de votre volume, votre suivi de marge et votre monitor restent entièrement accessibles — seules les alertes e-mail sont mises en pause, jamais avant le mois suivant, et elles reprennent dès que votre volume repasse sous le seuil.
+                  Aucune coupure brutale : au-delà de votre volume, votre suivi de marge et votre monitor restent entièrement accessibles. Seules les alertes e-mail sont mises en pause, jamais avant le mois suivant, et elles reprennent dès que votre volume repasse sous le seuil.
                 </div>
                 <div style={{ textAlign: "center" }}>
                   <button onClick={() => setShowUpgrade(false)} style={{ padding: "10px 20px", background: "none", color: "#6D7175", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "14px", cursor: "pointer", fontFamily: "inherit" }}>
@@ -3076,10 +3093,10 @@ export default function Index() {
                       onChange={handleProductSelect}
                       style={{ ...inputStyle, background: "#fff" }}
                     >
-                      <option value="">— Sélectionner un produit (auto-remplit le prix de vente) —</option>
+                      <option value="">Sélectionner un produit (remplit le prix de vente)</option>
                       {products.map(p => (
                         <option key={p.id} value={p.id}>
-                          {p.title}{p.price > 0 ? ` — ${money(p.price)}` : ""}
+                          {p.title}{p.price > 0 ? ` · ${money(p.price)}` : ""}
                         </option>
                       ))}
                     </select>
@@ -3090,7 +3107,7 @@ export default function Index() {
                     )}
                     {productsCapped && (
                       <div style={{ fontSize: "11px", color: "#B98900", marginTop: "6px" }}>
-                        Votre catalogue dépasse 500 produits — seuls les 500 premiers sont affichés ici.
+                        Votre catalogue dépasse 500 produits : seuls les 500 premiers sont affichés ici.
                       </div>
                     )}
                   </div>
@@ -3105,23 +3122,23 @@ export default function Index() {
                     <FieldGroup label={`Prix de vente (${feesCurrency})`} tooltip="Prix public de vente sur votre boutique, frais de livraison client exclus. C'est le montant que vous encaissez.">
                       <input type="text" inputMode="decimal" value={form.prixVente} onChange={update("prixVente")} style={inputStyle} placeholder="ex : 34.99" />
                     </FieldGroup>
-                    <FieldGroup label="Catégorie produit" tooltip="Utilisée pour estimer vos droits de douane selon la nomenclature TARIC (tarif douanier intégré de l'UE). Choisissez la catégorie la plus proche de votre produit.">
+                    <FieldGroup label="Catégorie produit" tooltip="Sert à estimer vos droits de douane : taux moyen officiel UE (nomenclature TARIC) selon la catégorie. Choisissez la catégorie la plus proche de votre produit.">
                       <select value={form.categorie} onChange={update("categorie")} style={inputStyle}>
                         {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                          <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>
+                          <option key={cat} value={cat}>{cat} · douane {formatPct(rate * 100)} %</option>
                         ))}
                       </select>
-                      <div style={hintStyle}>Taux appliqué : {customsRateDisplay}% <span style={{ color: "#B98900" }}>— estimé selon la catégorie choisie (TARIC)</span></div>
+                      <div style={hintStyle}>Taux appliqué : {customsRateDisplay}% <span style={{ color: "#B98900" }}>(estimé selon la catégorie choisie, TARIC)</span></div>
                     </FieldGroup>
-                    <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché — renseignez votre coût réel si vous le connaissez.">
+                    <FieldGroup label="Pays d'import" tooltip="Pays d'expédition du fournisseur. Détermine les frais de port estimés. Ces estimations sont des moyennes marché : renseignez votre coût réel si vous le connaissez.">
                       <select value={form.paysImport} onChange={update("paysImport")} style={inputStyle}>
                         {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                          <option key={pays} value={pays}>{pays} — port ~{cost} {feesCurrency}</option>
+                          <option key={pays} value={pays}>{pays} · port ~{cost} {feesCurrency}</option>
                         ))}
                       </select>
                       <div style={hintStyle}>Frais de port estimés : ~{shippingDisplay} {feesCurrency}</div>
                     </FieldGroup>
-                    <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti (régime réel) : la TVA à l'import est déductible — elle n'est PAS un coût. Franchise en base / micro-entreprise : la TVA import est un coût sec définitif.">
+                    <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti à la TVA : vous facturez la TVA et vous la récupérez ; la TVA à l'import n'est donc pas un coût pour vous. Franchise en base de TVA (souvent micro-entreprise) : vous ne facturez pas la TVA et vous ne la récupérez pas, donc la TVA à l'import reste un coût pour vous.">
                       <select
                         value={form.vatRegime ?? "assujetti"}
                         onChange={e => {
@@ -3132,11 +3149,11 @@ export default function Index() {
                         }}
                         style={inputStyle}
                       >
-                        <option value="assujetti">Assujetti à la TVA (régime réel)</option>
-                        <option value="franchise">Franchise en base / non assujetti</option>
+                        <option value="assujetti">Assujetti à la TVA (vous facturez et récupérez la TVA)</option>
+                        <option value="franchise">Franchise en base de TVA (vous ne facturez pas la TVA)</option>
                       </select>
                     </FieldGroup>
-                    <FieldGroup label="Modèle logistique" direction="left" tooltip="Dropshipping : votre fournisseur expédie directement au client (douane 0€ jusqu'au 30/06/2026, puis forfait 3€/article à partir du 01/07/2026). Stock : vous importez en lot et stockez vous-même (tarif douanier standard en % sur CIF, inchangé par la réforme UE).">
+                    <FieldGroup label="Comment vous expédiez" direction="left" tooltip="Dropshipping : votre fournisseur envoie directement au client (douane : forfait de 3 € par article depuis la réforme UE de juillet 2026). Stock : vous importez en gros et stockez vous-même (douane en %, calculée sur le produit plus le port).">
                       <select
                         value={form.shippingModel ?? "dropshipping"}
                         onChange={e => {
@@ -3154,7 +3171,7 @@ export default function Index() {
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: "14px" }}>Frais & déductions</div>
-                    <FieldGroup label="Frais Shopify (% du CA)" direction="left" tooltip="Commission prélevée par Shopify sur chaque transaction. Basic 2% · Shopify 1% · Advanced 0,5%. Modifiez ce champ si vous avez négocié un taux différent. Source : shopify.com/fr/pricing">
+                    <FieldGroup label="Frais Shopify (% des ventes)" direction="left" tooltip="Commission que Shopify prélève sur chaque vente. Plans : Basic 2 %, Shopify 1 %, Advanced 0,5 %. Modifiez ce champ si vous avez négocié un autre taux. Source : shopify.com/fr/pricing">
                       <input type="text" inputMode="decimal" value={form.shopifyFee} onChange={update("shopifyFee")} style={inputStyle} placeholder="ex : 2" />
                     </FieldGroup>
                     <FieldGroup label="Processeur de paiement" direction="left" tooltip="Stripe EU : 1,5% + 0,25€ · Stripe non-EU : 2,5% + 0,25€ · Shopify Payments Basic : 2% + 0,25€ · Avancé : 1% + 0,25€ · Plus : 0,5% + 0,25€">
@@ -3170,20 +3187,20 @@ export default function Index() {
                         style={inputStyle}
                       >
                         {PAYMENT_PROCESSORS.map(p => (
-                          <option key={p.id} value={p.id}>{p.id} — {p.hint}</option>
+                          <option key={p.id} value={p.id}>{p.id} · {p.hint}</option>
                         ))}
                       </select>
                     </FieldGroup>
-                    <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Pourcentage du CA provisionné pour couvrir les retours et remboursements. Ordres de grandeur indicatifs : mode 15–30%, électronique 5–15%, autres 5–10% — à ajuster selon votre historique.">
+                    <FieldGroup label="Taux de retours (%)" direction="left" tooltip="Part de vos ventes mise de côté pour couvrir les retours et remboursements. Ordres de grandeur indicatifs : mode 15 à 30 %, électronique 5 à 15 %, autres 5 à 10 %, à ajuster selon votre historique.">
                       <input type="text" inputMode="decimal" value={form.retours} onChange={update("retours")} style={inputStyle} placeholder="ex : 8" />
                     </FieldGroup>
-                    <FieldGroup label="Budget ads (% du CA)" direction="left" tooltip="Pourcentage du CA réinvesti en publicité payante. Une campagne Meta rentable nécessite généralement 15–25% pour un ROAS 4–6. Google Shopping : 10–20% pour un ROAS 5–8.">
+                    <FieldGroup label="Part de pub dans vos ventes (%)" direction="left" tooltip={`Sur 100 ${feesCurrency} de ventes, combien partent en publicité ? Exemple : 1 500 ${feesCurrency} de pub pour 10 000 ${feesCurrency} de ventes, c'est 15. Pour une campagne dédiée à ce produit, mettez son chiffre. Pour une pub sur toute la boutique, mettez votre moyenne.`}>
                       <input type="text" inputMode="decimal" value={form.ads} onChange={update("ads")} style={inputStyle} placeholder="ex : 20" />
                     </FieldGroup>
                     <FieldGroup label={`Frais de retour (${feesCurrency})`} direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                       <input type="text" inputMode="decimal" value={form.fraisRetour} onChange={update("fraisRetour")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
-                    <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                    <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip={`Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50 à 2 ${feesCurrency} selon le niveau de marque.`}>
                       <input type="text" inputMode="decimal" value={form.coutEmballage} onChange={update("coutEmballage")} style={inputStyle} placeholder="0" />
                     </FieldGroup>
                   </div>
@@ -3200,7 +3217,7 @@ export default function Index() {
                     </span>
                   )}
                   {!isSaving && saveStatus?.success === false && (
-                    <span style={{ fontSize: "12px", color: "#D72C0D" }}>Erreur — {saveStatus.error}</span>
+                    <span style={{ fontSize: "12px", color: "#D72C0D" }}>Erreur : {saveStatus.error}</span>
                   )}
                 </div>
               </>
@@ -3224,25 +3241,25 @@ export default function Index() {
                 <FieldGroup label="Catégorie produit">
                   <select value={simForm.categorie} onChange={updateSim("categorie")} style={inputStyle}>
                     {Object.entries(CUSTOMS_RATES).map(([cat, rate]) => (
-                      <option key={cat} value={cat}>{cat} — douane {formatPct(rate * 100)} %</option>
+                      <option key={cat} value={cat}>{cat} · douane {formatPct(rate * 100)} %</option>
                     ))}
                   </select>
                 </FieldGroup>
                 <FieldGroup label="Pays d'import">
                   <select value={simForm.paysImport} onChange={updateSim("paysImport")} style={inputStyle}>
                     {Object.entries(SHIPPING_ESTIMATES).map(([pays, cost]) => (
-                      <option key={pays} value={pays}>{pays} — port ~{cost} {feesCurrency}</option>
+                      <option key={pays} value={pays}>{pays} · port ~{cost} {feesCurrency}</option>
                     ))}
                   </select>
                 </FieldGroup>
-                <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti : TVA import récupérable (neutralisée). Franchise : TVA import = coût sec.">
+                <FieldGroup label="Régime de TVA" direction="left" tooltip="Assujetti à la TVA : vous facturez la TVA et vous la récupérez ; la TVA à l'import n'est donc pas un coût pour vous. Franchise en base de TVA (souvent micro-entreprise) : vous ne facturez pas la TVA et vous ne la récupérez pas, donc la TVA à l'import reste un coût pour vous.">
                   <select
                     value={simForm.vatRegime ?? "assujetti"}
                     onChange={e => setSimForm(prev => ({ ...prev, vatRegime: e.target.value }))}
                     style={inputStyle}
                   >
-                    <option value="assujetti">Assujetti à la TVA (régime réel)</option>
-                    <option value="franchise">Franchise en base / non assujetti</option>
+                    <option value="assujetti">Assujetti à la TVA (vous facturez et récupérez la TVA)</option>
+                    <option value="franchise">Franchise en base de TVA (vous ne facturez pas la TVA)</option>
                   </select>
                 </FieldGroup>
                 <FieldGroup label="Marge nette cible (%)" tooltip="La marge nette que vous souhaitez atteindre après tous les frais (Shopify, Stripe, retours, ads inclus).">
@@ -3264,20 +3281,20 @@ export default function Index() {
                     style={inputStyle}
                   >
                     {PAYMENT_PROCESSORS.map(p => (
-                      <option key={p.id} value={p.id}>{p.id} — {p.hint}</option>
+                      <option key={p.id} value={p.id}>{p.id} · {p.hint}</option>
                     ))}
                   </select>
                 </FieldGroup>
                 <FieldGroup label="Taux de retours (%)">
                   <input type="text" inputMode="decimal" value={simForm.retours} onChange={updateSim("retours")} style={inputStyle} placeholder="5" />
                 </FieldGroup>
-                <FieldGroup label="Budget ads (%)">
+                <FieldGroup label="Part de pub dans vos ventes (%)">
                   <input type="text" inputMode="decimal" value={simForm.ads} onChange={updateSim("ads")} style={inputStyle} placeholder="15" />
                 </FieldGroup>
                 <FieldGroup label={`Frais de retour (${feesCurrency})`} direction="left" tooltip="Coût logistique d'un retour (colissimo retour, réemballage, etc.). Laissez à 0 si vous ne traitez pas les retours ou s'ils sont à la charge du client.">
                   <input type="text" inputMode="decimal" value={simForm.fraisRetour ?? "0"} onChange={updateSim("fraisRetour")} style={inputStyle} placeholder="0" />
                 </FieldGroup>
-                <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip="Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50€–2€ selon le niveau de marque.">
+                <FieldGroup label={`Coût d'emballage (${feesCurrency})`} direction="left" tooltip={`Coût de l'emballage par commande (boîte, papier de soie, sticker, etc.). Typiquement 0,50 à 2 ${feesCurrency} selon le niveau de marque.`}>
                   <input type="text" inputMode="decimal" value={simForm.coutEmballage ?? "0"} onChange={updateSim("coutEmballage")} style={inputStyle} placeholder="0" />
                 </FieldGroup>
               </div>
@@ -3304,7 +3321,7 @@ export default function Index() {
                 </div>
                 <div className="tcc-sim-detail" style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", fontSize: "13px", color: "#6D7175", lineHeight: "1.8" }}>
                   <strong style={{ color: "#202223" }}>Détail du calcul :</strong><br />
-                  Coût rendu (achat + douane + TVA import + port) = <strong>{money(simResult.coutRendu)}</strong><br />
+                  Coût réel par unité ({simResult.vatRegime === "franchise" ? "achat + port + douane + TVA" : "achat + port + douane"}) = <strong>{money(simResult.coutRendu)}</strong><br />
                   {simResult.fraisFixes > 0 && (() => {
                     const parts = [];
                     if ((simResult.fraisRetour ?? 0) + (simResult.coutEmballage ?? 0) > 0) parts.push("retour + emballage");
@@ -3409,7 +3426,7 @@ export default function Index() {
                       <div key={calc.id} className="tcc-hist-row" style={{ display: "grid", gridTemplateColumns: "1.6fr 1.8fr 1fr 1fr 1fr 1.2fr", background: i % 2 === 0 ? "#fff" : "#FAFBFB", borderBottom: i < filtered.length - 1 ? "1px solid #F1F2F3" : "none" }}>
                         <div style={{ padding: "11px 12px", fontSize: "11px", color: "#6D7175" }}>{formatDate(calc.created_at)}</div>
                         <div style={{ padding: "11px 12px", fontSize: "13px", color: "#202223", fontWeight: "500" }}>
-                          {calc.product_title || "Calcul manuel"}
+                          {calc.product_title || `Calcul du ${new Date(calc.created_at).toLocaleDateString("fr-FR")}`}
                           {annot && <div style={{ fontSize: "10px", color: "#7C3AED", marginTop: "2px" }}>● {annot.note}</div>}
                         </div>
                         <div className="tcc-hist-col-cat" style={{ padding: "11px 12px", fontSize: "12px", color: "#202223" }}>{calc.category}</div>
@@ -3433,7 +3450,7 @@ export default function Index() {
           <div>
             {/* Encadré explicatif */}
             <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
-              Les alertes de marge vous signalent, en rouge en haut de l'app, quand un produit que vous venez de calculer tombe sous votre seuil d'alerte de marge. Le seuil par défaut est 25% — ajustez-le à votre activité.
+              Les alertes de marge vous signalent, en rouge en haut de l'app, quand un produit que vous venez de calculer tombe sous votre seuil d'alerte de marge. Le seuil par défaut est 25 %, ajustez-le à votre activité.
             </div>
 
             <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
@@ -3461,7 +3478,7 @@ export default function Index() {
                 </div>
               </FieldGroup>
               <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px", lineHeight: "1.6" }}>
-                Repères indicatifs, à ajuster selon votre secteur : E-commerce généraliste 20–25% · Mode 15–20% · Électronique 8–12% · Cosmétique 30–40%
+                Repères indicatifs, à ajuster à votre activité : e-commerce généraliste 20 à 25 %, mode 15 à 20 %, électronique 8 à 12 %, cosmétique 30 à 40 %.
               </div>
               {alertFetcher.data?.success && (
                 <div style={{ fontSize: "13px", color: "#008060", marginTop: "8px" }}>✓ Seuil mis à jour</div>
@@ -3484,7 +3501,7 @@ export default function Index() {
                   </div>
                   {violations.map((v, i) => (
                     <div key={v.id} className="tcc-alert-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", background: i % 2 === 0 ? "#fff" : "#FFF8F8", borderBottom: i < violations.length - 1 ? "1px solid #F1F2F3" : "none" }}>
-                      <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "500", color: "#202223" }}>{v.product_title ?? v.category}</div>
+                      <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "500", color: "#202223" }}>{v.product_title || `Calcul du ${new Date(v.created_at).toLocaleDateString("fr-FR")}`}</div>
                       <div style={{ padding: "11px 14px", fontSize: "12px", color: "#6D7175" }}>{v.category}</div>
                       <div style={{ padding: "11px 14px", fontSize: "13px", fontWeight: "700", color: "#D72C0D" }}>{formatPct(v.net_margin_percent)} %</div>
                       <div className="tcc-alert-col-ecart" style={{ padding: "11px 14px", fontSize: "12px", color: "#D72C0D" }}>−{formatPct(initialThreshold - v.net_margin_percent)} pts</div>
@@ -3528,14 +3545,14 @@ export default function Index() {
               <div>
                 {/* Guide: how to set unit cost in Shopify */}
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "linear-gradient(135deg,#f8f6ff,#f0ecff)", border: "1px solid #7C3AED33", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "12px" }}>Avant de lancer l'audit : renseigner le coût par article dans Shopify</div>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "12px" }}>Avant de lancer l'audit : indiquez le coût par article dans Shopify</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
                     {[
                       "Ouvrez votre admin Shopify et cliquez sur Produits dans le menu latéral.",
                       "Sélectionnez le produit à mettre à jour.",
                       "Faites défiler jusqu'à la section Variantes.",
                       "Cliquez sur la variante (ou sur Modifier si vous avez plusieurs variantes).",
-                      "Dans la section Expédition, remplissez le champ Coût par article (votre prix fournisseur HT).",
+                      "Dans la section Expédition, remplissez le champ Coût par article (votre prix fournisseur hors taxes).",
                       "Cliquez sur Enregistrer. Répétez pour chaque produit.",
                     ].map((step, i) => (
                       <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
@@ -3545,7 +3562,7 @@ export default function Index() {
                     ))}
                   </div>
                   <div style={{ fontSize: "12px", color: "#7C3AED", fontStyle: "italic" }}>
-                    Seuls les produits avec un coût renseigné apparaîtront dans les résultats de l'audit.
+                    Seuls les produits avec un coût indiqué apparaissent dans l'audit.
                   </div>
                 </div>
 
@@ -3554,7 +3571,7 @@ export default function Index() {
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
                   <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "12px" }}>
                     <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Modèle logistique</div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Comment vous expédiez</div>
                       <select value={auditParams.shipping_model} onChange={e => setAuditParams(p => ({ ...p, shipping_model: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
                         <option value="dropshipping">Dropshipping</option>
                         <option value="stock">Import en stock</option>
@@ -3568,7 +3585,7 @@ export default function Index() {
                       </select>
                     </div>
                     <div>
-                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Processeur paiement</div>
+                      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "4px" }}>Processeur de paiement</div>
                       <select value={auditParams.payment_processor} onChange={e => setAuditParams(p => ({ ...p, payment_processor: e.target.value }))} style={{ ...inputStyle, fontSize: "13px" }}>
                         {PAYMENT_PROCESSORS.map(proc => <option key={proc.id} value={proc.id}>{proc.id}</option>)}
                       </select>
@@ -3595,7 +3612,7 @@ export default function Index() {
                           style={{ ...inputStyle, fontSize: "13px" }} placeholder="1" />
                         {(!auditParams.qty_per_shipment || auditParams.qty_per_shipment === "1") && (
                           <div style={{ fontSize: "10px", color: "#B98900", marginTop: "3px", lineHeight: "1.4" }}>
-                            ⚠ Port imputé à 100 % sur chaque unité. Entrez votre vraie quantité de réassort (ex. 50).
+                            ⚠ Le port est compté en entier sur chaque unité. Entrez la vraie quantité que vous commandez à votre fournisseur (ex. 50).
                           </div>
                         )}
                       </div>
@@ -3603,7 +3620,7 @@ export default function Index() {
                   </div>
                   {auditParams.shipping_model === "dropshipping" && (
                     <div style={{ fontSize: "11px", color: "#7C3AED", background: "#f8f6ff", border: "1px solid #c5b8ff", borderRadius: "6px", padding: "8px 12px", marginBottom: "12px", lineHeight: "1.5" }}>
-                      Régime UE : <strong>0€ de douane jusqu'au 30/06/2026</strong>, puis <strong>3€ forfaitaires par article dès le 01/07/2026</strong>. Hypothèse : 1 article = 1 colis = 1 position tarifaire. Si vous groupez plusieurs unités d'un même produit dans un colis, le coût réel par unité est plus bas.
+                      Réforme UE : <strong>forfait de douane de 3 € par article depuis le 01/07/2026</strong> (c'était gratuit avant). Nous comptons 1 article = 1 colis. Si vous groupez plusieurs unités du même produit dans un seul colis, votre coût réel par unité est plus bas.
                     </div>
                   )}
                   <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
@@ -3639,9 +3656,9 @@ export default function Index() {
                   <>
                     <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
-                      <StatCard label="Top Performers ✅"  value={winners.length} sub={auditKpiLabels.winners} color="#008060" bg="#F1F8F5" />
+                      <StatCard label="Produits rentables ✅"  value={winners.length} sub={auditKpiLabels.winners} color="#008060" bg="#F1F8F5" />
                       <StatCard label="Produits à risque ⚠️" value={risky.length}  sub={auditKpiLabels.risky}   color="#B98900" bg="#FFF9EC" />
-                      <StatCard label="Money Losers 🔴"    value={losers.length}  sub={auditKpiLabels.losers}  color="#D72C0D" bg="#FFF4F4" />
+                      <StatCard label="Produits à perte 🔴"    value={losers.length}  sub={auditKpiLabels.losers}  color="#D72C0D" bg="#FFF4F4" />
                     </div>
 
                     {losers.length > 0 && (
@@ -3699,7 +3716,7 @@ export default function Index() {
                               </div>
                               <div style={{ fontSize: "11px", color: p.customsEstimated ? "#B98900" : "#8A8F98", marginTop: "2px" }}
                                    title={p.customsEstimated ? "Classification non confirmée : le taux de douane est estimé. Confirmez-la dans « Suivi des coûts »." : ""}>
-                                {p.mappedCategory}{p.customsEstimated ? " — taux estimé, à confirmer" : ""}
+                                {p.mappedCategory}{p.customsEstimated ? " (taux estimé, à confirmer)" : ""}
                               </div>
                             </div>
                             <div style={{ padding: "10px 12px", fontSize: "12px", color: "#202223" }}>{money(p.price)}</div>
@@ -3719,21 +3736,21 @@ export default function Index() {
                     <div style={{ fontSize: "14px", fontWeight: "700", color: "#202223", marginBottom: "16px" }}>Analyse et recommandations</div>
                     {losers.length > 0 && (
                       <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF4F4", border: "1px solid #D72C0D33", marginBottom: "12px" }}>
-                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#D72C0D", marginBottom: "10px" }}>🚨 {losers.length} produit{losers.length > 1 ? "s" : ""} à marge négative — action immédiate requise</div>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#D72C0D", marginBottom: "10px" }}>🚨 {losers.length} produit{losers.length > 1 ? "s" : ""} à marge négative : action immédiate requise</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
                           <div>• <strong>Vérifiez le coût fournisseur</strong> dans Shopify : une saisie incorrecte peut fausser le calcul.</div>
                           <div>• <strong>Augmentez le prix de vente</strong> : ces produits sont actuellement vendus à perte. Utilisez l'onglet Simulation pour calculer le prix minimum.</div>
                           <div>• <strong>Renégociez avec votre fournisseur</strong> ou changez de source d'approvisionnement si le prix de vente ne peut pas être augmenté.</div>
-                          <div>• <strong>Envisagez de désactiver ces produits</strong> jusqu'à résolution — chaque vente aggrave vos pertes.</div>
+                          <div>• <strong>Envisagez de désactiver ces produits</strong> jusqu'à résolution : chaque vente aggrave vos pertes.</div>
                         </div>
                       </div>
                     )}
                     {risky.length > 0 && (
                       <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#FFF9EC", border: "1px solid #B9890033" }}>
-                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} sous votre objectif ({auditKpiLabels.risky}) — à optimiser</div>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#B98900", marginBottom: "10px" }}>⚠️ {risky.length} produit{risky.length > 1 ? "s" : ""} sous votre objectif ({auditKpiLabels.risky}) : à optimiser</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
                           <div>• <strong>Marge rentable mais sous l'objectif que vous avez fixé.</strong> Visez au moins votre seuil de rentabilité ({profitabilityThresholdPct} %) de marge nette.</div>
-                          <div>• <strong>Évitez les campagnes publicitaires sur ces produits</strong> — chaque euro de pub réduit encore votre marge.</div>
+                          <div>• <strong>Évitez les campagnes publicitaires sur ces produits</strong> : plus vous dépensez en publicité, plus votre marge se réduit.</div>
                           <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur et améliorer le coût rendu.</div>
                         </div>
                       </div>
@@ -3788,13 +3805,13 @@ export default function Index() {
 
       {/* ── RESULTS (Feature 1 integrated + Feature 5) ───────────────────── */}
       {activeTab === "calculator" && !showUpgrade && results && (
-        <s-section heading="Résultats — Votre vraie marge">
+        <s-section heading="Résultats : votre vraie marge">
           <MessageBlock items={warnings} color="#B98900" bg="#FFF9EC" borderColor="#B98900" />
 
           <div className="tcc-result-block" style={{ padding: "20px 24px", borderRadius: "8px", background: marginBg, borderLeft: `5px solid ${marginColor}`, marginBottom: "28px" }}>
             {results.margeNettePercent < 0 ? (
               <>
-                <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Perte nette — vous perdez de l'argent à chaque vente.</div>
+                <div style={{ fontSize: "17px", fontWeight: "700", color: "#D72C0D", marginBottom: "8px" }}>Perte nette : vous perdez de l'argent à chaque vente.</div>
                 <div style={{ fontSize: "14px", color: "#6D7175", lineHeight: "1.6" }}>
                   Votre marge apparente : <strong style={{ color: "#202223" }}>{formatPct(results.margeApparente)} %</strong>
                   {" → "}Votre marge nette réelle : <strong style={{ color: "#D72C0D" }}>{formatPct(results.margeNettePercent)} %</strong>
@@ -3824,9 +3841,9 @@ export default function Index() {
               <div style={{ width: gaugeWidth, height: "100%", background: `linear-gradient(90deg, ${marginColor}CC, ${marginColor})`, borderRadius: "11px", transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)" }} />
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: "5px" }}>
-              <span style={{ fontSize: "11px", color: "#D72C0D", fontWeight: "500" }}>0% — Danger</span>
-              <span style={{ fontSize: "11px", color: "#B98900", fontWeight: "500" }}>10% — Faible</span>
-              <span style={{ fontSize: "11px", color: "#008060", fontWeight: "500" }}>25%+ — Saine</span>
+              <span style={{ fontSize: "11px", color: "#D72C0D", fontWeight: "500" }}>0 % · Danger</span>
+              <span style={{ fontSize: "11px", color: "#B98900", fontWeight: "500" }}>10 % · Faible</span>
+              <span style={{ fontSize: "11px", color: "#008060", fontWeight: "500" }}>25 %+ · Saine</span>
             </div>
           </div>
 
@@ -3847,17 +3864,17 @@ export default function Index() {
                     if (results.douane === 0) {
                       if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
                         return new Date() < EU_DROPSHIP_DUTY_REFORM_DATE
-                          ? `+ Droits de douane (exonéré jusqu'au 30/06/2026)`
-                          : `+ Droits de douane (faible valeur — exonéré)`;
+                          ? `+ Droits de douane (gratuit jusqu'au 30/06/2026)`
+                          : `+ Droits de douane (faible valeur, gratuit)`;
                       }
-                      return `+ Droits de douane (exonéré)`;
+                      return `+ Droits de douane (gratuit)`;
                     }
                     if (sm === "dropshipping" && pa <= LOW_VALUE_PARCEL_CEILING) {
-                      return `+ Droits de douane (forfait 3€/article — réforme UE)`;
+                      return `+ Droits de douane (forfait de 3 € par article, réforme UE)`;
                     }
-                    return `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur CIF)`;
+                    return `+ Droits de douane (${(results.customsRate*100).toFixed(0)} % sur le produit + port)`;
                   })(), value: `+${money(results.douane)}`, color: "#6D7175" },
-                { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " — récupérable" : ""}`, value: `+${money(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
+                { label: `+ TVA à l'import (${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((results.vatRate ?? 0.20) * 100)} %)${results.vatRegime !== "franchise" ? " (remboursée)" : ""}`, value: `+${money(results.tvaImport)}`, color: results.vatRegime !== "franchise" ? "#008060" : "#6D7175" },
                 { label: `+ Frais de port (${form.paysImport})`,  value: `+${money(results.shipping)}`,  color: "#6D7175" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
@@ -3866,7 +3883,7 @@ export default function Index() {
                 </div>
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 0" }}>
-                <span style={{ fontSize: "14px", fontWeight: "700", color: "#202223" }}>= Coût rendu total</span>
+                <span style={{ fontSize: "14px", fontWeight: "700", color: "#202223" }}>= Coût réel total</span>
                 <span style={{ fontSize: "15px", fontWeight: "700", color: "#202223" }}>{money(results.coutRendu)}</span>
               </div>
             </div>
@@ -3877,16 +3894,16 @@ export default function Index() {
                 <span style={{ fontSize: "13px", fontWeight: "600", color: "#008060" }}>{money(results.prixVente)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
-                <span style={{ fontSize: "13px", color: "#D72C0D" }}>— Coût rendu</span>
+                <span style={{ fontSize: "13px", color: "#D72C0D" }}>− Coût réel total</span>
                 <span style={{ fontSize: "13px", fontWeight: "600", color: "#D72C0D" }}>-{money(results.coutRendu)}</span>
               </div>
               {[
-                { label: `— Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
-                { label: `— ${form.paymentProcessor} (${form.stripeFee}% + ${form.processorFixedFee ?? "0.25"} ${feesCurrency})`, value: results.stripeCost },
-                { label: `— Provision retours (${form.retours}%)`, value: results.retoursCost },
-                { label: `— Budget ads (${form.ads}%)`,           value: results.adsCost },
-                ...(results.fraisRetour > 0 ? [{ label: "— Frais de retour", value: results.fraisRetour }] : []),
-                ...(results.coutEmballage > 0 ? [{ label: "— Coût d'emballage", value: results.coutEmballage }] : []),
+                { label: `− Frais Shopify (${form.shopifyFee}%)`, value: results.shopifyCost },
+                { label: `− ${form.paymentProcessor} (${form.stripeFee}% + ${form.processorFixedFee ?? "0.25"} ${feesCurrency})`, value: results.stripeCost },
+                { label: `− Provision retours (${form.retours}%)`, value: results.retoursCost },
+                { label: `− Publicité (${form.ads}%)`,           value: results.adsCost },
+                ...(results.fraisRetour > 0 ? [{ label: "− Frais de retour", value: results.fraisRetour }] : []),
+                ...(results.coutEmballage > 0 ? [{ label: "− Coût d'emballage", value: results.coutEmballage }] : []),
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F2F3" }}>
                   <span style={{ fontSize: "13px", color: "#D72C0D" }}>{label}</span>
@@ -3911,7 +3928,7 @@ export default function Index() {
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <span style={{ fontSize: "20px" }}>📈</span>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223" }}>Break-Even ROAS</div>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#202223" }}>ROAS minimum pour être rentable</div>
                   <div style={{ fontSize: "12px", color: "#6D7175" }}>Calculez le ROAS minimum rentable pour vos campagnes pub.</div>
                 </div>
               </div>
@@ -3941,7 +3958,7 @@ export default function Index() {
         )}
         {!isExpert && isPro && (
           <div>
-            <div style={{ fontSize: "12px", color: "#6D7175", marginBottom: "8px" }}>Passez à Expert pour le Break-Even ROAS et l'audit catalogue.</div>
+            <div style={{ fontSize: "12px", color: "#6D7175", marginBottom: "8px" }}>Passez à Expert pour connaître le ROAS minimum pour être rentable et l'audit catalogue.</div>
             {subscribeExpertBtn("Upgrader vers Expert")}
           </div>
         )}
@@ -3954,15 +3971,15 @@ export default function Index() {
         </button>
         <div style={{ maxHeight: methOpen ? "600px" : "0", overflow: "hidden", transition: "max-height 0.3s ease" }}>
           <s-unordered-list>
-            <s-list-item><strong>Prix fournisseur</strong> — Ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
-            <s-list-item><strong>Droits de douane</strong> — Les taxes que vous devez payer quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
-            <s-list-item><strong>TVA à l'import</strong> — La TVA payée à l'importation (taux normal 20 %, réduit 5,5 % pour l'alimentation et les livres) — vous pouvez la récupérer si vous êtes assujetti à la TVA.</s-list-item>
-            <s-list-item><strong>Frais de port</strong> — Le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
-            <s-list-item><strong>Commissions plateformes</strong> — Ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
-            <s-list-item><strong>Provision retours</strong> — Une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
+            <s-list-item><strong>Prix fournisseur</strong> : ce que vous payez pour acheter le produit à votre fournisseur.</s-list-item>
+            <s-list-item><strong>Droits de douane</strong> : les taxes que vous payez quand vous faites entrer un produit en France depuis l'étranger (Chine, Turquie, etc.).</s-list-item>
+            <s-list-item><strong>TVA à l'import</strong> : la TVA payée à l'importation (taux normal 20 %, réduit 5,5 % pour l'alimentation et les livres). Vous la récupérez si vous êtes assujetti à la TVA.</s-list-item>
+            <s-list-item><strong>Frais de port</strong> : le coût d'expédition depuis le pays de votre fournisseur jusqu'en France.</s-list-item>
+            <s-list-item><strong>Commissions plateformes</strong> : ce que Shopify et Stripe prélèvent sur chaque vente que vous réalisez.</s-list-item>
+            <s-list-item><strong>Provision retours</strong> : une réserve calculée pour couvrir les remboursements et retours clients.</s-list-item>
           </s-unordered-list>
           <s-paragraph>
-            <strong>Sources :</strong> Tarif douanier TARIC (CE 2658/87), barèmes Shopify et Stripe publics, estimations sectorielles pour les taux de retour.
+            <strong>Sources :</strong> tarif douanier officiel UE (TARIC, règlement CE 2658/87) ; tarifs publics Stripe et Shopify, vérifiés en juillet 2026 ; estimations sectorielles pour les taux de retour.
           </s-paragraph>
         </div>
       </s-section>
@@ -3977,19 +3994,19 @@ export default function Index() {
             Chaque produit importé depuis l'étranger est soumis à une taxe douanière calculée sur sa valeur. Ce taux varie selon la catégorie du produit. Il est automatiquement intégré dans votre calcul de marge.
           </s-paragraph>
           <s-unordered-list>
-            <s-list-item>Vêtements & Textile : 12%</s-list-item>
-            <s-list-item>Électronique & High-tech : 5%</s-list-item>
-            <s-list-item>Cosmétique & Beauté : 10%</s-list-item>
-            <s-list-item>Accessoires & Bijoux : 7%</s-list-item>
-            <s-list-item>Sport & Fitness : 5%</s-list-item>
-            <s-list-item>Alimentation & Nutrition : 15%</s-list-item>
-            <s-list-item>Maroquinerie & Sacs : 3%</s-list-item>
-            <s-list-item>Jouets & Enfants : 0%</s-list-item>
-            <s-list-item>Mobilier & Décoration : 2.7%</s-list-item>
-            <s-list-item>Autre : 3%</s-list-item>
+            <s-list-item>Vêtements & Textile : 6,3 à 12 % selon le produit (12 % retenu, taux général vêtements)</s-list-item>
+            <s-list-item>Électronique & High-tech : 5 %</s-list-item>
+            <s-list-item>Cosmétique & Beauté : 10 %</s-list-item>
+            <s-list-item>Accessoires & Bijoux : 7 %</s-list-item>
+            <s-list-item>Sport & Fitness : 5 %</s-list-item>
+            <s-list-item>Alimentation & Nutrition : 15 % (très variable selon le produit)</s-list-item>
+            <s-list-item>Maroquinerie & Sacs : 3 %</s-list-item>
+            <s-list-item>Jouets & Enfants : 0 %</s-list-item>
+            <s-list-item>Mobilier & Décoration : 2,7 %</s-list-item>
+            <s-list-item>Autre : 3 %</s-list-item>
           </s-unordered-list>
           <div style={{ fontSize: "12px", color: "#6D7175", fontStyle: "italic", marginTop: "10px", lineHeight: "1.5" }}>
-            Taux moyens indicatifs. Le montant exact dépend de l'origine du produit et de sa sous-catégorie douanière.
+            Taux moyens officiels UE, estimés selon la catégorie. Le taux exact dépend de la sous-catégorie douanière précise de votre produit : vérifiez-le sur RITA (douane.gouv.fr) ou Access2Markets (Commission européenne).
           </div>
         </div>
       </s-section>
@@ -4009,7 +4026,7 @@ export function ErrorBoundary() {
         <s-section heading="Reconnexion en cours">
           <div style={{ padding: "20px 24px", borderRadius: "8px", background: "#F1F6FF", border: "1px solid #B3C9F0", fontSize: "14px", color: "#1F3A6E", lineHeight: "1.6" }}>
             <strong>Vérification de votre abonnement momentanément indisponible.</strong><br />
-            Shopify met quelques instants à répondre. Rechargez la page dans quelques secondes — vos données et votre plan sont intacts.
+            Shopify met quelques instants à répondre. Rechargez la page dans quelques secondes : vos données et votre plan sont intacts.
             <div style={{ marginTop: "14px" }}>
               <button onClick={() => window.location.reload()} style={{ padding: "8px 18px", background: "#1F3A6E", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>
                 Recharger

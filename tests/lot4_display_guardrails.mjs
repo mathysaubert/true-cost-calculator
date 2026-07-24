@@ -154,6 +154,19 @@ console.log("\n── Cohérence des 4 surfaces ROAS (couleur chiffre / label / 
   ok(diverge === 0, "couleur chiffre, label et phrase dérivent tous du même verdict agrégé");
 }
 
+// ── Langage simplifié : aucune phrase/conseil ROAS ne porte de tiret cadratin ─
+//    (chantier langage : le tiret cadratin en ponctuation est banni des chaînes marchand)
+console.log("\n── Typo : 0 tiret cadratin/demi-cadratin dans conseils & phrases ROAS ──");
+{
+  let dash = 0;
+  for (const roas of ROAS_SWEEP) {
+    for (const s of [computeCpaAdvice(roas), computeRoasPhrase(roas)]) {
+      if (s.includes("—") || s.includes("–")) { dash++; console.log(`  ✗ ROAS ${roas}: tiret cadratin dans "${s}"`); }
+    }
+  }
+  ok(dash === 0, `aucun tiret cadratin dans conseil/phrase ROAS sur ${ROAS_SWEEP.length} ROAS`);
+}
+
 // ── Table des bascules (lecture humaine) ─────────────────────────────────────
 console.log("\n── Bascules cpaColor (PV=100€ pour mémoire) ──");
 console.log("  ROAS  | Meta/TikTok/Google           | couleur | conseil");

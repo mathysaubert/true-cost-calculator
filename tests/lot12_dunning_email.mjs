@@ -135,6 +135,19 @@ console.log("\n── texte brut ≡ HTML ──");
   ok(r.html.length > 0 && r.text.length > 0 && r.html.includes("réactivé") && r.text.includes("réactivé"), "resolved : html ET texte non vides, 'réactivé' dans les deux");
 }
 
+// ── Chantier langage : aucun tiret cadratin/demi-cadratin (ponctuation) dans les mails ──
+//    Entrées sans tiret (plan/URL) → prouve que les gabarits eux-mêmes n'en produisent aucun.
+console.log("\n── typo : 0 tiret cadratin dans les mails dunning ──");
+{
+  const DAY = 86_400_000, NOW = Date.now();
+  const grace = renderDunningEmail({ shop: "s", plan: "True Cost Calculator Pro", confirmationUrl: URL, frozenSince: NOW - 5 * DAY, now: NOW });
+  const susp  = renderDunningEmail({ shop: "s", plan: "True Cost Calculator Pro", confirmationUrl: URL, frozenSince: NOW - 30 * DAY, now: NOW });
+  const res   = renderDunningResolvedEmail({ shop: "s", plan: "True Cost Calculator Pro" });
+  for (const [nom, m] of [["relance/grâce", grace], ["relance/suspension", susp], ["resolved", res]]) {
+    ok(![m.subject, m.html, m.text].some((s) => /[—–]/.test(s)), `${nom} : 0 tiret cadratin (sujet/html/texte)`);
+  }
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 12 (mail dunning) : ✓ Tous les tests passent"

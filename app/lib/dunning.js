@@ -116,7 +116,7 @@ export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = 
   // et parité HTML/texte : les mêmes expressions restent intactes). Le client mail gère le wrapping.
   const bodyText = withinGrace
     ? [
-        `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, votre accès à True Cost Calculator continue — vos fonctionnalités restent disponibles pour le moment.`,
+        `Le paiement de ${planLabel(plan)} n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, votre accès à True Cost Calculator continue : vos fonctionnalités restent disponibles pour le moment.`,
         ``,
         `Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. Vos données sont conservées dans tous les cas.`,
       ]
@@ -136,7 +136,7 @@ export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = 
   ].join("\n");
 
   const bodyHtml = withinGrace
-    ? `<p style="${EMAIL_TEXT}">Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, <strong>votre accès à True Cost Calculator continue</strong> — vos fonctionnalités restent disponibles pour le moment.</p>
+    ? `<p style="${EMAIL_TEXT}">Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé. Shopify va réessayer automatiquement. En attendant, <strong>votre accès à True Cost Calculator continue</strong> : vos fonctionnalités restent disponibles pour le moment.</p>
     <p style="${EMAIL_TEXT}">Si le paiement n'aboutit pas, Shopify finira par résilier l'abonnement, et l'accès aux fonctionnalités payantes s'arrêtera à ce moment-là. Le délai dépend de la politique de facturation de Shopify. Régularisez votre paiement pour éviter cette coupure à venir. <strong>Vos données sont conservées dans tous les cas.</strong></p>`
     : `<p style="${EMAIL_TEXT}">Le paiement de <strong>${planLabel(plan)}</strong> n'a pas pu être prélevé, et <strong>l'accès aux fonctionnalités payantes de True Cost Calculator est maintenant suspendu</strong>. Il est rétabli dès que votre paiement est régularisé. <strong>Vos données sont conservées.</strong></p>
     <p style="${EMAIL_TEXT}">Régularisez votre paiement pour rétablir l'accès. Shopify continue de réessayer le prélèvement ; le délai de résiliation dépend de sa politique de facturation.</p>`;
@@ -153,7 +153,7 @@ export function renderDunningEmail({ shop, plan, confirmationUrl, frozenSince = 
 
 // Mail de confirmation (retour à active après relances). Entrée : { shop, plan }. Sobre.
 export function renderDunningResolvedEmail({ shop, plan }) {
-  const subject = "C'est réglé — votre accès est rétabli";
+  const subject = "C'est réglé : votre accès est rétabli";
   const text = [
     `Votre paiement est passé et ${planLabel(plan)} est réactivé.`,
     `Vous avez de nouveau accès à toutes les fonctionnalités de True Cost Calculator.`,

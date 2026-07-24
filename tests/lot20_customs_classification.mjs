@@ -54,7 +54,7 @@ console.log("\n── customsIndicator : confirmée ⇒ null ──");
 {
   ok(customsIndicator("confirmed") === null, "confirmée → null (aucun indicateur)");
   const ind = customsIndicator("estimated");
-  ok(ind && ind.label === "Taux estimé — à confirmer", "estimée → libellé « à confirmer »");
+  ok(ind && ind.label === "Taux estimé, à confirmer", "estimée → libellé « à confirmer »");
   ok(ind && /TARIC/.test(ind.ref), "adossé à la nomenclature TARIC (pas de chapitre inventé)");
 }
 

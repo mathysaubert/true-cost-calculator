@@ -11,7 +11,7 @@ export const loader = async () => {
       ? `${process.env.SHOPIFY_API_KEY.slice(0, 8)}...${process.env.SHOPIFY_API_KEY.slice(-4)}`
       : "NOT SET",
     SHOPIFY_API_SECRET: secret
-      ? `SET — length:${secret.length}, prefix:${secret.slice(0, 6)}`
+      ? `SET (length:${secret.length}, prefix:${secret.slice(0, 6)})`
       : "NOT SET",
     SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "NOT SET",
     SCOPES: process.env.SCOPES || "NOT SET (will default to undefined)",
@@ -19,7 +19,7 @@ export const loader = async () => {
     DIRECT_URL: process.env.DIRECT_URL ? "SET" : "NOT SET",
     SUPABASE_URL: process.env.SUPABASE_URL || "NOT SET",
     ANTHROPIC_API_KEY: anthropicKey
-      ? `SET — length:${anthropicKey.length}, prefix:${anthropicKey.slice(0, 7)}`
+      ? `SET (length:${anthropicKey.length}, prefix:${anthropicKey.slice(0, 7)})`
       : "NOT SET",
     NODE_ENV: process.env.NODE_ENV || "unknown",
   };
@@ -31,7 +31,7 @@ export default function Debug() {
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <title>Debug — True Cost Calculator</title>
+        <title>Debug · True Cost Calculator</title>
       </head>
       <body style={{ fontFamily: "monospace", padding: "2rem", background: "#f9f9f9" }}>
         <h2>Environment Variables Status</h2>
