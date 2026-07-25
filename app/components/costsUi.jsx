@@ -137,8 +137,9 @@ export function ProductCostList({ products = [], expandedId, onToggle, renderPan
 // comme une donnée saisie. draft[variant_id][field] = valeur tapée. onEdit(vid, field, val). onSave().
 // Le parent ne soumet que les variantes réellement éditées (dirty), en repliant les champs vides sur la
 // suggestion au moment d'enregistrer (validateCostRow reçoit alors un jeu complet).
-export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, saved, errors = [], feesCurrency }) {
+export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, saved, errors = [], feesCurrency, nextIncomplete = null, hasAnalyzedOrders = false, onContinue }) {
   const rows = product?.variantRows ?? [];
+  const single = rows.length === 1; // produit mono-variante : pas de colonne « Variante » (bijection Shopify conservée ailleurs)
   const inp = { width: "100%", padding: "5px 7px", border: "1px solid #C9CCCF", borderRadius: "5px", fontSize: "12px", fontFamily: "inherit", boxSizing: "border-box" };
   const merchant = (r) => r.source === "confirmed" || r.source === "imported";
   const numVal = (r, f) => { const d = draft[r.variant_id]; if (d && f in d) return d[f]; return merchant(r) ? (r[f] ?? "") : ""; };
@@ -156,16 +157,18 @@ export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, 
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "820px" }}>
           <thead>
             <tr style={{ background: "#F9FAFB" }}>
-              {["Variante", `Prix d'achat (${feesCurrency})`, `Port du lot (${feesCurrency})`, "Qté/lot", `Emballage (${feesCurrency})`, "Régime TVA", "Comment vous expédiez", "Pays d'import", "Catégorie"].map((h) => <th key={h} style={th}>{h}</th>)}
+              {[...(single ? [] : ["Variante"]), `Prix d'achat (${feesCurrency})`, `Port du lot (${feesCurrency})`, "Qté/lot", `Emballage (${feesCurrency})`, "Régime TVA", "Comment vous expédiez", "Pays d'import", "Catégorie"].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.variant_id} style={{ borderTop: "1px solid #F1F2F4" }}>
-                <td style={{ padding: "6px 8px", fontSize: "12px", color: "#202223", whiteSpace: "nowrap" }}>
-                  {r.variant_title && r.variant_title !== "Default Title" ? r.variant_title : "Variante unique"}
-                  {merchant(r) && <span title="Coût renseigné" style={{ marginLeft: 6, fontSize: "9px", color: "#008060", fontWeight: 700 }}>✓</span>}
-                </td>
+                {!single && (
+                  <td style={{ padding: "6px 8px", fontSize: "12px", color: "#202223", whiteSpace: "nowrap" }}>
+                    {r.variant_title && r.variant_title !== "Default Title" ? r.variant_title : "Variante"}
+                    {merchant(r) && <span title="Coût renseigné" style={{ marginLeft: 6, fontSize: "9px", color: "#008060", fontWeight: 700 }}>✓</span>}
+                  </td>
+                )}
                 <td style={{ padding: "4px 6px" }}>{numInput(r, "prix_achat")}</td>
                 <td style={{ padding: "4px 6px" }}>{numInput(r, "port_entrant")}</td>
                 <td style={{ padding: "4px 6px", width: 70 }}>{numInput(r, "qty_par_lot")}</td>
@@ -186,6 +189,18 @@ export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, 
         {saved && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Coûts enregistrés.</span>}
         {errors.length > 0 && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{errors.length} ligne(s) non enregistrée(s) : {errors.slice(0, 3).map((e) => e.messages?.join(" · ")).join(" ; ")}</span>}
       </div>
+      {/* Boucle post-enregistrement (point 9) : guide vers le prochain produit incomplet, ou clôture. */}
+      {saved && (
+        <div style={{ fontSize: "12px", color: "#202223", marginTop: "6px", lineHeight: "1.5" }}>
+          {nextIncomplete ? (
+            <>Continuez : <button onClick={() => onContinue?.(nextIncomplete.product_id)} style={{ background: "none", border: "none", padding: 0, color: "#008060", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", fontWeight: 600, textDecoration: "underline" }}>{nextIncomplete.title}</button></>
+          ) : !hasAnalyzedOrders ? (
+            "Tous vos produits sont renseignés. Synchronisez vos commandes pour voir vos marges réelles."
+          ) : (
+            "Tous vos produits sont renseignés."
+          )}
+        </div>
+      )}
       <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "6px" }}>Les champs laissés vides utiliseront la valeur suggérée affichée en exemple.</div>
     </div>
   );

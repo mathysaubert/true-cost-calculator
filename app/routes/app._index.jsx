@@ -195,7 +195,7 @@ function MessageBlock({ items, color, bg, borderColor }) {
 function StatCard({ label, value, sub, color, bg }) {
   return (
     <div style={{ padding: "16px 12px", borderRadius: "8px", background: bg, border: `1px solid ${color}22`, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ fontSize: "10px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: "1.3" }}>{label}</div>
       <div style={{ fontSize: "22px", fontWeight: "700", color, lineHeight: 1, minHeight: "60px", display: "flex", alignItems: "center", justifyContent: "center" }}>{value}</div>
       <div style={{ fontSize: "12px", color: "#6D7175" }}>{sub}</div>
     </div>
@@ -1885,7 +1885,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {isExpert && cpaTargets?.noAcqCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "8px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: "#fff", background: "#D72C0D" }}>{cpaTargets.noAcqCount}</span>
-                  produit(s) ne peuvent financer aucune publicité : leur marge (même positive) est trop faible pour payer un client acquis en pub. C'est une mesure de capacité de pub, différente de « vendu à perte ». Voir la colonne « Reste pour la pub », qui distingue les cas.
+                  produit(s) ne peuvent financer aucune publicité : leur marge (même positive) est trop faible pour payer un client acquis en pub. C'est une mesure de capacité de pub, différente de « vendu à perte ». Voir la colonne « Reste pour la pub » du tableau ci-dessous, qui distingue les cas.
                 </div>
               )}
               {isExpert && cpaTargets?.blended && (() => {
@@ -2144,6 +2144,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const [rows, setRows]       = useState(null);   // null = pas encore chargé (lignes AFFICHÉES, jamais persistées à l'ouverture)
   const [draft, setDraft]     = useState({});     // édition PAR variante : { [variant_id]: { field: valeur tapée } }
   const [expandedId, setExpandedId] = useState(null); // produit dont le panneau d'édition est ouvert
+  const [lastSavedId, setLastSavedId] = useState(null); // produit réellement enregistré (le « ✓ » + la boucle ne fuient pas aux autres panneaux)
   const [country, setCountry] = useState(defaultImportCountry);
   const [capped, setCapped]   = useState(false);
   const [giftCardCount, setGiftCardCount] = useState(0);   // cartes cadeaux exclues de la liste (point 7)
@@ -2182,7 +2183,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
       cout_emballage: val(r, "cout_emballage"), vat_regime: val(r, "vat_regime"), shipping_model: val(r, "shipping_model"),
       pays_import: val(r, "pays_import"), categorie: val(r, "categorie"),
     }));
-    if (toSave.length) saveFetcher.submit({ _action: "costs_save", rows: toSave }, { method: "POST", encType: "application/json" });
+    if (toSave.length) { setLastSavedId(product?.product_id ?? null); saveFetcher.submit({ _action: "costs_save", rows: toSave }, { method: "POST", encType: "application/json" }); }
   }
 
   function exportTemplate() {
@@ -2220,6 +2221,10 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const marginByProduct = useMemo(() => new Map((agg.byProduct ?? []).map(p => [p.product_id, p])), [agg]);
   const reliability     = useMemo(() => computeCostReliability(orderMargins ?? []), [orderMargins]);
   const titleFor        = (id) => (productTitleById && productTitleById[id]) || null;
+  const hasAnalyzedOrders = (agg.validCount ?? 0) > 0;
+  // Lignes héritées (synchronisées avant le détail natif) sans margin_breakdown_json → « travail » restant.
+  // Les 'missing' (aucun coût) et les lignes déjà détaillées ne comptent pas. 0 → bouton « Compléter » masqué.
+  const breakdownPending = useMemo(() => (orderMargins ?? []).filter(r => r.cost_source !== "missing" && r.unit_net_margin != null && !r.margin_breakdown_json).length, [orderMargins]);
   // Une entrée par produit : ses variantes affichées, son statut de coûts, sa marge réelle 30 j (si commandes).
   const products = useMemo(() => {
     if (!rows) return [];
@@ -2255,7 +2260,8 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
       {/* [3] Marge réelle sur vos commandes : synchroniser + compléter le détail + corriger sans coût */}
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
       <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Marge réelle sur vos commandes</div>
+        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "4px" }}>Marge réelle sur vos commandes</div>
+        <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "10px", lineHeight: "1.5" }}>L'app lit vos commandes Shopify des 30 derniers jours et calcule ce que chaque vente vous a vraiment rapporté.</div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <button
@@ -2267,7 +2273,9 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
             {backfillFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {backfillFetcher.data.ingested ?? 0} ligne(s) sur {backfillFetcher.data.orders ?? 0} commande(s).</span>}
             {backfillFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{backfillFetcher.data.error}</span>}
           </div>
-          {/* Brique B : rétro-remplir le détail poste-par-poste des commandes déjà synchronisées. */}
+          {/* Brique B : rétro-remplir le détail poste-par-poste des commandes héritées. MASQUÉ s'il n'y a
+              aucune ligne sans détail (le bouton n'apparaît que s'il a du travail). */}
+          {breakdownPending > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <button
               onClick={() => breakdownFetcher.submit({ _action: "backfill_breakdowns" }, { method: "POST", encType: "application/json" })}
@@ -2278,6 +2286,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
             {breakdownFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ {breakdownFetcher.data.filled ?? 0} détail(s) complété(s){(breakdownFetcher.data.skipped ?? 0) > 0 ? ` · ${breakdownFetcher.data.skipped} ignoré(s)` : ""} sur {breakdownFetcher.data.scanned ?? 0} ligne(s) sans détail.</span>}
             {breakdownFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{breakdownFetcher.data.error}</span>}
           </div>
+          )}
         </div>
       </div>
 
@@ -2309,7 +2318,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {recalcFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{recalcFetcher.data.error}</span>}
         </div>
         <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Recalcule la marge des commandes synchronisées <strong>avant que leurs coûts soient renseignés</strong>, à partir de vos coûts actuels. Les marges dont le coût est <strong>confirmé ou importé</strong> ne changent pas : elles sont déjà exactes. Seules les commandes des <strong>30 derniers jours</strong> sont concernées ; au-delà, les marges restent figées.
+          Ce bouton recalcule uniquement les commandes analysées <strong>sans coût saisi</strong>. Les commandes déjà calculées avec vos vrais coûts ne bougent pas. Seules les commandes des <strong>30 derniers jours</strong> sont concernées ; au-delà, les marges restent figées.
         </div>
       </div>
 
@@ -2369,11 +2378,17 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         ) : (
           <ProductCostList
             products={products} expandedId={expandedId} onToggle={toggleProduct}
-            renderPanel={(p) => (
-              <ProductCostPanel
-                product={p} draft={draft} onEdit={onEdit} onSave={() => saveProduct(p)}
-                saving={saveFetcher.state !== "idle"} saved={saveFetcher.data?.success} errors={saveErrors} feesCurrency={feesCurrency} />
-            )} />
+            renderPanel={(p) => {
+              const savedThis = !!saveFetcher.data?.success && lastSavedId === p.product_id;
+              const next = savedThis ? products.find(x => x.product_id !== p.product_id && x.status.key !== "complete") : null;
+              return (
+                <ProductCostPanel
+                  product={p} draft={draft} onEdit={onEdit} onSave={() => saveProduct(p)}
+                  saving={saveFetcher.state !== "idle"} saved={savedThis} errors={saveErrors} feesCurrency={feesCurrency}
+                  nextIncomplete={next ? { product_id: next.product_id, title: next.title } : null}
+                  hasAnalyzedOrders={hasAnalyzedOrders} onContinue={selectProduct} />
+              );
+            }} />
         )}
       </div>
 
@@ -3550,7 +3565,7 @@ export default function Index() {
               <div>
                 {/* Intro règle d'or (texte imposé, point 5) */}
                 <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
-                  L'audit estime la marge de chaque produit de votre catalogue à partir des coûts saisis dans Shopify. Aucune commande nécessaire : c'est une photo théorique, pour repérer en 30 secondes les produits qui vous font perdre de l'argent.
+                  L'audit passe votre catalogue en revue et estime la marge de chaque produit, même sans aucune vente. En 30 secondes, vous repérez ceux qui vous font perdre de l'argent. Il se base sur le prix fournisseur indiqué sur vos fiches produits Shopify.
                 </div>
 
                 {/* Ligne d'hypothèses + « Affiner » (point 1) : le formulaire de paramètres est replié par défaut. */}
@@ -3559,8 +3574,8 @@ export default function Index() {
                   const vatLabel  = auditParams.vat_regime === "franchise" ? "en franchise de TVA" : "assujetti à la TVA";
                   return (
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", fontSize: "12px", color: "#6D7175", marginBottom: auditRefineOpen ? "12px" : "20px" }}>
-                      <span>Hypothèses : {shipLabel}, {vatLabel}, port {auditParams.shipping_cost || "8"} {feesCurrency} par unité.</span>
-                      <button onClick={() => setAuditRefineOpen(o => !o)} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>{auditRefineOpen ? "Masquer" : "Affiner"}</button>
+                      <span>Réglages de l'audit : {shipLabel} · {vatLabel} · port {auditParams.shipping_cost || "8"} {feesCurrency} par unité</span>
+                      <button onClick={() => setAuditRefineOpen(o => !o)} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>{auditRefineOpen ? "Masquer" : "Modifier"}</button>
                     </div>
                   );
                 })()}
@@ -3632,9 +3647,9 @@ export default function Index() {
 
                 {/* Guide Shopify simplifié (point 6) : 2 lignes + « Voir le guide pas à pas » replié. */}
                 <div style={{ padding: "12px 16px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "20px", fontSize: "12px", color: "#202223", lineHeight: "1.6" }}>
-                  Dans Shopify : Produits, puis votre produit, puis la variante, puis le champ « Coût par article ». L'audit lit ce champ pour chaque produit ; sans lui, le produit n'apparaît pas.
+                  L'audit lit le prix fournisseur saisi dans la fiche Shopify de chaque produit (champ « Coût par article »). Un produit sans ce prix n'apparaît pas dans l'audit.
                   <details style={{ marginTop: "8px" }}>
-                    <summary style={{ cursor: "pointer", color: "#7C3AED", fontWeight: "600" }}>Voir le guide pas à pas</summary>
+                    <summary style={{ cursor: "pointer", color: "#7C3AED", fontWeight: "600" }}>Comment remplir ce champ dans Shopify</summary>
                     <ol style={{ margin: "8px 0 0", paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "5px", color: "#202223", lineHeight: "1.5" }}>
                       <li>Ouvrez votre admin Shopify, puis cliquez sur Produits dans le menu de gauche.</li>
                       <li>Choisissez le produit à mettre à jour.</li>
@@ -3670,7 +3685,7 @@ export default function Index() {
                 {/* Résultats (au moins un produit chiffré) */}
                 {auditData && !isAuditing && products.length > 0 && (
                   <>
-                    <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+                    <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
                       <StatCard label="Produits rentables ✅"  value={winners.length} sub={auditKpiLabels.winners} color="#008060" bg="#F1F8F5" />
                       <StatCard label="Produits à risque ⚠️" value={risky.length}  sub={auditKpiLabels.risky}   color="#B98900" bg="#FFF9EC" />

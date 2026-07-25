@@ -54,7 +54,7 @@ export function CustomsClassificationPanel({ rows, onConfirmed }) {
         )}
       </div>
       <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "4px", lineHeight: "1.5" }}>
-        Le taux de douane dépend de la <strong>catégorie</strong> (selon la nomenclature TARIC). Confirmez-la pour fiabiliser vos marges : les marges déjà à coûts confirmés ne changeront pas.
+        Le taux de douane appliqué à un produit dépend de sa <strong>catégorie</strong>. Vérifiez-la une fois pour chaque produit : vos marges utiliseront le bon taux. Les marges déjà calculées avec vos coûts confirmés ne changeront pas.
       </div>
       {!collapsed && (
         <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>

@@ -84,6 +84,26 @@ console.log("\n=== RENDU RÉEL — ProductCostPanel (Suivi, champs vides + place
   check("panneau : erreur de validation prix d'achat (≤ 0) affichée",
     React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", errors: [{ variant_id: "v1", messages: ["Indiquez le prix d'achat fournisseur"] }] }),
     (h) => /Indiquez le prix d/.test(h) && /achat fournisseur/.test(h) && /non enregistrée/.test(h));
+  check("panneau multi-variantes → en-tête « Variante » présent",
+    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
+    (h) => />Variante</.test(h));
+
+  // Point 10 : produit mono-variante → pas de colonne « Variante », champs directs.
+  const mono = { product_id: "p2", title: "Gourde", variantRows: [{ variant_id: "v1", variant_title: "Default Title", source: "estimated", stored: false, prix_achat: 0, port_entrant: 8, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Autre" }] };
+  check("panneau mono-variante → aucune colonne « Variante », ni « Variante unique »",
+    React.createElement(ProductCostPanel, { product: mono, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
+    (h) => !/>Variante</.test(h) && !/Variante unique/.test(h) && /Prix d/.test(h));
+
+  // Point 9 : boucle post-enregistrement, 3 états (saved=true).
+  check("post-save : produit incomplet restant → « Continuez : {titre} » cliquable",
+    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: { product_id: "p9", title: "Mug licorne" }, hasAnalyzedOrders: true, onContinue() {} }),
+    (h) => /Continuez :/.test(h) && /Mug licorne/.test(h));
+  check("post-save : tout renseigné + aucune commande → invite synchroniser",
+    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: false, onContinue() {} }),
+    (h) => /Tous vos produits sont renseignés/.test(h) && /Synchronisez vos commandes/.test(h));
+  check("post-save : tout renseigné + commandes présentes → clôture simple",
+    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: true, onContinue() {} }),
+    (h) => /Tous vos produits sont renseignés\./.test(h) && !/Synchronisez vos commandes/.test(h));
 }
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
