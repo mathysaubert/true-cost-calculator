@@ -19,6 +19,28 @@ export function CustomsEstimatedTag({ estimated }) {
   );
 }
 
+// Bandeau de feedback PERSISTANT de la confirmation douane (hissé dans CostTracker : survit à la
+// disparition du panneau). Extrait pour être rendable/testable (render_check). feedback = { success,
+// rateChanged, error }. Rendu réel exigé pour les textes règle d'or (ère XV, commit 6). null → rien.
+export function CustomsFeedbackBanner({ feedback, onClose }) {
+  if (!feedback) return null;
+  const ok = feedback.success;
+  const bg = ok ? (feedback.rateChanged ? "#FFF9EC" : "#F1F8F5") : "#FFF4F4";
+  const bd = ok ? (feedback.rateChanged ? "#B9890033" : "#00806033") : "#D72C0D33";
+  return (
+    <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", display: "flex", alignItems: "flex-start", gap: "10px", background: bg, border: `1px solid ${bd}` }}>
+      <div style={{ flex: 1, fontSize: "12px", color: "#202223", lineHeight: "1.5" }}>
+        {ok ? (
+          feedback.rateChanged
+            ? <>✓ Catégorie confirmée. Le taux de douane a changé : vos prochains calculs utiliseront ce taux. Les marges déjà calculées avec vos vrais coûts ne bougent pas ; celles calculées sans coût saisi peuvent être mises à jour avec « Corriger les marges calculées sans coût » ci-dessus.</>
+            : <>✓ Catégorie confirmée. Vos prochains calculs utiliseront ce taux.</>
+        ) : <span style={{ color: "#D72C0D" }}>{feedback.error}</span>}
+      </div>
+      <button onClick={onClose} title="Fermer" style={{ background: "none", border: "none", color: "#6D7175", cursor: "pointer", fontSize: "16px", lineHeight: 1, fontFamily: "inherit", flexShrink: 0 }}>×</button>
+    </div>
+  );
+}
+
 // Confirmation de la classification PAR PRODUIT (configuration actuelle). Ne liste que les produits à
 // classification ESTIMÉE (pire cas : ≥1 variante non confirmée). Divergence ⇒ aucune présélection, choix
 // explicite + mention du conflit. Sur rateChanged, dit explicitement que les marges à coûts confirmés

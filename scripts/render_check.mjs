@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 const vite = await createServer({ server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
-const { CustomsClassificationPanel: Panel, CustomsEstimatedTag: Tag } = await vite.ssrLoadModule("/app/components/customsUi.jsx");
+const { CustomsClassificationPanel: Panel, CustomsEstimatedTag: Tag, CustomsFeedbackBanner } = await vite.ssrLoadModule("/app/components/customsUi.jsx");
 const { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPanel } = await vite.ssrLoadModule("/app/components/costsUi.jsx");
 
 let ko = 0;
@@ -37,6 +37,19 @@ check("estimated=false → null (aucun affichage, par contrat)", React.createEle
 check("estimated=undefined (champ absent) → null", React.createElement(Tag, { estimated: undefined }), (h) => h === "");
 
 const titleFor = (id) => ({ p4: "Gourde", p3: "Mug", p1: "Tee" }[id] ?? null);
+
+console.log("\n=== RENDU RÉEL — CustomsFeedbackBanner (Suivi [4], règle d'or) ===");
+check("feedback null → rien",
+  React.createElement(CustomsFeedbackBanner, { feedback: null, onClose() {} }), (h) => h === "");
+check("succès + rateChanged → « taux a changé », prochains calculs, pas de « vérités auditées »",
+  React.createElement(CustomsFeedbackBanner, { feedback: { success: true, rateChanged: true }, onClose() {} }),
+  (h) => /Catégorie confirmée/.test(h) && /taux de douane a changé/.test(h) && /prochains calculs utiliseront ce taux/.test(h) && !/vérités auditées/.test(h));
+check("succès sans changement → « prochains calculs », message court",
+  React.createElement(CustomsFeedbackBanner, { feedback: { success: true, rateChanged: false }, onClose() {} }),
+  (h) => /Catégorie confirmée/.test(h) && /prochains calculs utiliseront ce taux/.test(h) && !/taux de douane a changé/.test(h));
+check("erreur → message d'erreur affiché",
+  React.createElement(CustomsFeedbackBanner, { feedback: { success: false, error: "Aucune variante à confirmer." }, onClose() {} }),
+  (h) => /Aucune variante à confirmer/.test(h));
 
 console.log("\n=== RENDU RÉEL — CostSummaryBanner (Suivi [1], toujours visible) ===");
 check("sans commande analysée → invite « synchronisez »",
@@ -101,9 +114,12 @@ console.log("\n=== RENDU RÉEL — ProductCostPanel (Suivi, champs vides + place
   check("post-save : tout renseigné + aucune commande → invite synchroniser",
     React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: false, onContinue() {} }),
     (h) => /Tous vos produits sont renseignés/.test(h) && /Synchronisez vos commandes/.test(h));
-  check("post-save : tout renseigné + commandes présentes → clôture simple",
+  check("post-save : tout renseigné + commandes présentes → clôture « marges se calculent avec ces coûts »",
     React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: true, onContinue() {} }),
-    (h) => /Tous vos produits sont renseignés\./.test(h) && !/Synchronisez vos commandes/.test(h));
+    (h) => /Tous vos produits sont renseignés : vos marges réelles se calculent/.test(h) && !/Synchronisez vos commandes/.test(h));
+  check("panneau : intro « ces coûts servent à calculer votre vraie marge »",
+    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
+    (h) => /Ces coûts servent à calculer votre vraie marge sur chaque commande/.test(h));
 }
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));

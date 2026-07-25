@@ -25,7 +25,7 @@ import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { recalcEstimatedMargins } from "../lib/recalcEstimatedMargins.server.js";
 import { resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
-import { CustomsEstimatedTag, CustomsClassificationPanel } from "../components/customsUi.jsx";
+import { CustomsEstimatedTag, CustomsClassificationPanel, CustomsFeedbackBanner } from "../components/customsUi.jsx";
 import { applyCustomsInvalidation, confirmCustomsCategory } from "../lib/customsClassification.server.js";
 import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown, computeCostReliability } from "../lib/orderHistory.js";
 import { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPanel } from "../components/costsUi.jsx";
@@ -2332,18 +2332,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         onGoToCosts={() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
 
       {/* [4] Classification douanière : bandeau de feedback PERSISTANT (survit à la disparition du panneau) + panneau */}
-      {customsFeedback && (
-        <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", display: "flex", alignItems: "flex-start", gap: "10px",
-          background: customsFeedback.success ? (customsFeedback.rateChanged ? "#FFF9EC" : "#F1F8F5") : "#FFF4F4",
-          border: `1px solid ${customsFeedback.success ? (customsFeedback.rateChanged ? "#B9890033" : "#00806033") : "#D72C0D33"}` }}>
-          <div style={{ flex: 1, fontSize: "12px", color: "#202223", lineHeight: "1.5" }}>
-            {customsFeedback.success ? (
-              <>✓ Classification confirmée.{customsFeedback.rateChanged && <span style={{ color: "#B98900" }}> Le taux de douane a changé. Vos marges à <strong>coûts confirmés</strong> conservent l'ancien taux (vérités auditées, non recalculées) ; pour réaligner les marges à coûts estimés, utilisez « Corriger les marges calculées sans coût » ci-dessus.</span>}</>
-            ) : <span style={{ color: "#D72C0D" }}>{customsFeedback.error}</span>}
-          </div>
-          <button onClick={() => setCustomsFeedback(null)} title="Fermer" style={{ background: "none", border: "none", color: "#6D7175", cursor: "pointer", fontSize: "16px", lineHeight: 1, fontFamily: "inherit", flexShrink: 0 }}>×</button>
-        </div>
-      )}
+      <CustomsFeedbackBanner feedback={customsFeedback} onClose={() => setCustomsFeedback(null)} />
       {/* Panneau douane alimenté par les SEULES lignes stockées : on ne propose de confirmer que des produits
           réellement suivis (une variante sans ligne saisie n'a rien à confirmer — confirmCustomsCategory la
           rejetterait). Composant + action confirm_customs_category réutilisés à l'identique (zéro régression). */}
@@ -3651,11 +3640,10 @@ export default function Index() {
                   <details style={{ marginTop: "8px" }}>
                     <summary style={{ cursor: "pointer", color: "#7C3AED", fontWeight: "600" }}>Comment remplir ce champ dans Shopify</summary>
                     <ol style={{ margin: "8px 0 0", paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "5px", color: "#202223", lineHeight: "1.5" }}>
-                      <li>Ouvrez votre admin Shopify, puis cliquez sur Produits dans le menu de gauche.</li>
-                      <li>Choisissez le produit à mettre à jour.</li>
-                      <li>Descendez jusqu'à la section Variantes et cliquez sur la variante (ou sur Modifier).</li>
-                      <li>Dans la section Expédition, remplissez le champ « Coût par article » (votre prix fournisseur hors taxes).</li>
-                      <li>Cliquez sur Enregistrer, puis recommencez pour chaque produit.</li>
+                      <li>Ouvrez votre admin Shopify, puis Produits, et choisissez le produit.</li>
+                      <li>Dans la section Prix, cliquez sur « Coût par article » et saisissez votre prix fournisseur hors taxes.</li>
+                      <li>Si le produit a plusieurs variantes : ouvrez chaque variante depuis la section Variantes ; son champ « Coût par article » est dans sa section Prix.</li>
+                      <li>Enregistrez, puis recommencez pour chaque produit.</li>
                     </ol>
                   </details>
                 </div>

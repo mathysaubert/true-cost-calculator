@@ -141,17 +141,18 @@ export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, 
   const rows = product?.variantRows ?? [];
   const single = rows.length === 1; // produit mono-variante : pas de colonne « Variante » (bijection Shopify conservée ailleurs)
   const inp = { width: "100%", padding: "5px 7px", border: "1px solid #C9CCCF", borderRadius: "5px", fontSize: "12px", fontFamily: "inherit", boxSizing: "border-box" };
+  const selStyle = { ...inp, minWidth: "150px" }; // selects : largeur suffisante pour lire le libellé en entier (table scrollable)
   const merchant = (r) => r.source === "confirmed" || r.source === "imported";
   const numVal = (r, f) => { const d = draft[r.variant_id]; if (d && f in d) return d[f]; return merchant(r) ? (r[f] ?? "") : ""; };
   const selVal = (r, f) => { const d = draft[r.variant_id]; if (d && f in d) return d[f]; return r[f] ?? ""; };
   const ph = (r, f) => (r[f] != null && String(r[f]) !== "" ? `ex : ${r[f]}` : "");
   const numInput = (r, f) => <input type="text" inputMode="decimal" value={numVal(r, f)} placeholder={ph(r, f)} onChange={(e) => onEdit?.(r.variant_id, f, e.target.value)} style={inp} />;
-  const selInput = (r, f, opts, labels) => <select value={selVal(r, f)} onChange={(e) => onEdit?.(r.variant_id, f, e.target.value)} style={inp}>{opts.map((o) => <option key={o} value={o}>{labels ? labels[o] : o}</option>)}</select>;
+  const selInput = (r, f, opts, labels) => <select value={selVal(r, f)} onChange={(e) => onEdit?.(r.variant_id, f, e.target.value)} style={selStyle}>{opts.map((o) => <option key={o} value={o}>{labels ? labels[o] : o}</option>)}</select>;
   const th = { padding: "6px 8px", fontSize: "10px", fontWeight: 700, color: "#6D7175", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.4px", whiteSpace: "nowrap" };
   return (
     <div style={{ border: "1px solid #E4E5E7", borderRadius: "8px", background: "#FBFBFC", padding: "12px" }}>
       <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "10px", lineHeight: "1.5" }}>
-        Renseignez les coûts que Shopify ne connaît pas. Les valeurs grisées sont des suggestions : tapez pour les remplacer. Rien n'est enregistré tant que vous ne cliquez pas sur « Enregistrer ce produit ».
+        Ces coûts servent à calculer votre vraie marge sur chaque commande. Renseignez les coûts que Shopify ne connaît pas. Les valeurs grisées sont des suggestions : tapez pour les remplacer. Rien n'est enregistré tant que vous ne cliquez pas sur « Enregistrer ce produit ».
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "820px" }}>
@@ -197,7 +198,7 @@ export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, 
           ) : !hasAnalyzedOrders ? (
             "Tous vos produits sont renseignés. Synchronisez vos commandes pour voir vos marges réelles."
           ) : (
-            "Tous vos produits sont renseignés."
+            "Tous vos produits sont renseignés : vos marges réelles se calculent désormais avec ces coûts."
           )}
         </div>
       )}
