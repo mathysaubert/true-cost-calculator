@@ -17,8 +17,8 @@ import {
 import { buildMargeLine } from "../lib/aiPayload.js";
 import {
   PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS,
-  shopifyTypeToCategory, estimateVariantCost, validateCostRow,
-  parseCostsCsv, buildCostsCsv, CSV_COLUMNS, reconcileEstimatedCost,
+  shopifyTypeToCategory, validateCostRow,
+  parseCostsCsv, buildCostsCsv, CSV_COLUMNS, buildCostRowsForDisplay,
 } from "../lib/variantCosts.js";
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
@@ -1050,7 +1050,7 @@ export const action = async ({ request }) => {
     // Toutes les variantes actives — variants(first:100) couvre la limite Shopify
     // (100 variantes/produit) ; variantsCapped signale un dépassement éventuel.
     const variants = [];
-    let cursor = null, hasNext = true, pages = 0, variantsCapped = false;
+    let cursor = null, hasNext = true, pages = 0, variantsCapped = false, giftCardCount = 0;
     const startTime = Date.now();
     while (hasNext && pages < 20) {
       if (Date.now() - startTime > 8000) { console.error("[Costs] time budget exceeded"); break; }
@@ -1060,7 +1060,7 @@ export const action = async ({ request }) => {
           `query CostVariants($cursor: String) {
             products(first: 50, after: $cursor, query: "status:active") {
               edges { node {
-                id title productType
+                id title productType isGiftCard
                 category { name }
                 variants(first: 100) {
                   edges { node { id title price inventoryItem { unitCost { amount } } } }
@@ -1076,6 +1076,8 @@ export const action = async ({ request }) => {
         const page = json.data?.products;
         if (!page) break;
         for (const { node } of page.edges) {
+          // Cartes cadeaux (flag Shopify) : aucun coût à suivre → exclues de la liste, comptées à part (point 7).
+          if (node.isGiftCard === true) { giftCardCount++; continue; }
           if (node.variants?.pageInfo?.hasNextPage) variantsCapped = true;
           for (const ve of node.variants.edges) {
             const v = ve.node;
@@ -1096,41 +1098,14 @@ export const action = async ({ request }) => {
     const { data: stored } = await supabase.from("variant_costs").select("*").eq("shop_domain", session.shop);
     const storedMap = new Map((stored ?? []).map(r => [r.variant_id, r]));
 
-    // Variantes sans coûts → estimation persistée en source='estimated' (insert-only : ignoreDuplicates
-    // ne réécrit jamais une ligne confirmed/imported). Réhydratation : une ligne ESTIMÉE se laisse
-    // corriger par le unitCost Shopify réel s'il apparaît / change plus tard (reconcileEstimatedCost, pur) —
-    // seul prix_achat, et seulement si la valeur diffère (aucune boucle d'écriture).
-    const now = new Date().toISOString();
-    const toInsert = [], toRehydrate = [];
-    const costs = variants.map(v => {
-      const existing = storedMap.get(v.variant_id);
-      const display = { variant_id: v.variant_id, product_id: v.product_id, product_title: v.product_title, variant_title: v.variant_title, price: v.price };
-      if (existing) {
-        const { row, needsPersist } = reconcileEstimatedCost(existing, v.unitCost);
-        if (needsPersist) {
-          const payload = { ...row, updated_at: now };
-          delete payload.id;          // ne pas réécrire la PK
-          delete payload.created_at;  // (absente du schéma variant_costs — garde défensive)
-          toRehydrate.push(payload);
-        }
-        return { ...display, ...row };
-      }
-      const est = estimateVariantCost({
-        unitCost: v.unitCost, categoryName: v.categoryName, productType: v.productType,
-        title: v.product_title, defaultCountry, vatRegime, shippingModel,
-      });
-      toInsert.push({ shop_domain: session.shop, variant_id: v.variant_id, product_id: v.product_id, ...est, updated_at: now });
-      return { ...display, ...est };
-    });
-    if (toInsert.length) {
-      await supabase.from("variant_costs").upsert(toInsert, { onConflict: "shop_domain,variant_id", ignoreDuplicates: true });
-    }
-    if (toRehydrate.length) {
-      // SANS ignoreDuplicates → met à jour prix_achat des lignes 'estimated' réhydratées (autres champs conservés).
-      await supabase.from("variant_costs").upsert(toRehydrate, { onConflict: "shop_domain,variant_id" });
-    }
+    // INTÉGRITÉ (règle d'or « plus jamais de pré-rempli », ère XV) : costs_list est en LECTURE SEULE.
+    // On NE PERSISTE RIEN à l'ouverture. Les variantes sans ligne stockée reçoivent une SUGGESTION estimée
+    // (affichage / placeholder, taguée stored:false), jamais écrite ; seuls costs_save / costs_import_csv
+    // écrivent. Un compte neuf qui ouvre le Suivi crée donc ZÉRO ligne en base (preuve d'intégrité n°2).
+    // buildCostRowsForDisplay est pur et sans I/O : aucun chemin d'écriture n'existe plus ici.
+    const costs = buildCostRowsForDisplay({ variants, storedMap, defaultCountry, vatRegime, shippingModel });
 
-    return { success: true, costs, defaultCountry, variantsCapped };
+    return { success: true, costs, defaultCountry, variantsCapped, giftCardCount };
   }
 
   // ── Brique A : enregistrer des coûts édités → source='confirmed' ───────────
@@ -1153,13 +1128,13 @@ export const action = async ({ request }) => {
     return { success: true, saved: upserts.length, errors };
   }
 
-  // ── Brique A : "Tout confirmer" — estimées → confirmées (choix actif) ─────
+  // ── Brique A : confirmation en masse des coûts — NEUTRALISÉE (chantier intégrité, ère XV) ──────
+  // Confirmer en masse des coûts ESTIMÉS reviendrait à présenter une devinette comme une vérité saisie —
+  // exactement ce que la règle d'intégrité interdit. L'action est conservée mais INERTE : aucune écriture,
+  // erreur explicite. Le statut « confirmé » ne s'obtient plus que produit par produit, via costs_save,
+  // après affichage des valeurs. Garde-fou défensif : le bouton correspondant a été retiré de l'UI.
   if (body._action === "costs_confirm_all") {
-    const { error } = await supabase.from("variant_costs")
-      .update({ source: "confirmed", updated_at: new Date().toISOString() })
-      .eq("shop_domain", session.shop).eq("source", "estimated");
-    if (error) return { success: false, error: error.message };
-    return { success: true };
+    return { success: false, error: "Action retirée : confirmez vos coûts produit par produit, après les avoir renseignés." };
   }
 
   // ── Brique A : import CSV → source='imported', erreurs ligne par ligne ────
@@ -2136,7 +2111,6 @@ function AlertingQuotaBanner({ isExpert, isPro, alertingActive, alertingCap, ord
 function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityThresholdPct, isExpert, isPro, alertingActive, alertingCap, ordersThisMonth, ordersPrevMonth, onUpgrade, currentCpa, currentCpaUpdatedAt, currentCpaDeclaredLabel, cpaTargets, cpaByProduct, orderMargins, orderMarginsTotal, orderMarginsCapped, orderMarginsCap, productTitleById }) {
   const listFetcher    = useFetcher();
   const saveFetcher    = useFetcher();
-  const confirmFetcher = useFetcher();
   const importFetcher  = useFetcher();
   const countryFetcher = useFetcher();
   const backfillFetcher = useFetcher();
@@ -2170,6 +2144,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const [dirty, setDirty]     = useState(() => new Set());
   const [country, setCountry] = useState(defaultImportCountry);
   const [capped, setCapped]   = useState(false);
+  const [giftCardCount, setGiftCardCount] = useState(0);   // cartes cadeaux exclues de la liste (point 7)
 
   // Charge la liste à l'ouverture de l'onglet.
   useEffect(() => {
@@ -2177,12 +2152,11 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (listFetcher.data?.costs) { setRows(listFetcher.data.costs); setDirty(new Set()); setCapped(!!listFetcher.data.variantsCapped); }
+    if (listFetcher.data?.costs) { setRows(listFetcher.data.costs); setDirty(new Set()); setCapped(!!listFetcher.data.variantsCapped); setGiftCardCount(listFetcher.data.giftCardCount ?? 0); }
   }, [listFetcher.data]);
 
-  // Recharge après une sauvegarde / confirmation / import réussis.
+  // Recharge après une sauvegarde / import réussis (la confirmation douane recharge via son propre onConfirmed).
   useEffect(() => { if (saveFetcher.data?.success)    reload(); }, [saveFetcher.data]);    // eslint-disable-line
-  useEffect(() => { if (confirmFetcher.data?.success) reload(); }, [confirmFetcher.data]); // eslint-disable-line
   useEffect(() => { if (importFetcher.data?.success)  reload(); }, [importFetcher.data]);  // eslint-disable-line
 
   function reload() { listFetcher.submit({ _action: "costs_list" }, { method: "POST", encType: "application/json" }); }
@@ -2227,7 +2201,6 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   }
 
   const loading = rows === null;
-  const estimatedCount = rows ? rows.filter(r => r.source === "estimated").length : 0;
   const importErrors = importFetcher.data?.errors ?? [];
   const saveErrors   = saveFetcher.data?.errors ?? [];
 
@@ -2414,7 +2387,10 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           <button onClick={() => setCustomsFeedback(null)} title="Fermer" style={{ background: "none", border: "none", color: "#6D7175", cursor: "pointer", fontSize: "16px", lineHeight: 1, fontFamily: "inherit", flexShrink: 0 }}>×</button>
         </div>
       )}
-      {!loading && <CustomsClassificationPanel rows={rows} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />}
+      {/* Panneau douane alimenté par les SEULES lignes stockées : on ne propose de confirmer que des produits
+          réellement suivis (une variante sans ligne saisie n'a rien à confirmer — confirmCustomsCategory la
+          rejetterait). Composant + action confirm_customs_category réutilisés à l'identique (zéro régression). */}
+      {!loading && <CustomsClassificationPanel rows={rows.filter(r => r.stored)} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />}
 
       {/* Barre d'actions */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
@@ -2422,8 +2398,10 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         <button onClick={() => fileRef.current?.click()} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↑ Importer un CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} style={{ display: "none" }} />
         <button onClick={saveDirty} disabled={loading || dirty.size === 0} style={{ padding: "7px 14px", background: dirty.size ? "#008060" : "#E4E5E7", color: dirty.size ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: dirty.size ? "pointer" : "default", fontFamily: "inherit" }}>Enregistrer les modifications{dirty.size ? ` (${dirty.size})` : ""}</button>
-        <button onClick={() => confirmFetcher.submit({ _action: "costs_confirm_all" }, { method: "POST", encType: "application/json" })} disabled={loading || estimatedCount === 0} style={{ padding: "7px 14px", background: "#fff", color: estimatedCount ? "#B98900" : "#6D7175", border: `1px solid ${estimatedCount ? "#B98900" : "#C9CCCF"}`, borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: estimatedCount ? "pointer" : "default", fontFamily: "inherit" }}>Tout confirmer{estimatedCount ? ` (${estimatedCount} estimées)` : ""}</button>
       </div>
+
+      {/* Cartes cadeaux exclues de la liste (point 7) : ligne discrète, aucun coût à suivre. */}
+      {giftCardCount > 0 && <div style={{ fontSize: "11px", color: "#8C9196", marginBottom: "12px" }}>{giftCardCount} {giftCardCount > 1 ? "cartes cadeaux ignorées" : "carte cadeau ignorée"} (aucun coût à suivre).</div>}
 
       {capped && <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#FFF9EC", border: "1px solid #B9890033", fontSize: "12px", color: "#B98900", marginBottom: "12px" }}>Certains produits ont plus de 100 variantes : seules les 100 premières sont listées.</div>}
 

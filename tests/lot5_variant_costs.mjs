@@ -6,6 +6,7 @@
 
 import {
   estimateVariantCost, validateCostRow, parseCostsCsv, buildCostsCsv, reconcileEstimatedCost,
+  buildCostRowsForDisplay,
   PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS, CSV_COLUMNS,
 } from "../app/lib/variantCosts.js";
 import { SHIPPING_ESTIMATES } from "../app/lib/engine.js";
@@ -106,6 +107,34 @@ console.log("\n── reconcileEstimatedCost ──");
 
   // robustesse : existing null → pas de crash, pas de persist.
   ok(reconcileEstimatedCost(null, "5").needsPersist === false, "existing null → { needsPersist:false } (pas de crash)");
+}
+
+// ── buildCostRowsForDisplay : LECTURE SEULE, jamais de pré-rempli persisté (intégrité ère XV) ──
+// Preuve d'intégrité n°2 au niveau du constructeur pur : une variante sans ligne stockée reçoit une
+// SUGGESTION estimée taguée stored:false (affichage), jamais un payload d'écriture ; une ligne stockée
+// fait autorité (stored:true). costs_list n'appelle plus que cette fonction + un SELECT → zéro écriture.
+console.log("\n── buildCostRowsForDisplay : suggestion display-only vs ligne stockée ──");
+{
+  const variants = [
+    { variant_id: "v1", product_id: "p1", product_title: "Tee", variant_title: "M", price: 20, unitCost: "12.50", categoryName: null, productType: "T-shirt" },
+    { variant_id: "v2", product_id: "p1", product_title: "Tee", variant_title: "L", price: 20, unitCost: null, categoryName: null, productType: "T-shirt" },
+  ];
+  // Aucune ligne stockée (compte neuf) → chaque variante = SUGGESTION estimée, stored:false.
+  const fresh = buildCostRowsForDisplay({ variants, storedMap: new Map(), defaultCountry: "Chine", vatRegime: "assujetti", shippingModel: "stock" });
+  ok(fresh.length === 2, "toutes les variantes rendues pour l'affichage");
+  ok(fresh.every(r => r.stored === false), "sans ligne stockée → stored:false (suggestion, jamais offerte à la confirmation douane)");
+  ok(fresh.every(r => r.source === "estimated"), "suggestion display-only marquée source estimated");
+  ok(fresh[0].prix_achat === 12.5, "suggestion : prix_achat reflète le unitCost Shopify");
+  // Ligne stockée (confirmée) → autorité, renvoyée telle quelle, stored:true.
+  const stored = new Map([["v1", { source: "confirmed", prix_achat: 9, categorie: "Sport", customs_confirmed: true }]]);
+  const mixed = buildCostRowsForDisplay({ variants, storedMap: stored, defaultCountry: "Chine", vatRegime: "assujetti", shippingModel: "stock" });
+  const r1 = mixed.find(r => r.variant_id === "v1");
+  ok(r1.stored === true && r1.source === "confirmed" && r1.prix_achat === 9, "ligne stockée → stored:true, valeurs marchand préservées");
+  ok(mixed.find(r => r.variant_id === "v2").stored === false, "variante non stockée du même produit → stored:false");
+  // Pureté : deux appels identiques → sortie identique (aucun effet de bord, aucun I/O).
+  const a = JSON.stringify(buildCostRowsForDisplay({ variants, storedMap: new Map(), defaultCountry: "Chine" }));
+  const b = JSON.stringify(buildCostRowsForDisplay({ variants, storedMap: new Map(), defaultCountry: "Chine" }));
+  ok(a === b, "pur : appels répétés identiques (aucun effet de bord, aucune écriture)");
 }
 
 console.log("\n" + "═".repeat(66));

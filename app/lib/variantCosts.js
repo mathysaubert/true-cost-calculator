@@ -85,6 +85,30 @@ export function reconcileEstimatedCost(existing, liveUnitCost) {
   return { row: { ...existing, prix_achat: cost }, needsPersist: true };
 }
 
+// ── Construction des lignes AFFICHÉES du Suivi (PUR — aucune écriture, aucun I/O) ─────────────
+// Intégrité (règle d'or « plus jamais de pré-rempli », ère XV) : ce constructeur est le SEUL producteur
+// de rangs de coûts et il n'a, PAR CONSTRUCTION, aucun chemin de persistance. Une variante SANS ligne
+// stockée reçoit une SUGGESTION estimée (affichage / placeholder), taguée `stored:false` : jamais écrite
+// en base ; seuls costs_save / costs_import_csv écrivent. Une ligne stockée fait autorité et est renvoyée
+// telle quelle, taguée `stored:true`. Le tag `stored` pilote aussi l'éligibilité à la confirmation douane
+// (on ne propose de confirmer que des produits réellement suivis). `storedMap` : Map(variant_id → ligne).
+export function buildCostRowsForDisplay({ variants = [], storedMap, defaultCountry, vatRegime, shippingModel } = {}) {
+  const map = storedMap instanceof Map ? storedMap : new Map(Object.entries(storedMap ?? {}));
+  return variants.map((v) => {
+    const display = {
+      variant_id: v.variant_id, product_id: v.product_id,
+      product_title: v.product_title, variant_title: v.variant_title, price: v.price,
+    };
+    const existing = map.get(v.variant_id);
+    if (existing) return { ...display, ...existing, stored: true };
+    const est = estimateVariantCost({
+      unitCost: v.unitCost, categoryName: v.categoryName, productType: v.productType,
+      title: v.product_title, defaultCountry, vatRegime, shippingModel,
+    });
+    return { ...display, ...est, stored: false };
+  });
+}
+
 // ── Validation d'un jeu de coûts (saisie UI ou ligne CSV) ───────────────────
 // Renvoie { value, errors } : value = objet nettoyé prêt à persister (champs
 // PERSISTED_COLUMNS), errors = liste de messages lisibles (jamais d'avalage silencieux).

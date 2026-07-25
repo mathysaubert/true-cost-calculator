@@ -3,7 +3,7 @@
 //  Verrouille : (1) statut estimé/confirmé (défaut estimé, jamais optimiste) ;
 //  (2) changement de TAUX (pas de libellé : Jouets 0%→Livres 0% = pas de changement) ;
 //  (3) indicateur (confirmée → null) ; (4) INVALIDATION par chemin d'écriture de la catégorie ;
-//  (5) statut FIGÉ d'une ligne + règle du pire cas ; (6) VERROU rehydrate (flag préservé).
+//  (5) statut FIGÉ d'une ligne + règle du pire cas. [VERROU rehydrate (6) retiré ère XV, cf. bas de fichier.]
 //  engine.js intouché (CUSTOMS_RATES importé en lecture seule). node tests/lot20_customs_classification.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
@@ -12,7 +12,6 @@ import {
   resolveCustomsConfirmedOnWrite, frozenClassificationStatus,
   resolveAuditCategory, mergeCustomsFeedback,
 } from "../app/lib/customsClassification.js";
-import { reconcileEstimatedCost } from "../app/lib/variantCosts.js";
 import { selectDeletableLines } from "../app/lib/recalcMargins.js";
 import { renderLossAlertEmail, computeProfitabilityChanges } from "../app/lib/profitabilityAlert.js";
 import { confirmCustomsCategory, applyCustomsInvalidation } from "../app/lib/customsClassification.server.js";
@@ -114,15 +113,14 @@ console.log("\n── frozenClassificationStatus : lecture du champ figé ──
   ok(frozenClassificationStatus(null)                        === "estimated", "snapshot null (missing/legacy) → estimée");
 }
 
-// ── VERROU rehydrate : reconcileEstimatedCost préserve customs_confirmed (dépend du spread) ──
-console.log("\n── VERROU : rehydrate ne doit PAS perdre customs_confirmed ──");
-{
-  const existing = { source: "estimated", prix_achat: 10, categorie: "Sport", customs_confirmed: true };
-  const { row, needsPersist } = reconcileEstimatedCost(existing, "15"); // unitCost réel différent
-  ok(needsPersist === true, "prix_achat réel différent → réhydratation");
-  ok(row.customs_confirmed === true, "customs_confirmed=true PRÉSERVÉ après rehydrate (régression future = test rouge)");
-  ok(row.categorie === "Sport", "categorie inchangée par le rehydrate (seul prix_achat bouge)");
-}
+// ── (obsolète — ère XV) VERROU rehydrate RETIRÉ, avec justification ──────────────────────────
+// L'ancien verrou vérifiait que reconcileEstimatedCost préservait customs_confirmed lors de la
+// réhydratation-écriture d'une ligne estimée dans costs_list. Ce chemin d'écriture N'EXISTE PLUS :
+// costs_list est passé en LECTURE SEULE (« plus jamais de pré-rempli », intégrité ère XV), plus aucune
+// réhydratation ne persiste. Le verrou n'a donc plus d'objet et est retiré (aucun assert affaibli : la
+// behavior testée a été SUPPRIMÉE par conception). La protection de fond — une catégorie éditée invalide
+// la classification — reste couverte par resolveCustomsConfirmedOnWrite via costs_save / costs_import_csv
+// (sections « invalidation » ci-dessus, inchangées).
 
 // ── COMPOSITION pure : correction de taux → le recalcul ne cible que estimated/missing ──
 console.log("\n── composition : rateChanged ⇒ recalcul ne touche PAS les lignes confirmed ──");
