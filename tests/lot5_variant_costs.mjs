@@ -5,7 +5,7 @@
 // ════════════════════════════════════════════════════════════════════════════════
 
 import {
-  estimateVariantCost, validateCostRow, parseCostsCsv, buildCostsCsv, reconcileEstimatedCost,
+  estimateVariantCost, validateCostRow, parseCostsCsv, buildCostsCsv,
   buildCostRowsForDisplay, productCostStatus,
   PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS, CSV_COLUMNS,
 } from "../app/lib/variantCosts.js";
@@ -84,37 +84,11 @@ console.log("\n── CSV import / export ──");
   ok(noHeader.rows.length === 0 && noHeader.errors[0].messages[0].includes("Colonnes manquantes"), "en-tête incomplet → erreur claire, rien importé");
 }
 
-// ── Réhydratation d'un coût ESTIMÉ depuis le unitCost Shopify (une donnée réelle bat une estimation) ──
-console.log("\n── reconcileEstimatedCost ──");
-{
-  const est = (prix_achat, extra = {}) => ({ variant_id: "v1", source: "estimated", prix_achat, port_entrant: 5, cout_emballage: 2, qty_par_lot: 3, ...extra });
-
-  // estimée à 0 + unitCost Shopify apparu → réhydrate + persiste.
-  const r1 = reconcileEstimatedCost(est(0), "12.50");
-  ok(r1.needsPersist === true && r1.row.prix_achat === 12.5, "estimée 0 + unitCost 12,50 → prix_achat 12,50, persist");
-  // AUTRES CHAMPS INCHANGÉS (seul prix_achat vient de Shopify).
-  ok(r1.row.port_entrant === 5 && r1.row.cout_emballage === 2 && r1.row.qty_par_lot === 3, "port/emballage/qté inchangés à la réhydratation");
-
-  // estimée déjà égale au unitCost → PAS de réécriture (piège boucle : convergence en 1 write).
-  const r2 = reconcileEstimatedCost(est(12.5), "12.50");
-  ok(r2.needsPersist === false && r2.row.prix_achat === 12.5, "estimée == unitCost → PAS de persist (aucune boucle)");
-  // estimée différente → met à jour.
-  ok(reconcileEstimatedCost(est(5), "6").needsPersist === true, "estimée 5 → unitCost 6 → persist (valeur diffère)");
-
-  // unitCost absent / 0 / négatif → on garde l'estimation (rien à réhydrater).
-  ok(reconcileEstimatedCost(est(0), null).needsPersist === false, "unitCost null → pas de persist");
-  ok(reconcileEstimatedCost(est(0), "").needsPersist === false, "unitCost vide → pas de persist");
-  ok(reconcileEstimatedCost(est(3), "0").needsPersist === false, "unitCost 0 → pas de persist (garde l'estimation)");
-
-  // AUTORITÉ MARCHAND : 'confirmed' / 'imported' JAMAIS touchés, même si unitCost diffère.
-  const conf = { variant_id: "v2", source: "confirmed", prix_achat: 3, port_entrant: 5 };
-  const rc = reconcileEstimatedCost(conf, "9");
-  ok(rc.needsPersist === false && rc.row === conf, "'confirmed' → jamais réhydraté (saisie marchand fait autorité)");
-  ok(reconcileEstimatedCost({ variant_id: "v3", source: "imported", prix_achat: 4 }, "9").needsPersist === false, "'imported' (CSV) → jamais réhydraté");
-
-  // robustesse : existing null → pas de crash, pas de persist.
-  ok(reconcileEstimatedCost(null, "5").needsPersist === false, "existing null → { needsPersist:false } (pas de crash)");
-}
+// NB (ère XV) : le bloc « reconcileEstimatedCost » a été RETIRÉ avec la fonction (code mort de
+// réhydratation-écriture, incompatible avec costs_list en lecture seule). La garantie de fond — une
+// donnée marchand (confirmed/imported) fait autorité et n'est jamais écrasée — est désormais portée par
+// buildCostRowsForDisplay (ci-dessous : ligne stockée renvoyée telle quelle) et par le refus de tout
+// prix d'achat ≤ 0 dans validateCostRow (ci-dessus). Aucune couverture perdue.
 
 // ── buildCostRowsForDisplay : LECTURE SEULE, jamais de pré-rempli persisté (intégrité ère XV) ──
 // Preuve d'intégrité n°2 au niveau du constructeur pur : une variante sans ligne stockée reçoit une

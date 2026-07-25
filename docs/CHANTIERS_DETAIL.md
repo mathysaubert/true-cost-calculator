@@ -20,6 +20,7 @@
 - [XII. Recalcul des marges historiques](#xii-recalcul-des-marges-historiques)
 - [XIII. Fiabilité perçue des taux de douane](#xiii-fiabilité-perçue-des-taux-de-douane)
 - [XIV. Simplification du langage (règle d'or)](#xiv-simplification-du-langage-règle-dor)
+- [XV. Intuitivité des onglets Audit & Suivi (valeur d'abord)](#xv-intuitivité-des-onglets-audit--suivi-valeur-dabord)
 
 ---
 
@@ -170,9 +171,9 @@
 - **Solution** : dépli par ligne de commande (`d419792`), persistance du `margin_breakdown_json` à l'ingestion + backfill auto-validant au centime (`c55253c`), waterfall poste-par-poste en **lecture pure** (`c4d900b`), libellé « (TTC) » cohérent (`c47af17`).
 - **Pourquoi lecture pure** : le waterfall lit le JSON figé, il ne recalcule rien (règle BUG 1). Le backfill se **réconcilie au centime** avec la valeur stockée avant d'écrire — sinon il ne touche pas.
 
-### 27. Réhydratation des coûts estimés — `feec910`
+### 27. Réhydratation des coûts estimés — `feec910` *(retiré en ère XV — voir §XV)*
 - **Problème** : une ligne `estimated` restait fausse même quand Shopify exposait un `unitCost` réel.
-- **Solution** : `reconcileEstimatedCost` — un `estimated` se laisse corriger par un `unitCost` réel qui diffère, `needsPersist=true` **seulement si** la valeur change (convergence en 1 write). `confirmed`/`imported` **jamais touchés**.
+- **Solution** : `reconcileEstimatedCost` — un `estimated` se laisse corriger par un `unitCost` réel qui diffère, `needsPersist=true` **seulement si** la valeur change (convergence en 1 write). `confirmed`/`imported` **jamais touchés**. *(Ce helper a été supprimé en ère XV : `costs_list` étant passé en lecture seule, cette réhydratation-écriture n'a plus lieu.)*
 - **Pourquoi l'asymétrie** : une donnée réelle bat une estimation, mais rien ne bat une donnée validée par le marchand. Même invariant que le recalcul.
 
 ### 28. Arrondi au centime par ligne — `b52873a`
@@ -416,6 +417,35 @@
   - **Alignements** : bloc « Vos taux de frais » (`app._index.jsx:2260`) — le hint `/transaction` sous le 3ᵉ champ cassait l'alignement `flex-end`, sorti de la ligne flex ; bloc « Marge réelle sur vos commandes » (`app._index.jsx:2329`) — feedbacks intercalés entre les 2 boutons (le 2ᵉ sautait selon l'état), restructuré en titre au-dessus + 2 groupes « bouton + feedback empilé » alignés par le haut.
 - **Garde-fous tests** : lots réécrits verrouillant les **nouveaux** libellés avec sévérité **≥** l'ancienne — lot2 (+2 asserts anti `—`/`CIF` sur notes IA ET ventilation), lot4 (+1 assert : 0 tiret cadratin sur 116 ROAS balayés), lot10 (+1 assert gabarit + parité texte≡HTML re-prouvée), lot12 (+3 asserts : grâce / suspension / resolved), lot18 & lot20 (chaînes mises à jour 1:1). **Aucun assert supprimé sans remplaçant.** Suite complète verte + `npm run build` vert ; rendu réel des composants douane extraits (`render_check.mjs`) OK.
 - **Réserve honnête** : le rendu **pixel** des deux blocs ré-alignés n'est pas prouvé automatiquement (`app._index.jsx` importe `shopify.server`, non rendable en isolation ; `render_check.mjs` ne couvre que les composants extraits). Contrôle compensatoire : smoke visuel complet immédiatement après déploiement.
+
+---
+
+## XV. Intuitivité des onglets Audit & Suivi (valeur d'abord)
+
+*Dernier chantier produit avant le recrutement des bêta-testeurs. Après le chantier langage, un re-test utilisateur (cœur de cible) juge Calculateur / Simulation / Historique / Alertes clairs et utiles, mais Audit Catalogue et Suivi des coûts « incompris, trop compliqués, valeur invisible ». Diagnostic : ces deux onglets ouvraient sur du TRAVAIL (formulaire de paramètres, grille de 60 cellules pré-remplies) au lieu de la VALEUR (le chiffre choc que les moteurs calculent déjà). Réorganisation d'interface : résultat d'abord, réglages ensuite, saisie en dernier. `engine.js` 0 diff, aucune écriture de `product_profitability_state`, gating de plans préservé. Livré en 3 commits + 1 commit docs.*
+
+### 69. Intégrité — fin du pré-rempli persistant — `refactor(costs)` (`6071fa3`)
+- **Problème** : à l'ouverture du Suivi, `costs_list` PERSISTAIT une ligne estimée (`estimateVariantCost` → upsert `source='estimated'`) pour CHAQUE variante sans coût. Un compte neuf avait donc N lignes « estimées » en base **sans aucune saisie**, avec `prix_achat 0` (aucun `unitCost` Shopify) → des marges de commande **gonflées fictives** à la synchronisation.
+- **Cause** : `app._index.jsx` `costs_list` — blocs `toInsert` / `toRehydrate` (upserts). Origine des défauts `0/8/1/0` = `estimateVariantCost` (`variantCosts.js`), port `8` = `SHIPPING_ESTIMATES["Chine"]`.
+- **Solution & pourquoi** : `costs_list` passe en **lecture seule** via le helper pur `buildCostRowsForDisplay` (aucun chemin d'écriture par construction). Variante sans ligne stockée → SUGGESTION estimée taguée `stored:false` (placeholder d'affichage), jamais persistée ; ligne stockée → `stored:true` (autorité marchand). **Conséquence assumée** : une commande d'un produit non renseigné s'ingère en `cost_source:missing` (marge nulle, honnête) plutôt qu'estimée sur un coût fictif. Bouton « Tout confirmer » retiré + action `costs_confirm_all` **neutralisée** (inerte, erreur explicite). Cartes cadeaux (`isGiftCard`) exclues de la liste. Panneau douane alimenté par `rows.filter(r => r.stored)` **dans la garde `!loading`** (classe du crash du 22/07 préservée) — `confirm_customs_category` réutilisée à l'identique.
+- **Garde-fous** : lot5 +7 (`buildCostRowsForDisplay` : stored/source/pureté) ; lot20 −3 (verrou rehydrate retiré, comportement supprimé par conception, garantie de fond conservée via `resolveCustomsConfirmedOnWrite`). Preuve d'intégrité : `costs_list` sans aucun site d'écriture (grep), `costs_save`/`saveDirty` gardés (input explicite seulement).
+
+### 70. Suivi réorganisé — valeur d'abord — `feat(costs)` (`204b7fa`)
+- **Problème** : l'onglet ouvrait sur 5 blocs de réglages puis une grille de coûts illisible ; la marge réelle (la valeur) était noyée dans un accordéon replié.
+- **Solution & pourquoi** : ordre imposé — intro règle d'or → [1] **résumé réel compact** (`CostSummaryBanner`, toujours visible) → [2] **compteur de fiabilité** → [3] Marge réelle (sync/compléter/corriger) → [3bis] `MarginMonitor` complet (accordéon inchangé) → [4] douane → [5] CSV → [6] cartes cadeaux → [7] **liste produits + panneau d'édition** (remplace la grille) → [8] réglages en dernier. Composants extraits rendables dans `app/components/costsUi.jsx` (`CostSummaryBanner`, `ReliabilityCounter`, `ProductCostList`, `ProductCostPanel`).
+- **Compteur de fiabilité (option A)** : helper pur `computeCostReliability`. X % = CA des coûts confirmés+importés / CA des **ventes analysées** (confirmed+imported+estimated). Les ventes `missing` n'ont pas de CA en base → comptées à part (« N produits vendus sans coût renseigné (30 j) : marge inconnue »), jamais dans le %. Top-3 « à compléter » par **unités vendues** (`missing` inclus, seul signal disponible). Cas tout-missing → invite, pas de %. **AUCUN recalcul moteur** : sommation de champs figés.
+- **Intégrité de saisie** : suggestions estimées en **placeholder** (champ vide), jamais comme donnée ; enregistrement PAR produit, seules les variantes touchées soumises ; `validateCostRow` **refuse tout prix d'achat ≤ 0** (« Indiquez le prix d'achat fournisseur ») → jamais de ligne confirmée/importée à marge gonflée (le repli sur suggestion 0 est bloqué). Fallback « (produit supprimé de la boutique) » si titre absent.
+- **Garde-fous** : lot7 +10 (`computeCostReliability`, bornes + tout-missing), lot5 +3 (statut produit + refus prix ≤ 0), `render_check` +13 scénarios (bandeau, compteur aux bornes, liste vide/partielle, panneau placeholders + erreur prix, produit supprimé).
+
+### 71. Audit réorganisé — résultat d'abord — `feat(audit)` (`5cafe1b`)
+- **Problème** : l'onglet ouvrait sur un guide 6 étapes + un formulaire de paramètres + un placeholder « Prêt à auditer », exigeant plusieurs actions avant de voir le moindre chiffre.
+- **Solution & pourquoi** : intro règle d'or → **auto-lancement** (Expert) à l'ouverture, le dernier résultat RÉUSSI hissé dans l'état parent (survit aux onglets ET à une erreur de quota affichée sans effacer les résultats) → ligne « Hypothèses : … · Affiner » (formulaire replié, relance à la validation) → guide Shopify **2 lignes + `<details>`** → état vide guidé (plus de KPI à zéro). Intros règle d'or ajoutées à Calculateur (Amendement E : « TVA à l'import » retirée de l'énumération, non déduite en assujetti) et Historique. `run_audit` **inchangée** (Expert-gated, rate-limit 10/j).
+- **Réserve** : intros, ligne Hypothèses, guide, état vide et logique d'auto-lancement vivent dans le conteneur (loader/fetchers), hors du harness isolé → validés par build SSR + eslint ; cœur interactif vérifié au smoke live (accepté).
+
+### Décisions de dette (commit docs)
+- **`reconcileEstimatedCost` SUPPRIMÉ** (fonction + 8 asserts lot5) : réhydratait `prix_achat` depuis le `unitCost` Shopify — un chemin de RÉÉCRITURE sans objet depuis que `costs_list` est en lecture seule. Du code mort qui réécrit des coûts est un piège d'intégrité, pas une réserve. Garantie de fond (autorité marchand) reprise par `buildCostRowsForDisplay` + refus prix ≤ 0. Aucune couverture perdue.
+- **`costs_confirm_all` neutralisée sans test exécutable** : vérifiée par revue + grep uniquement (voir dette RECAP). Ne pas réactiver sans chantier dédié.
+- **CA brut des lignes `missing` = backlog post-bêta** : les stocker à l'ingestion permettrait de classer les produits non renseignés par CA (au lieu des unités). Non fait ici (mutation de schéma + re-sync, hors périmètre UI).
 
 ---
 

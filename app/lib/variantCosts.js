@@ -68,22 +68,10 @@ export function estimateVariantCost({ unitCost, categoryName, productType, title
   };
 }
 
-// ── Réhydratation d'une ligne de coûts depuis le unitCost Shopify (Brique A) — PUR ──────────
-// Une ligne ESTIMÉE se laisse corriger par une donnée RÉELLE du marchand : si Shopify expose un
-// unitCost > 0 qui DIFFÈRE du prix_achat estimé, on le reprend (une donnée réelle bat une estimation).
-// Une ligne 'confirmed'/'imported' (saisie ou CSV du marchand) fait AUTORITÉ → JAMAIS touchée.
-// Seul prix_achat vient de Shopify : port/emballage/qty/catégorie/etc. restent inchangés.
-// needsPersist=true UNIQUEMENT si la valeur change réellement → PAS de boucle d'écriture : une fois
-// réhydraté, prix_achat === unitCost → needsPersist repasse à false et le reste (convergence en 1 write).
-// Entrée : existing (ligne variant_costs stockée, ou null/undefined), liveUnitCost (unitCost Shopify :
-// string|number|null). Sortie : { row, needsPersist } — row = ligne à AFFICHER (réhydratée ou inchangée).
-export function reconcileEstimatedCost(existing, liveUnitCost) {
-  if (!existing || existing.source !== "estimated") return { row: existing, needsPersist: false };
-  const cost = parseFloat(liveUnitCost);
-  if (!Number.isFinite(cost) || cost <= 0) return { row: existing, needsPersist: false };
-  if (cost === Number(existing.prix_achat)) return { row: existing, needsPersist: false }; // identique → ne pas réécrire
-  return { row: { ...existing, prix_achat: cost }, needsPersist: true };
-}
+// NB (ère XV) : reconcileEstimatedCost a été SUPPRIMÉ. Il réhydratait le prix_achat d'une ligne estimée
+// depuis le unitCost Shopify — un chemin de RÉÉCRITURE qui n'a plus lieu d'être depuis que costs_list est
+// en lecture seule (« plus jamais de pré-rempli »). Conserver du code mort qui réécrit des coûts était un
+// piège d'intégrité, pas une réserve : retiré avec ses tests (cf. CHANTIERS_DETAIL, ère XV).
 
 // ── Construction des lignes AFFICHÉES du Suivi (PUR — aucune écriture, aucun I/O) ─────────────
 // Intégrité (règle d'or « plus jamais de pré-rempli », ère XV) : ce constructeur est le SEUL producteur
