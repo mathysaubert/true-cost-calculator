@@ -81,9 +81,12 @@ check("produit supprimé (titleFor null) → « (produit supprimé de la boutiqu
 console.log("\n=== RENDU RÉEL — ProductCostList (Suivi) ===");
 check("liste vide → « Aucun produit actif »",
   React.createElement(ProductCostList, { products: [], onToggle() {} }), (h) => /Aucun produit actif/.test(h));
-check("liste partielle → titre + « Partiel » + marge réelle",
+check("liste partielle → titre + « Partiel » + marge réelle + note 30 jours",
   React.createElement(ProductCostList, { products: [{ product_id: "p1", title: "T-shirt bleu", status: { key: "partial", label: "Partiel : 1 variante sur 2" }, marginPct: 18, variantRows: [] }], onToggle() {} }),
-  (h) => /T-shirt bleu/.test(h) && /Partiel : 1 variante sur 2/.test(h) && /18/.test(h) && /Statut des coûts/.test(h));
+  (h) => /T-shirt bleu/.test(h) && /Partiel : 1 variante sur 2/.test(h) && /18/.test(h) && /Statut des coûts/.test(h) && /sans vente sur la période/.test(h));
+check("liste : produit sans vente (marge « — ») → tooltip explicatif présent",
+  React.createElement(ProductCostList, { products: [{ product_id: "p1", title: "Mug licorne", status: { key: "todo", label: "À compléter" }, marginPct: null, variantRows: [] }], onToggle() {} }),
+  (h) => /Aucune vente de ce produit dans les commandes analysées/.test(h) && /30 derniers jours/.test(h));
 
 console.log("\n=== RENDU RÉEL — ProductCostPanel (Suivi, champs vides + placeholders) ===");
 {

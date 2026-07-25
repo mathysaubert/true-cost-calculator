@@ -101,7 +101,9 @@ export function ProductCostList({ products = [], expandedId, onToggle, renderPan
   }
   const th = { padding: "8px 16px", fontSize: "10px", fontWeight: 700, color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px" };
   return (
-    <div style={{ border: "1px solid #E4E5E7", borderRadius: "10px", overflow: "hidden" }}>
+    <>
+      <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "8px", lineHeight: "1.5" }}>La marge réelle se calcule sur vos commandes des 30 derniers jours : un produit sans vente sur la période affiche « — ».</div>
+      <div style={{ border: "1px solid #E4E5E7", borderRadius: "10px", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
         <span style={{ ...th, flex: "1 1 200px" }}>Produit</span>
         <span style={{ ...th, whiteSpace: "nowrap" }}>Statut des coûts</span>
@@ -119,7 +121,8 @@ export function ProductCostList({ products = [], expandedId, onToggle, renderPan
               <span style={{ padding: "2px 10px", borderRadius: "10px", fontSize: "11px", fontWeight: 700, color: tone.color, background: tone.bg, whiteSpace: "nowrap" }}>
                 {p.status.key === "complete" ? `${p.status.label} ✓` : p.status.label}
               </span>
-              <span style={{ width: "90px", textAlign: "right", fontSize: "13px", fontWeight: 700, color: p.marginPct == null ? "#8C9196" : p.marginPct < 0 ? "#D72C0D" : "#008060" }}>
+              <span title={p.marginPct == null ? "Aucune vente de ce produit dans les commandes analysées (30 derniers jours)." : undefined}
+                style={{ width: "90px", textAlign: "right", fontSize: "13px", fontWeight: 700, color: p.marginPct == null ? "#8C9196" : p.marginPct < 0 ? "#D72C0D" : "#008060" }}>
                 {p.marginPct == null ? "—" : `${formatPct(p.marginPct)} %`}
               </span>
               <span style={{ width: "14px", color: "#8C9196", fontSize: "12px" }}>{open ? "▾" : "▸"}</span>
@@ -128,7 +131,8 @@ export function ProductCostList({ products = [], expandedId, onToggle, renderPan
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 
