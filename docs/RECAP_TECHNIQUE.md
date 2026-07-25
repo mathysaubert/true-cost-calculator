@@ -305,6 +305,8 @@ Chantier « simplification du langage » (ère XIV) : **un concept = un terme ca
 | Régime de TVA | **Assujetti à la TVA** / **Franchise de TVA** | aides « (vous facturez et récupérez la TVA) » / « (vous ne facturez pas la TVA) » | champs calc + simulation, tooltips |
 | Droits de douane | **Droits de douane** (`X % sur le produit + port`, `forfait de 3 € par article`, `gratuit`) | — | ventilation, prompt IA |
 
+**Termes source bannis en chaîne rendue** (comptable/fiscal/technique — toujours traduits vers le canonique ci-dessus) : `Coût rendu` / `Coût rendu (CIF)` → *Coût réel total* ; `CIF`, `TVA import`, `Break-Even ROAS`, `Marge dispo/unité`, `snapshot`, `de minimis`, `break-even`, `intrants`, `assujetti` (hors aide de champ) → voir le canonique. Le terme reste licite en `commentaires`, `docs/` et clés de calcul (`coutRendu`, `coutRendu(CIF)` dans `engine.js`), jamais dans une chaîne affichée au marchand.
+
 **Exceptions consignées** (non conformes, assumées) : les *hints* de `PAYMENT_PROCESSORS` (`engine.js:20-24`) portent `—` + `€` en dur → **`engine.js` 0 diff prime**, non touchés. Le levier `Budget ads suspendu` (`engine.js:176`) est **neutralisé à la consommation** par `normLevier` (couche route) avant d'atteindre le prompt IA.
 
 **Typo** : tiret cadratin/demi-cadratin en ponctuation = **banni** (reformulé en `,` / `:` / parenthèses, jamais 1:1) ; plages « A–B » → « A à B » ; séparateurs d'options → « · ». **Intouchables** : signe moins des déductions (U+2212 `−`), traits d'union français (au-delà, e-commerce), placeholders « pas de valeur » (`—` en cellule vide), noms produits, clés de catégories, commentaires, `docs/`, `CLAUDE.md`.

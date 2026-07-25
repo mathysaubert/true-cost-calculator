@@ -1494,7 +1494,7 @@ DONNÉES DU CALCUL :
 SCÉNARIOS PRÉ-CALCULÉS PAR LE MOTEUR (chiffres définitifs) :
 ${scenariosBlock}
 
-INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (montants en ${currency}, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût rendu, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage : la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
+INSTRUCTION STRICTE : Tu ne dois effectuer AUCUN calcul arithmétique. Tous les chiffres (montants en ${currency}, %) que tu cites doivent être copiés exactement depuis les données ou scénarios fournis ci-dessus. Si un chiffre n'est pas fourni, tu ne le cites pas. Ne projette jamais une marge que tu calcules toi-même. Les composants (prix fournisseur, prix de vente, coût réel total, frais) sont fournis pour le CONTEXTE uniquement : tu n'as pas le droit de les soustraire, additionner ou combiner pour en dériver une marge, un montant ou un pourcentage : la marge brute, la marge nette et tous leurs montants sont déjà donnés, cite-les tels quels.
 
 Sélectionne les 3 scénarios les plus pertinents, ordonnés par marge nette résultante décroissante. Pour chaque action, cite sa marge nette exacte et précise Rentable=OUI/NON. Si marge actuelle ≤ 0 et qu'aucun scénario seul ne la rend positive, recommande la combinaison listée.
 
@@ -3751,7 +3751,7 @@ export default function Index() {
                         <div style={{ display: "flex", flexDirection: "column", gap: "7px", fontSize: "13px", color: "#202223", lineHeight: "1.6" }}>
                           <div>• <strong>Marge rentable mais sous l'objectif que vous avez fixé.</strong> Visez au moins votre seuil de rentabilité ({profitabilityThresholdPct} %) de marge nette.</div>
                           <div>• <strong>Évitez les campagnes publicitaires sur ces produits</strong> : plus vous dépensez en publicité, plus votre marge se réduit.</div>
-                          <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur et améliorer le coût rendu.</div>
+                          <div>• <strong>Groupez les commandes</strong> pour réduire les frais de port fournisseur : votre coût réel par unité baisse.</div>
                         </div>
                       </div>
                     )}
