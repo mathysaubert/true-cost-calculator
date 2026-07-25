@@ -1,7 +1,15 @@
 // ════════════════════════════════════════════════════════════════════════════════
 //  GARDE-FOU Alerting — rendu du mail digest (app/lib/profitabilityAlert.js, PUR)
-//  Écrit pour un marchand novice : "vous perdez X" + poste de coût dominant (CONSTAT jamais
-//  conseil). Jamais causal ni daté. engine.js intouché. node tests/lot10_loss_alert_email.mjs
+//  Structure IMPOSÉE (ère XV, commit 8) : ligne 1 factuelle, liste par produit (nom,
+//  marge nette, écart vs objectif), cause en une ligne, CONTRAT DE DÉCLENCHEMENT, bouton.
+//  Parité texte ≡ HTML. engine.js intouché. node tests/lot10_loss_alert_email.mjs
+//
+//  Changements vs ère précédente (sévérité ≥, aucun assert supprimé sans remplaçant) :
+//   • RETIRÉ : poste de coût dominant (topCost) + note fallback breakdown — hors de la
+//     structure imposée. Remplacés par les locks sur la liste imposée (marge + écart).
+//   • INVERSÉ : « aucune fenêtre datée » → la cause imposée cite « 30 derniers jours »
+//     VOLONTAIREMENT ; on verrouille désormais sa présence.
+//   • AJOUTÉ : cause, contrat de déclenchement, ligne 1 exacte, écart vs objectif.
 // ════════════════════════════════════════════════════════════════════════════════
 
 import { renderLossAlertEmail } from "../app/lib/profitabilityAlert.js";
@@ -9,87 +17,34 @@ import { renderLossAlertEmail } from "../app/lib/profitabilityAlert.js";
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
 
-const b = (o) => ({ product_id: o.id, to: o.to, margin: o.margin, marginPct: o.pct, currency: o.cur ?? "USD", title: o.title, topCost: o.topCost, breakdownAvailable: o.bdAvail });
+const b = (o) => ({ product_id: o.id, to: o.to, margin: o.margin, marginPct: o.pct, currency: o.cur ?? "USD", title: o.title });
 
-// ── digest mixte : perte + rentable ──
-console.log("\n── digest mixte ──");
+// ── Ligne 1 imposée + objet + sections ──
+console.log("\n── ligne 1 imposée + objet ──");
 {
   const { subject, html, text } = renderLossAlertEmail({
-    shop: "demo.myshopify.com",
+    shop: "demo.myshopify.com", thresholdPct: 15,
     basculements: [
-      b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, title: "Snowboard Hydrogen" }),
+      b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, pct: -8, title: "Snowboard Hydrogen" }),
       b({ id: "gid://shopify/Product/2", to: "profitable", margin: 8.1, pct: 20, title: "Bonnet" }),
     ],
   });
-  ok(subject.includes("demo.myshopify.com") && /à perte/.test(subject), `sujet mène avec la perte (${subject})`);
-  ok(!/[\u{2600}-\u{27BF}\u{1F000}-\u{1FAFF}️]/u.test(subject), "objet FACTUEL sans emoji (signal anti-spam)");
-  ok(/1 produit vendu à perte/.test(subject) && !/produits vendus/.test(subject), "singulier correct (1 produit vendu)");
-  ok(/Vous perdez de l'argent/.test(html) && /Repassés au-dessus de votre objectif/.test(html), "html : 2 sections (perte / rétabli)");
+  // Objet INCHANGÉ : mène avec la perte, factuel, sans emoji.
+  ok(subject.includes("demo.myshopify.com") && /à perte/.test(subject), `objet mène avec la perte (${subject})`);
+  ok(!/[\u{2600}-\u{27BF}\u{1F000}-\u{1FAFF}️]/u.test(subject), "objet FACTUEL sans emoji (anti-spam)");
+  ok(/1 produit vendu à perte/.test(subject) && !/produits vendus/.test(subject), "objet : singulier correct");
+  // Ligne 1 imposée, mot pour mot (1 produit sous objectif ici : la perte).
+  ok(/D'après vos commandes analysées, 1 produit est sous votre objectif de marge \(15 %\)\./.test(html)
+    && text.includes("D'après vos commandes analysées, 1 produit est sous votre objectif de marge (15 %)."),
+    "ligne 1 imposée présente en HTML ET texte");
+  ok(/Repassés au-dessus de votre objectif/.test(html), "section retours au-dessus de l'objectif présente");
   ok(html.includes("Snowboard Hydrogen") && html.includes("Bonnet"), "titres produits affichés");
-  ok(text.includes("-12,40") && text.includes("+8,10"), "montants : perte signée, rétabli avec +");
   ok(!/marge nette cumulée/.test(text), "plus de jargon 'marge nette cumulée'");
-  // Chantier langage : titres d'entrée sans tiret cadratin → le gabarit lui-même n'en ajoute aucun.
-  ok(!/[—–]/.test(html) && !/[—–]/.test(text), "typo : le gabarit du mail n'ajoute aucun tiret cadratin/demi-cadratin");
+  ok(!/[—–]/.test(html) && !/[—–]/.test(text), "typo : le gabarit n'ajoute aucun tiret cadratin/demi-cadratin");
 }
 
-// ── GARDE anti-wording trompeur : ni causalité, ni date, ni verbe de conseil ──
-console.log("\n── wording : constat, jamais causal/daté/conseil ──");
-{
-  const { html, text } = renderLossAlertEmail({
-    shop: "s.myshopify.com",
-    basculements: [b({ id: "gid://shopify/Product/9", to: "loss", margin: -3, topCost: { label: "les retours", amount: 5, achatPort: 10 }, bdAvail: true })],
-  });
-  const blob = (html + " " + text).toLowerCase();
-  ok(!blob.includes("30 jour") && !blob.includes("30 derniers"), "aucune fenêtre datée");
-  ok(!blob.includes("dernière vente") && !blob.includes("fait perdre"), "aucune causalité inventée");
-  ok(!/réduisez|augmentez|arrêtez|baissez|négociez/i.test(blob), "CONSTAT : aucun verbe d'action (le poste dominant n'est pas un conseil déguisé)");
-}
-
-// ── POSTE DOMINANT : coût d'achat exposé à part + surcharge dominante ──
-console.log("\n── poste de coût dominant (topCost) ──");
-{
-  const { text } = renderLossAlertEmail({
-    shop: "s", basculements: [b({ id: "gid://shopify/Product/7", to: "loss", margin: -12.4, cur: "EUR", title: "Bonnet",
-      topCost: { label: "la douane", amount: 6.24, achatPort: 32 }, bdAvail: true })],
-  });
-  ok(text.includes("la douane") && text.includes("6,24"), "surcharge dominante affichée (douane, 6,24)");
-  ok(text.includes("Coût d'achat et port") && text.includes("32,00"), "coût d'achat et port exposé séparément");
-  ok(!text.includes("détail des coûts n'apparaît"), "breakdown dispo → pas de note fallback");
-}
-
-// ── FALLBACK : produit à perte SANS breakdown → note honnête, pas de ligne de coût ──
-console.log("\n── fallback : breakdown absent ──");
-{
-  const { text } = renderLossAlertEmail({
-    shop: "s", basculements: [b({ id: "gid://shopify/Product/8", to: "loss", margin: -3, cur: "EUR", title: "Mug", bdAvail: false })],
-  });
-  ok(/détail des coûts n'apparaît/.test(text) && /Suivi des coûts/.test(text), "note fallback présente (explique l'absence + remède)");
-  ok(!text.includes("votre plus gros coût"), "aucune ligne de coût dominant (topCost absent)");
-}
-
-// ── fallback nom produit (titre absent) ──
-console.log("\n── fallback nom produit ──");
-{
-  const { text } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/4242", to: "loss", margin: -1 })] });
-  ok(text.includes("Produit 4242"), "titre absent → 'Produit 4242'");
-}
-
-// ── pertes seules → pas de section 'objectif' ──
-console.log("\n── pertes seules ──");
-{
-  const { html } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/5", to: "loss", margin: -2 })] });
-  ok(/Vous perdez/.test(html) && !/au-dessus de votre objectif/i.test(html), "section perte seule, pas de section rétabli");
-}
-
-// ── devise respectée ──
-console.log("\n── devise par produit ──");
-{
-  const { text } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/6", to: "loss", margin: -5, cur: "EUR" })] });
-  ok(text.includes("€"), "EUR formaté en €");
-}
-
-// ── SEUIL : 2 niveaux (perte réelle / sous l'objectif) + % sur le sous-objectif ──
-console.log("\n── seuil : perte vs sous l'objectif ──");
+// ── Liste par produit : nom, marge nette, écart vs objectif (imposé) ──
+console.log("\n── liste par produit : marge + écart vs objectif ──");
 {
   const { html, text } = renderLossAlertEmail({
     shop: "s.myshopify.com", thresholdPct: 15,
@@ -98,16 +53,105 @@ console.log("\n── seuil : perte vs sous l'objectif ──");
       b({ id: "gid://shopify/Product/2", to: "loss", margin: 2.1, pct: 8, cur: "EUR", title: "Carnet" }),
     ],
   });
-  ok(/Vous perdez de l'argent/.test(html) && /sous votre objectif de 15 %/i.test(html), "2 sections : perte / sous l'objectif de 15 %");
-  ok(text.includes("Tasse : -4,50") && !text.includes("-9,0"), "Tasse (margin<0) → montant seul, PAS de % (le -9,0 % n'apparaît pas)");
-  ok(text.includes("Carnet : +2,10") && text.includes("8,0 %"), "Carnet (0≤margin<seuil) → montant + % vs objectif");
+  ok(/2 produits sont sous votre objectif de marge \(15 %\)/.test(text), "ligne 1 : pluriel « 2 produits sont »");
+  // Tasse : marge négative + son % + écart en points (15 − (−9) = 24).
+  ok(text.includes("Tasse : vendu à perte, marge -4,50") && text.includes("-9,0 %") && text.includes("24 points sous votre objectif"),
+    "Tasse (perte) : préfixe « vendu à perte » + marge + % + écart 24 points");
+  // Carnet : marge positive sous l'objectif + écart (15 − 8 = 7).
+  ok(text.includes("Carnet : marge 2,10") && text.includes("8,0 %") && text.includes("7 points sous votre objectif"),
+    "Carnet : marge + % + écart 7 points");
+  ok(html.includes("Tasse") && html.includes("Carnet"), "produits présents en HTML");
 }
 
-// ── seuil=0 : aucune section 'sous l'objectif' ──
-console.log("\n── seuil=0 : pas de bande 'sous l'objectif' ──");
+// ── Poste de coût dominant (topCost) réinjecté sur les lignes à perte + suffixe douane estimé (option b) ──
+console.log("\n── poste de coût dominant + suffixe douane ──");
 {
-  const { html } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/3", to: "loss", margin: -2, pct: -5 })] });
-  ok(/Vous perdez/.test(html) && !/sous votre objectif/i.test(html), "seuil 0 : perte seule");
+  const { text, html } = renderLossAlertEmail({
+    shop: "s", thresholdPct: 15,
+    basculements: [{ product_id: "p", to: "loss", margin: -12.4, marginPct: -6, currency: "EUR", title: "Bonnet",
+      topCost: { key: "douane", label: "la douane", amount: 6.24, achatPort: 32 }, customsEstimated: true }],
+  });
+  ok(text.includes("Bonnet : vendu à perte, marge -12,40"), "ligne perte : préfixe « vendu à perte » + marge");
+  ok(text.includes("Coût d'achat et port : 32,00") && text.includes("votre plus gros coût : la douane, 6,24"), "poste dominant réinjecté (achat/port + surcharge)");
+  ok(/taux de douane estimé/.test(text) && /taux de douane estimé/.test(html), "suffixe « (taux de douane estimé) » présent (texte + HTML, parité)");
+}
+
+// ── Suffixe douane : ABSENT si confirmé, ou poste dominant ≠ douane ──
+console.log("\n── suffixe douane : conditions négatives ──");
+{
+  const conf = renderLossAlertEmail({ shop: "s", basculements: [{ product_id: "p", to: "loss", margin: -5, currency: "EUR", title: "X", topCost: { key: "douane", label: "la douane", amount: 3, achatPort: 8 }, customsEstimated: false }] });
+  ok(!/taux de douane estimé/.test(conf.text), "douane confirmée → aucun suffixe");
+  const other = renderLossAlertEmail({ shop: "s", basculements: [{ product_id: "p", to: "loss", margin: -5, currency: "EUR", title: "X", topCost: { key: "stripeCost", label: "les frais de paiement", amount: 3, achatPort: 8 }, customsEstimated: true }] });
+  ok(!/taux de douane estimé/.test(other.text), "poste dominant ≠ douane → aucun suffixe (même si estimé)");
+}
+
+// ── Note fallback : produit à perte SANS breakdown → note honnête réinjectée (conditionnelle) ──
+console.log("\n── fallback : détail de coûts absent ──");
+{
+  const { text, html } = renderLossAlertEmail({ shop: "s", basculements: [{ product_id: "p", to: "loss", margin: -3, currency: "EUR", title: "Mug", breakdownAvailable: false }] });
+  ok(/détail des coûts n'apparaît/.test(text) && /Suivi des coûts/.test(text), "note fallback présente (explique l'absence + remède)");
+  ok(!text.includes("votre plus gros coût"), "aucune ligne de poste dominant (topCost absent)");
+  ok(/détail des coûts n'apparaît/.test(html), "note fallback aussi en HTML (parité)");
+  // Breakdown dispo (topCost présent) → PAS de note fallback.
+  const withBd = renderLossAlertEmail({ shop: "s", basculements: [{ product_id: "p", to: "loss", margin: -3, currency: "EUR", title: "Mug", topCost: { key: "retoursCost", label: "les retours", amount: 2, achatPort: 5 }, breakdownAvailable: true }] });
+  ok(!withBd.text.includes("détail des coûts n'apparaît"), "breakdown dispo → aucune note fallback");
+}
+
+// ── Cause en une ligne + CONTRAT DE DÉCLENCHEMENT (imposés) ──
+console.log("\n── cause + contrat de déclenchement ──");
+{
+  const { html, text } = renderLossAlertEmail({
+    shop: "s", thresholdPct: 10,
+    basculements: [b({ id: "gid://shopify/Product/9", to: "loss", margin: -3, pct: -2, title: "Mug" })],
+  });
+  const cause = "Calcul basé sur vos coûts enregistrés dans l'app et vos commandes des 30 derniers jours.";
+  ok(html.includes(cause) && text.includes(cause), "cause en une ligne présente (HTML + texte)");
+  ok(/30 derniers jours/.test(text), "la cause cite VOLONTAIREMENT la fenêtre 30 jours (contrat de calcul)");
+  const contrat = "Vous recevez cette alerte quand une nouvelle commande ou un changement de coûts fait passer un produit sous votre objectif.";
+  ok(html.includes(contrat) && text.includes(contrat), "contrat de déclenchement : la condition présente (HTML + texte)");
+  ok(/mettez-les à jour dans l'app : vos marges et alertes resteront justes\./.test(text), "contrat : l'instruction de mise à jour des coûts présente");
+  // CONSTAT : pas de verbe d'action sur la MARGE (le contrat parle de mettre à jour des COÛTS, pas d'agir sur le prix).
+  ok(!/réduisez|augmentez|arrêtez|baissez|négociez/i.test((html + text).toLowerCase()), "aucun verbe d'action sur la marge (constat, pas conseil)");
+  ok(!/fait perdre|dernière vente/i.test((html + text).toLowerCase()), "aucune causalité inventée");
+}
+
+// ── Retours seuls (aucun produit sous objectif) → ligne 1 positive ──
+console.log("\n── retours au-dessus de l'objectif, seuls ──");
+{
+  const { html, text } = renderLossAlertEmail({
+    shop: "s", thresholdPct: 20,
+    basculements: [b({ id: "gid://shopify/Product/3", to: "profitable", margin: 9, pct: 30, title: "Bonnet" })],
+  });
+  ok(/1 produit est repassé au-dessus de votre objectif de marge \(20 %\)/.test(text), "ligne 1 adaptée : repassé au-dessus");
+  ok(!/est sous votre objectif/.test(text), "aucune mention « sous l'objectif » quand il n'y a que des retours");
+}
+
+// ── Pertes seules → aucune section « repassés au-dessus » ──
+console.log("\n── pertes seules ──");
+{
+  const { html } = renderLossAlertEmail({ shop: "s", thresholdPct: 15, basculements: [b({ id: "gid://shopify/Product/5", to: "loss", margin: -2, pct: -3 })] });
+  ok(/sous votre objectif de marge/.test(html) && !/Repassés au-dessus/.test(html), "sous objectif seul, pas de section retours");
+}
+
+// ── Fallback nom produit (titre absent) ──
+console.log("\n── fallback nom produit ──");
+{
+  const { text } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/4242", to: "loss", margin: -1 })] });
+  ok(text.includes("Produit 4242"), "titre absent → 'Produit 4242'");
+}
+
+// ── Devise respectée ──
+console.log("\n── devise par produit ──");
+{
+  const { text } = renderLossAlertEmail({ shop: "s", basculements: [b({ id: "gid://shopify/Product/6", to: "loss", margin: -5, cur: "EUR" })] });
+  ok(text.includes("€"), "EUR formaté en €");
+}
+
+// ── Marge % inconnue → pas de % ni d'écart inventé ──
+console.log("\n── marge % absente ──");
+{
+  const { text } = renderLossAlertEmail({ shop: "s", thresholdPct: 15, basculements: [b({ id: "gid://shopify/Product/7", to: "loss", margin: -2, title: "Sans%" })] });
+  ok(text.includes("Sans% : vendu à perte, marge") && !/point.? sous votre objectif/.test(text), "marge % absente → montant seul, aucun écart inventé");
 }
 
 // ── DÉLIVRABILITÉ : texte brut ≡ HTML (mêmes chiffres) — jamais de mail HTML-only ──
@@ -116,36 +160,39 @@ console.log("\n── texte brut ≡ HTML : mêmes chiffres ──");
   const { html, text } = renderLossAlertEmail({
     shop: "s", thresholdPct: 80,
     basculements: [
-      b({ id: "gid://shopify/Product/1", to: "loss", margin: -4.05, cur: "USD", title: "Coque",
-        topCost: { label: "la TVA à l'import (non remboursée)", amount: 9.2, achatPort: 40 }, bdAvail: true }),
+      b({ id: "gid://shopify/Product/1", to: "loss", margin: -4.05, pct: -3, cur: "USD", title: "Coque" }),
       b({ id: "gid://shopify/Product/2", to: "loss", margin: 729.27, pct: 60.8, cur: "USD", title: "Snow" }),
     ],
   });
   ok(html.length > 0 && text.length > 0, "html ET texte non vides (jamais HTML-only)");
-  for (const fig of ["-4,05", "40,00", "9,20", "TVA à l'import (non remboursée)", "+729,27", "60,8"]) {
+  for (const fig of ["-4,05", "-3,0", "729,27", "60,8", "19,2 points"]) { // 19,2 = 80 − 60,8
     ok(html.includes(fig) && text.includes(fig), `« ${fig} » présent dans le HTML ET le texte`);
   }
+}
+
+// ── DARK MODE : couleurs de texte ET de fond posées ; bouton fond plein + texte contrasté ──
+console.log("\n── dark mode : fond + texte explicites, bouton contrasté ──");
+{
+  const url = "https://demo.myshopify.com/admin/apps/abc123?tab=costs";
+  const { html } = renderLossAlertEmail({ shop: "s", appUrl: url, thresholdPct: 15, basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -3, pct: -2, title: "X" })] });
+  ok(/background-color:#ffffff/.test(html), "conteneur : fond blanc EXPLICITE (jamais inversé en dark)");
+  ok(/color:#202223 !important/.test(html), "corps : couleur de texte foncée EXPLICITE avec !important");
+  ok(/background-color:#008060;color:#ffffff/.test(html), "bouton : fond plein + texte blanc EXPLICITES");
+  ok(/color:#008060/.test(html), "lien de repli : couleur EXPLICITE (jamais un bleu illisible en dark)");
 }
 
 // ── LIEN VERS L'APP : présent dans HTML ET texte si fourni ; absent proprement sinon (best-effort) ──
 console.log("\n── lien app : parité HTML/texte + envoi jamais bloqué ──");
 {
   const url = "https://demo.myshopify.com/admin/apps/abc123?tab=costs";
-  const withUrl = renderLossAlertEmail({
-    shop: "demo.myshopify.com", appUrl: url,
-    basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, title: "Snowboard" })],
-  });
+  const withUrl = renderLossAlertEmail({ shop: "demo.myshopify.com", appUrl: url, thresholdPct: 15, basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, pct: -5, title: "Snowboard" })] });
   ok(withUrl.html.includes(url) && withUrl.text.includes(url), "appUrl fourni → lien dans le HTML ET le texte (parité)");
-  ok(/Voir le suivi de marge/.test(withUrl.html), "libellé de bouton sobre présent (HTML)");
+  ok(/Voir le suivi de marge/.test(withUrl.html), "libellé de bouton « Voir le suivi de marge » (HTML, inchangé)");
   ok(withUrl.text.includes("Voir le suivi de marge dans l'app"), "libellé + lien en texte brut");
 
-  // Sans appUrl (shop/API key absent côté serveur) : aucun lien, mais l'email part quand même.
-  const noUrl = renderLossAlertEmail({
-    shop: "demo.myshopify.com",
-    basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, title: "Snowboard" })],
-  });
+  const noUrl = renderLossAlertEmail({ shop: "demo.myshopify.com", thresholdPct: 15, basculements: [b({ id: "gid://shopify/Product/1", to: "loss", margin: -12.4, pct: -5, title: "Snowboard" })] });
   ok(!/\/admin\/apps\//.test(noUrl.html) && !/\/admin\/apps\//.test(noUrl.text), "appUrl absent → aucun lien d'app (ni HTML ni texte)");
-  ok(noUrl.html.length > 0 && noUrl.text.length > 0 && noUrl.html.includes("Snowboard"), "email rendu QUAND MÊME sans lien (envoi jamais bloqué pour un lien manquant)");
+  ok(noUrl.html.length > 0 && noUrl.text.length > 0 && noUrl.html.includes("Snowboard"), "email rendu QUAND MÊME sans lien (envoi jamais bloqué)");
 }
 
 console.log("\n" + "═".repeat(66));

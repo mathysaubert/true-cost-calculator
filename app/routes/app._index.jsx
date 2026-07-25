@@ -3461,8 +3461,13 @@ export default function Index() {
               Les alertes de marge vous signalent, en rouge en haut de l'app, quand un produit que vous venez de calculer tombe sous votre seuil d'alerte de marge. Le seuil par défaut est 25 %, ajustez-le à votre activité.
             </div>
 
-            <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
+            <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "12px", lineHeight: "1.6" }}>
               L'alerte apparaît en rouge en haut de l'app à chaque connexion, sur les 20 derniers calculs.
+            </div>
+
+            {/* Contrat de déclenchement (même contenu que l'email d'alerte, ère XV) */}
+            <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "20px", lineHeight: "1.6" }}>
+              Les alertes se déclenchent quand vos données changent : nouvelle commande synchronisée ou coûts mis à jour. Si vos coûts réels évoluent chez votre fournisseur, mettez-les à jour ici pour que vos marges restent justes.
             </div>
 
             <div style={{ maxWidth: "420px", marginBottom: "28px" }}>

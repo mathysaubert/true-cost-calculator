@@ -72,61 +72,74 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const realLosses = losses.filter((b) => num(b.margin) < 0);
   const thin       = losses.filter((b) => num(b.margin) >= 0);
   const recoveries = basculements.filter((b) => b.to === "profitable");
+  const under      = [...realLosses, ...thin]; // « sous votre objectif » (perte réelle incluse)
 
-  const objLabel = num(thresholdPct) > 0
-    ? ` de ${num(thresholdPct).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %` : "";
-  const money = (v, cur) => formatMoney(v, cur);
+  const money  = (v, cur) => formatMoney(v, cur);
   const signed = (b) => (num(b.margin) > 0 ? "+" : "") + money(b.margin, b.currency);
-  const pct = (b) => b.marginPct == null ? "" : ` (${num(b.marginPct).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
-
-  // Ligne perte : montant total + (si dispo) coût d'achat exposé à part + poste annexe dominant.
-  const lossLine = (b) => {
-    let s = `${productName(b)} : ${money(b.margin, b.currency)} (tout compris).`;
-    if (b.topCost) {
-      s += ` Coût d'achat et port : ${money(b.topCost.achatPort, b.currency)}. Ensuite, votre plus gros coût : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
-      // Pire cas : si le poste dominant est la douane ET ≥1 ligne contributrice porte une classification
-      // estimée, on le signale — sans dramatiser (le taux dépend de la catégorie, encore non validée).
-      if (b.topCost.key === "douane" && b.customsEstimated) s += " (taux de douane estimé)";
-    }
-    return s;
+  const pct    = (b) => b.marginPct == null ? "" : ` (${num(b.marginPct).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
+  const X      = num(thresholdPct).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+  // Écart vs objectif en points (seuil − marge %), affiché seulement s'il est positif et connu.
+  const gapPts = (b) => {
+    if (b.marginPct == null) return "";
+    const gap = num(thresholdPct) - num(b.marginPct);
+    if (gap <= 0) return "";
+    return `, soit ${gap.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} point${gap >= 2 ? "s" : ""} sous votre objectif`;
   };
-  const thinLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}. Il rapporte, mais moins que la marge que vous visez.`;
-  const recoLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}.`;
 
-  // Objet adaptatif : mène avec le plus grave présent. FACTUEL, aucun emoji (un pictogramme
-  // d'avertissement dans l'objet est un signal de spam ; la gravité est dans le contenu).
+  // Objet : INCHANGÉ (déjà factuel, sans emoji ni tiret cadratin) — mène avec le plus grave présent.
   const subject = realLosses.length
     ? `${shop} : ${realLosses.length} produit${realLosses.length > 1 ? "s" : ""} vendu${realLosses.length > 1 ? "s" : ""} à perte${thin.length ? `, ${thin.length} sous votre objectif` : ""}`
     : thin.length
     ? `${shop} : ${thin.length} produit${thin.length > 1 ? "s" : ""} sous votre objectif de marge`
     : `${shop} : ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} repassé${recoveries.length > 1 ? "s" : ""} rentable${recoveries.length > 1 ? "s" : ""}`;
 
-  // Note fallback : au moins un produit à perte sans détail de coûts (commandes pré-Brique B).
+  // Ligne 1 : le fait (imposé). Adaptée si l'email ne porte QUE des retours au-dessus de l'objectif.
+  const lead = under.length
+    ? `D'après vos commandes analysées, ${under.length} produit${under.length > 1 ? "s" : ""} ${under.length > 1 ? "sont" : "est"} sous votre objectif de marge (${X} %).`
+    : `D'après vos commandes analysées, ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} ${recoveries.length > 1 ? "sont" : "est"} repassé${recoveries.length > 1 ? "s" : ""} au-dessus de votre objectif de marge (${X} %).`;
+  // Poste de coût dominant (« où part votre argent ») réinjecté sur les lignes à perte. Pire cas :
+  // suffixe « (taux de douane estimé) » si le poste dominant est la douane sur classification estimée.
+  const topCostClause = (b) => {
+    if (!b.topCost) return "";
+    let s = ` Coût d'achat et port : ${money(b.topCost.achatPort, b.currency)}. Ensuite, votre plus gros coût : ${b.topCost.label}, ${money(b.topCost.amount, b.currency)}.`;
+    if (b.topCost.key === "douane" && b.customsEstimated) s += " (taux de douane estimé)";
+    return s;
+  };
+  // Liste unifiée « sous votre objectif » : marge NÉGATIVE → « vendu à perte » + marge + écart + poste
+  // dominant (+ suffixe douane) ; marge POSITIVE sous objectif → format imposé (nom, marge, écart).
+  const underLine = (b) => num(b.margin) < 0
+    ? `${productName(b)} : vendu à perte, marge ${money(b.margin, b.currency)}${pct(b)}${gapPts(b)}.${topCostClause(b)}`
+    : `${productName(b)} : marge ${money(b.margin, b.currency)}${pct(b)}${gapPts(b)}.`;
+  const recoveryLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}.`;
+
+  const cause    = "Calcul basé sur vos coûts enregistrés dans l'app et vos commandes des 30 derniers jours.";
+  const contract = "Vous recevez cette alerte quand une nouvelle commande ou un changement de coûts fait passer un produit sous votre objectif. Si vos coûts réels changent (prix fournisseur, port, emballage), mettez-les à jour dans l'app : vos marges et alertes resteront justes.";
+  // Note fallback : au moins un produit à perte sans détail de coûts (commandes anté-Brique B).
   const missingDetail = realLosses.some((b) => b.breakdownAvailable === false);
   const noteText = "Le détail des coûts n'apparaît pas pour certains produits : leurs commandes sont plus anciennes que cette fonction. Complétez-le depuis l'onglet « Suivi des coûts ».";
-  const closing = (realLosses.length || thin.length) ? "À vous de décider quoi ajuster : vous seul connaissez votre marché." : "";
 
-  const lines = ["D'après les commandes que True Cost Calculator suit pour vous :", ""];
-  if (realLosses.length) lines.push("Vous perdez de l'argent sur :", ...realLosses.map((b) => `• ${lossLine(b)}`), "");
-  if (thin.length)       lines.push(`Rentables, mais sous votre objectif${objLabel} :`, ...thin.map((b) => `• ${thinLine(b)}`), "");
-  if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoLine(b)}`), "");
-  if (closing) lines.push(closing);
+  // TEXTE brut — PARITÉ stricte avec le HTML (mêmes chaînes, mêmes chiffres).
+  const lines = [lead, ""];
+  if (under.length)      lines.push(...under.map((b) => `• ${underLine(b)}`), "");
+  if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoveryLine(b)}`), "");
+  lines.push(cause, "", contract);
   if (appUrl) lines.push("", `Voir le suivi de marge dans l'app : ${appUrl}`);
   if (missingDetail) lines.push("", `Note : ${noteText}`);
   const text = lines.join("\n").trim();
 
-  const section = (titre, items, render) => items.length
-    ? `<h3 style="margin:16px 0 6px;font-size:14px;${EMAIL_TEXT}">${titre}</h3><ul style="margin:0;padding-left:18px">${items.map((b) => `<li style="margin:4px 0;${EMAIL_TEXT}">${render(b)}</li>`).join("")}</ul>`
-    : "";
-  const html = emailShell(`<p style="${EMAIL_TEXT}">D'après les commandes que True Cost Calculator suit pour vous :</p>
-    ${section("Vous perdez de l'argent sur", realLosses, lossLine)}
-    ${section(`Rentables, mais sous votre objectif${objLabel}`, thin, thinLine)}
-    ${section("Repassés au-dessus de votre objectif", recoveries, recoLine)}
-    ${closing ? `<p style="${EMAIL_TEXT}">${closing}</p>` : ""}
+  // HTML — fond blanc + texte foncé posés au même niveau (dark-mode robuste, cf. emailLayout) ;
+  // bouton fond plein + texte contrasté EXPLICITES.
+  const list = (items, render) => items.length
+    ? `<ul style="margin:0 0 12px;padding-left:18px">${items.map((b) => `<li style="margin:4px 0;${EMAIL_TEXT}">${render(b)}</li>`).join("")}</ul>` : "";
+  const html = emailShell(`<p style="${EMAIL_TEXT}">${lead}</p>
+    ${list(under, underLine)}
+    ${recoveries.length ? `<h3 style="margin:16px 0 6px;font-size:14px;${EMAIL_TEXT}">Repassés au-dessus de votre objectif</h3>${list(recoveries, recoveryLine)}` : ""}
+    <p style="font-size:13px;${EMAIL_MUTED}">${cause}</p>
+    <p style="${EMAIL_TEXT}">${contract}</p>
     ${appUrl ? `<p style="margin:20px 0;${EMAIL_TEXT}">
-      <a href="${appUrl}" style="display:inline-block;padding:10px 18px;background:#008060;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Voir le suivi de marge</a>
+      <a href="${appUrl}" style="display:inline-block;padding:10px 18px;background-color:#008060;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600">Voir le suivi de marge</a>
     </p>
-    <p style="font-size:12px;${EMAIL_MUTED}">Ou copiez ce lien : <a href="${appUrl}">${appUrl}</a></p>` : ""}
+    <p style="font-size:12px;${EMAIL_MUTED}">Ou copiez ce lien : <a href="${appUrl}" style="color:#008060">${appUrl}</a></p>` : ""}
     ${missingDetail ? `<p style="font-size:12px;${EMAIL_MUTED}">${noteText}</p>` : ""}`);
 
   return { subject, html, text };

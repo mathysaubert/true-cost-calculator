@@ -137,7 +137,7 @@ console.log("\n── composition : rateChanged ⇒ recalcul ne touche PAS les l
   ok(del.join(",") === "o1,o3", "le recalcul ne supprimerait QUE o1 (estimated) + o3 (missing) — o2 confirmed intacte");
 }
 
-// ── Suffixe email « (taux de douane estimé) » — pire cas, douane dominante ──
+// ── Suffixe email « (taux de douane estimé) » — pire cas, douane dominante (réinjecté ère XV/b) ──
 console.log("\n── email : suffixe douane estimé (pire cas, parité texte/HTML) ──");
 {
   const base = { product_id: "gid://p1", title: "Produit A", from: "profitable", to: "loss", margin: -50, currency: "EUR",
