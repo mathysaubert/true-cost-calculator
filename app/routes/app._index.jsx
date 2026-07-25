@@ -2580,6 +2580,9 @@ export default function Index() {
   // Catalog audit (Expert)
   const [auditParams, setAuditParams] = useState({ shopify_fee: "0.02", payment_processor: "Stripe EU", returns_rate: "0.05", shipping_cost: "8", vat_regime: initialVatRegime ?? "assujetti", qty_per_shipment: "1", shipping_model: initialShippingModel ?? "dropshipping" });
   const [auditElapsed, setAuditElapsed] = useState(0);
+  const [auditResult, setAuditResult] = useState(null);       // dernier résultat d'audit RÉUSSI, hissé (survit aux onglets + à une erreur de quota)
+  const [auditRefineOpen, setAuditRefineOpen] = useState(false); // « Affiner » : formulaire de paramètres replié par défaut
+  const auditAutoRef = useRef(false);                          // auto-lancement : une seule fois par session
   const [methOpen,   setMethOpen]   = useState(false);
   const [douaneOpen, setDouaneOpen] = useState(false);
 
@@ -2604,6 +2607,21 @@ export default function Index() {
     const interval = setInterval(() => setAuditElapsed(s => s + 1), 1000);
     return () => clearInterval(interval);
   }, [auditFetcher.state]);
+
+  // Hisse le dernier résultat d'audit RÉUSSI dans l'état parent : il survit aux changements d'onglet ET à
+  // une erreur ultérieure (ex. limite quotidienne) qui reste affichée SANS effacer les résultats précédents.
+  useEffect(() => {
+    if (auditFetcher.data?.auditProducts) setAuditResult(auditFetcher.data);
+  }, [auditFetcher.data]);
+
+  // Auto-lancement de l'audit à l'ouverture de l'onglet (Expert), UNE seule fois par session, seulement si
+  // aucun résultat n'existe déjà. « Affiner » relance ensuite manuellement. Gating Expert préservé.
+  useEffect(() => {
+    if (activeTab === "audit" && isExpert && !auditResult && !auditAutoRef.current && auditFetcher.state === "idle") {
+      auditAutoRef.current = true;
+      handleRunAudit();
+    }
+  }, [activeTab, isExpert, auditResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync annotations after save
   useEffect(() => {
@@ -2986,6 +3004,12 @@ export default function Index() {
         {/* ════════ CALCULATOR TAB ════════════════════════════════════════ */}
         {activeTab === "calculator" && (
           <>
+            {/* Intro règle d'or (texte imposé, point 5 / Amendement E) — vue principale seulement. */}
+            {!(showUpgrade && !isPro) && (
+              <div style={{ marginBottom: "20px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
+                Entrez un produit : l'app calcule votre vraie marge nette, une fois retirés la douane, les frais de port, les frais Shopify et de paiement, les retours et la pub. Le chiffre que vous gardez vraiment sur une vente.
+              </div>
+            )}
             {showUpgrade && !isPro ? (
               <div style={{ padding: "24px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "28px", maxWidth: "620px", marginLeft: "auto", marginRight: "auto" }}>
@@ -3338,6 +3362,10 @@ export default function Index() {
             const categories = [...new Set(history.map(c => c.category))];
             return (
               <div className="tcc-history-container">
+                {/* Intro règle d'or (texte imposé, point 5) */}
+                <div style={{ marginBottom: "20px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
+                  Retrouvez ici vos derniers calculs de marge, du plus récent au plus ancien, pour comparer vos produits et suivre vos décisions de prix dans le temps.
+                </div>
                 {/* Expert filters */}
                 {isExpert ? (
                   <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap", alignItems: "center" }}>
@@ -3499,7 +3527,8 @@ export default function Index() {
         {/* ════════ AUDIT CATALOGUE TAB (Expert) ══════════════════════════ */}
         {activeTab === "audit" && (
           !isExpert ? <ExpertGate onUpgrade={() => setShowUpgrade(true)} /> : (() => {
-            const auditData = auditFetcher.data;
+            const auditData = auditResult;                        // dernier résultat RÉUSSI (hissé, survit onglets + quota)
+            const auditError = auditFetcher.data?.error ?? null;  // erreur transitoire (ex. quota) — n'efface pas auditData
             const isAuditing = auditFetcher.state !== "idle";
             const products = auditData?.auditProducts ?? [];
             // Classification alignée sur le SEUIL configuré du marchand (le même que l'alerting B7),
@@ -3519,30 +3548,25 @@ export default function Index() {
             const duplicateTitles = new Set(Object.keys(_titleCounts).filter(k => _titleCounts[k] > 1));
             return (
               <div>
-                {/* Guide: how to set unit cost in Shopify */}
-                <div style={{ padding: "16px 20px", borderRadius: "10px", background: "linear-gradient(135deg,#f8f6ff,#f0ecff)", border: "1px solid #7C3AED33", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "12px" }}>Avant de lancer l'audit : indiquez le coût par article dans Shopify</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
-                    {[
-                      "Ouvrez votre admin Shopify et cliquez sur Produits dans le menu latéral.",
-                      "Sélectionnez le produit à mettre à jour.",
-                      "Faites défiler jusqu'à la section Variantes.",
-                      "Cliquez sur la variante (ou sur Modifier si vous avez plusieurs variantes).",
-                      "Dans la section Expédition, remplissez le champ Coût par article (votre prix fournisseur hors taxes).",
-                      "Cliquez sur Enregistrer. Répétez pour chaque produit.",
-                    ].map((step, i) => (
-                      <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                        <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#7C3AED", color: "#fff", fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
-                        <div style={{ fontSize: "13px", color: "#202223", lineHeight: "1.5", paddingTop: "2px" }}>{step}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#7C3AED", fontStyle: "italic" }}>
-                    Seuls les produits avec un coût indiqué apparaissent dans l'audit.
-                  </div>
+                {/* Intro règle d'or (texte imposé, point 5) */}
+                <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
+                  L'audit estime la marge de chaque produit de votre catalogue à partir des coûts saisis dans Shopify. Aucune commande nécessaire : c'est une photo théorique, pour repérer en 30 secondes les produits qui vous font perdre de l'argent.
                 </div>
 
-                {/* Params */}
+                {/* Ligne d'hypothèses + « Affiner » (point 1) : le formulaire de paramètres est replié par défaut. */}
+                {(() => {
+                  const shipLabel = auditParams.shipping_model === "stock" ? "import en stock" : "dropshipping";
+                  const vatLabel  = auditParams.vat_regime === "franchise" ? "en franchise de TVA" : "assujetti à la TVA";
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", fontSize: "12px", color: "#6D7175", marginBottom: auditRefineOpen ? "12px" : "20px" }}>
+                      <span>Hypothèses : {shipLabel}, {vatLabel}, port {auditParams.shipping_cost || "8"} {feesCurrency} par unité.</span>
+                      <button onClick={() => setAuditRefineOpen(o => !o)} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontSize: "12px", fontWeight: "600", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}>{auditRefineOpen ? "Masquer" : "Affiner"}</button>
+                    </div>
+                  );
+                })()}
+
+                {/* Paramètres de l'audit — révélés par « Affiner » ; relancent l'audit à la validation (inchangés). */}
+                {auditRefineOpen && (
                 <div style={{ padding: "16px 20px", borderRadius: "10px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "20px" }}>
                   <div style={{ fontSize: "12px", fontWeight: "600", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Paramètres de l'audit</div>
                   <div className="tcc-audit-params" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "12px" }}>
@@ -3599,10 +3623,26 @@ export default function Index() {
                       Réforme UE : <strong>forfait de douane de 3 € par article depuis le 01/07/2026</strong> (c'était gratuit avant). Nous comptons 1 article = 1 colis. Si vous groupez plusieurs unités du même produit dans un seul colis, votre coût réel par unité est plus bas.
                     </div>
                   )}
-                  <button onClick={handleRunAudit} disabled={isAuditing} className="tcc-audit-btn"
+                  <button onClick={() => { setAuditRefineOpen(false); handleRunAudit(); }} disabled={isAuditing} className="tcc-audit-btn"
                     style={{ padding: "10px 24px", background: "linear-gradient(135deg,#7C3AED,#5B21B6)", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: isAuditing ? "default" : "pointer", fontFamily: "inherit", opacity: isAuditing ? 0.8 : 1 }}>
-                    {isAuditing ? "Analyse en cours…" : "Lancer l'audit →"}
+                    {isAuditing ? "Analyse en cours…" : "Relancer l'audit →"}
                   </button>
+                </div>
+                )}
+
+                {/* Guide Shopify simplifié (point 6) : 2 lignes + « Voir le guide pas à pas » replié. */}
+                <div style={{ padding: "12px 16px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "20px", fontSize: "12px", color: "#202223", lineHeight: "1.6" }}>
+                  Dans Shopify : Produits, puis votre produit, puis la variante, puis le champ « Coût par article ». L'audit lit ce champ pour chaque produit ; sans lui, le produit n'apparaît pas.
+                  <details style={{ marginTop: "8px" }}>
+                    <summary style={{ cursor: "pointer", color: "#7C3AED", fontWeight: "600" }}>Voir le guide pas à pas</summary>
+                    <ol style={{ margin: "8px 0 0", paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "5px", color: "#202223", lineHeight: "1.5" }}>
+                      <li>Ouvrez votre admin Shopify, puis cliquez sur Produits dans le menu de gauche.</li>
+                      <li>Choisissez le produit à mettre à jour.</li>
+                      <li>Descendez jusqu'à la section Variantes et cliquez sur la variante (ou sur Modifier).</li>
+                      <li>Dans la section Expédition, remplissez le champ « Coût par article » (votre prix fournisseur hors taxes).</li>
+                      <li>Cliquez sur Enregistrer, puis recommencez pour chaque produit.</li>
+                    </ol>
+                  </details>
                 </div>
 
                 {/* Progress */}
@@ -3620,15 +3660,15 @@ export default function Index() {
                   </div>
                 )}
 
-                {/* Error */}
-                {auditData?.error && !isAuditing && (
+                {/* Erreur transitoire (ex. limite quotidienne atteinte) — AFFICHÉE SANS effacer le dernier résultat. */}
+                {auditError && !isAuditing && (
                   <div style={{ padding: "14px 18px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D44", marginBottom: "16px", fontSize: "13px", color: "#D72C0D" }}>
-                    {auditData.error}
+                    {auditError}
                   </div>
                 )}
 
-                {/* Summary */}
-                {auditData && !auditData.error && !isAuditing && (
+                {/* Résultats (au moins un produit chiffré) */}
+                {auditData && !isAuditing && products.length > 0 && (
                   <>
                     <div className="tcc-audit-kpi" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
                       <StatCard label="Produits analysés"   value={products.length} sub="avec coût renseigné" color="#202223" bg="#F9FAFB" />
@@ -3734,12 +3774,18 @@ export default function Index() {
                   </div>
                 )}
 
-                {!auditData && !isAuditing && (
-                  <div style={{ textAlign: "center", padding: "40px 24px", color: "#6D7175" }}>
-                    <div style={{ fontSize: "32px", marginBottom: "12px" }}>🔍</div>
-                    <div style={{ fontSize: "15px", fontWeight: "500", marginBottom: "8px" }}>Prêt à auditer votre catalogue</div>
-                    <div style={{ fontSize: "13px" }}>Cliquez sur "Lancer l'audit" pour analyser tous vos produits actifs ayant un coût fournisseur renseigné dans Shopify.</div>
+                {/* État vide (point 1) : audit lancé mais AUCUN produit chiffré → pas de KPI à zéro, on guide. */}
+                {auditData && !isAuditing && products.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "32px 24px", color: "#6D7175" }}>
+                    <div style={{ fontSize: "28px", marginBottom: "10px" }}>🗂️</div>
+                    <div style={{ fontSize: "15px", fontWeight: "600", color: "#202223", marginBottom: "6px" }}>Aucun de vos produits n'a de coût renseigné dans Shopify.</div>
+                    <div style={{ fontSize: "13px" }}>{auditData.totalScanned} produit{auditData.totalScanned > 1 ? "s" : ""} scanné{auditData.totalScanned > 1 ? "s" : ""}, aucun avec un « Coût par article ». Suivez le guide ci-dessus, puis relancez l'audit.</div>
                   </div>
+                )}
+
+                {/* Pré-lancement (transitoire, avant l'auto-lancement) — jamais un « prêt à auditer » figé. */}
+                {!auditData && !isAuditing && !auditError && (
+                  <div style={{ textAlign: "center", padding: "40px 24px", color: "#6D7175", fontSize: "13px" }}>Préparation de l'audit…</div>
                 )}
               </div>
             );
