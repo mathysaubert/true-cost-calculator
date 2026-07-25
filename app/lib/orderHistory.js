@@ -279,3 +279,48 @@ export function aggregateOrderMargins(rows = []) {
     costCompletion,
   };
 }
+
+// ── Compteur de fiabilité des marges réelles (point 4, ère XV) — PUR, lecture de champs figés ─────────
+// X % = part du CA NET reposant sur des coûts CONFIRMÉS ou IMPORTÉS, rapportée au CA des lignes CHIFFRÉES
+// (confirmed + imported + estimated). Les lignes 'missing' (vente sans coût renseigné) n'ont PAS de CA en
+// base (line_net_revenue null, orderIngest) → hors du dénominateur ; elles sont comptées à part (« marge
+// inconnue »). Le top-3 « à compléter » est classé par UNITÉS VENDUES (effective_qty) — seul signal
+// disponible pour les 'missing' (option A validée ; le CA brut des missing = backlog post-bêta). AUCUN
+// recalcul de marge : on ne fait que sommer des champs FIGÉS à l'ingestion. Retour :
+//   reliabilityPct : null si aucune ligne chiffrée (cas tout-missing → l'UI affiche une invite, pas de %)
+//   missingProducts / missingCount : produits avec ≥1 vente non renseignée (priorité, ligne en tête)
+//   topIncomplete : ≤3 produits estimated|missing, par unités desc, status 'missing' prioritaire
+export function computeCostReliability(rows = []) {
+  const PRICED    = new Set(["confirmed", "imported", "estimated"]);
+  const CONFIRMED = new Set(["confirmed", "imported"]);
+  let pricedRevenue = 0, confirmedRevenue = 0;
+  const prod = new Map();
+  const bucket = (id) => {
+    const key = id ?? "__unknown__";
+    let p = prod.get(key);
+    if (!p) { p = { product_id: id ?? null, units: 0, hasEstimated: false, hasMissing: false }; prod.set(key, p); }
+    return p;
+  };
+  for (const r of rows) {
+    const src = r.cost_source, rev = r.line_net_revenue;
+    if (CONFIRMED.has(src) && rev != null) confirmedRevenue += num(rev);
+    if (PRICED.has(src)    && rev != null) pricedRevenue    += num(rev);
+    if (src === "estimated" || src === "missing") {
+      const p = bucket(r.product_id);
+      p.units += num(r.effective_qty);
+      if (src === "missing") p.hasMissing = true; else p.hasEstimated = true;
+    }
+  }
+  const reliabilityPct = pricedRevenue > 0 ? (confirmedRevenue / pricedRevenue) * 100 : null;
+  const incomplete = [...prod.values()];
+  const missingProducts = incomplete.filter((p) => p.hasMissing).map((p) => ({ product_id: p.product_id, units: p.units }));
+  const topIncomplete = incomplete
+    .map((p) => ({ product_id: p.product_id, units: p.units, status: p.hasMissing ? "missing" : "estimated" }))
+    .sort((a, b) => b.units - a.units)
+    .slice(0, 3);
+  return {
+    reliabilityPct, pricedRevenue, confirmedRevenue,
+    missingProducts, missingCount: missingProducts.length,
+    topIncomplete, hasSales: rows.length > 0,
+  };
+}

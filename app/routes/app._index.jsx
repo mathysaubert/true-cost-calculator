@@ -16,18 +16,19 @@ import {
 } from "../lib/roas.js";
 import { buildMargeLine } from "../lib/aiPayload.js";
 import {
-  PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS,
+  PAYS_KEYS,
   shopifyTypeToCategory, validateCostRow,
-  parseCostsCsv, buildCostsCsv, CSV_COLUMNS, buildCostRowsForDisplay,
+  parseCostsCsv, buildCostsCsv, CSV_COLUMNS, buildCostRowsForDisplay, productCostStatus,
 } from "../lib/variantCosts.js";
 import { backfillRowBreakdown } from "../lib/orderIngest.js";
 import { classifyAudit, auditCategory, auditLabels } from "../lib/auditClassify.js";
 import { syncShopOrders } from "../lib/orderSync.server.js";
 import { recalcEstimatedMargins } from "../lib/recalcEstimatedMargins.server.js";
-import { classificationStatus, resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
+import { resolveAuditCategory, mergeCustomsFeedback } from "../lib/customsClassification.js";
 import { CustomsEstimatedTag, CustomsClassificationPanel } from "../components/customsUi.jsx";
 import { applyCustomsInvalidation, confirmCustomsCategory } from "../lib/customsClassification.server.js";
-import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown } from "../lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney, waterfallFromBreakdown, computeCostReliability } from "../lib/orderHistory.js";
+import { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPanel } from "../components/costsUi.jsx";
 import { computeCpaTargets } from "../lib/cpaTargets.js";
 import { resolveEntitlement } from "../lib/plan.server";
 import { planToOrderCap, alertingEnabled, previousMonth } from "../lib/plan.js";
@@ -2140,11 +2141,13 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const cpaFetcher = useFetcher();
   const [cpaForm, setCpaForm] = useState(currentCpa == null ? "" : feeStr(currentCpa));
 
-  const [rows, setRows]       = useState(null);   // null = pas encore chargé
-  const [dirty, setDirty]     = useState(() => new Set());
+  const [rows, setRows]       = useState(null);   // null = pas encore chargé (lignes AFFICHÉES, jamais persistées à l'ouverture)
+  const [draft, setDraft]     = useState({});     // édition PAR variante : { [variant_id]: { field: valeur tapée } }
+  const [expandedId, setExpandedId] = useState(null); // produit dont le panneau d'édition est ouvert
   const [country, setCountry] = useState(defaultImportCountry);
   const [capped, setCapped]   = useState(false);
   const [giftCardCount, setGiftCardCount] = useState(0);   // cartes cadeaux exclues de la liste (point 7)
+  const listRef = useRef(null);
 
   // Charge la liste à l'ouverture de l'onglet.
   useEffect(() => {
@@ -2152,7 +2155,7 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (listFetcher.data?.costs) { setRows(listFetcher.data.costs); setDirty(new Set()); setCapped(!!listFetcher.data.variantsCapped); setGiftCardCount(listFetcher.data.giftCardCount ?? 0); }
+    if (listFetcher.data?.costs) { setRows(listFetcher.data.costs); setDraft({}); setCapped(!!listFetcher.data.variantsCapped); setGiftCardCount(listFetcher.data.giftCardCount ?? 0); }
   }, [listFetcher.data]);
 
   // Recharge après une sauvegarde / import réussis (la confirmation douane recharge via son propre onConfirmed).
@@ -2161,17 +2164,23 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
 
   function reload() { listFetcher.submit({ _action: "costs_list" }, { method: "POST", encType: "application/json" }); }
 
-  function editRow(variantId, field, value) {
-    setRows(prev => prev.map(r => r.variant_id === variantId ? { ...r, [field]: value } : r));
-    setDirty(prev => new Set(prev).add(variantId));
+  // Édition PAR variante dans un overlay `draft` : on ne mute jamais `rows` (les suggestions restent des
+  // placeholders). saveProduct ne soumet que les variantes réellement touchées (≥1 champ non vide), en
+  // repliant les champs laissés vides sur la suggestion affichée (validateCostRow reçoit un jeu complet).
+  // Intégrité (Amendement D) : une variante intacte n'est JAMAIS écrite ; la ligne créée porte
+  // source='confirmed' (saisie marchand), jamais 'estimated'.
+  function onEdit(variantId, field, value) {
+    setDraft(prev => ({ ...prev, [variantId]: { ...prev[variantId], [field]: value } }));
   }
 
-  function saveDirty() {
-    const toSave = rows.filter(r => dirty.has(r.variant_id)).map(r => ({
+  function saveProduct(product) {
+    const touched = (r) => { const d = draft[r.variant_id]; return d && Object.values(d).some(v => String(v).trim() !== ""); };
+    const val = (r, f) => { const d = draft[r.variant_id]; return d && f in d && String(d[f]).trim() !== "" ? d[f] : r[f]; };
+    const toSave = (product?.variantRows ?? []).filter(touched).map(r => ({
       variant_id: r.variant_id, product_id: r.product_id,
-      prix_achat: r.prix_achat, port_entrant: r.port_entrant, qty_par_lot: r.qty_par_lot,
-      cout_emballage: r.cout_emballage, vat_regime: r.vat_regime, shipping_model: r.shipping_model,
-      pays_import: r.pays_import, categorie: r.categorie,
+      prix_achat: val(r, "prix_achat"), port_entrant: val(r, "port_entrant"), qty_par_lot: val(r, "qty_par_lot"),
+      cout_emballage: val(r, "cout_emballage"), vat_regime: val(r, "vat_regime"), shipping_model: val(r, "shipping_model"),
+      pays_import: val(r, "pays_import"), categorie: val(r, "categorie"),
     }));
     if (toSave.length) saveFetcher.submit({ _action: "costs_save", rows: toSave }, { method: "POST", encType: "application/json" });
   }
@@ -2205,106 +2214,45 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
   const saveErrors   = saveFetcher.data?.errors ?? [];
 
   const inputStyle = { width: "100%", padding: "5px 7px", border: "1px solid #C9CCCF", borderRadius: "5px", fontSize: "12px", fontFamily: "inherit", boxSizing: "border-box" };
-  const th = { padding: "8px 8px", fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", textAlign: "left", whiteSpace: "nowrap" };
+
+  // Agrégats lecture seule pour la liste + le compteur (fonctions PURES, mémoïsées ; aucun recalcul moteur).
+  const agg             = useMemo(() => aggregateOrderMargins(orderMargins ?? []), [orderMargins]);
+  const marginByProduct = useMemo(() => new Map((agg.byProduct ?? []).map(p => [p.product_id, p])), [agg]);
+  const reliability     = useMemo(() => computeCostReliability(orderMargins ?? []), [orderMargins]);
+  const titleFor        = (id) => (productTitleById && productTitleById[id]) || null;
+  // Une entrée par produit : ses variantes affichées, son statut de coûts, sa marge réelle 30 j (si commandes).
+  const products = useMemo(() => {
+    if (!rows) return [];
+    const m = new Map();
+    for (const r of rows) {
+      const key = r.product_id ?? r.variant_id;
+      let g = m.get(key);
+      if (!g) { g = { product_id: r.product_id ?? null, title: r.product_title || "Produit", variantRows: [] }; m.set(key, g); }
+      g.variantRows.push(r);
+    }
+    return [...m.values()].map(g => {
+      const mp = marginByProduct.get(g.product_id);
+      return { ...g, status: productCostStatus(g.variantRows), marginPct: mp ? mp.marginPct : null };
+    });
+  }, [rows, marginByProduct]);
+  const toggleProduct = (id) => setExpandedId(cur => (cur === id ? null : id));
+  const selectProduct = (id) => { setExpandedId(id); listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   return (
     <div>
       <AlertingQuotaBanner isExpert={isExpert} isPro={isPro} alertingActive={alertingActive} alertingCap={alertingCap} ordersThisMonth={ordersThisMonth} ordersPrevMonth={ordersPrevMonth} onUpgrade={onUpgrade} />
+      {/* Intro règle d'or (texte imposé, point 5) */}
       <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6D7175", lineHeight: "1.6" }}>
-        Renseignez une fois, par variante, les coûts que Shopify ne connaît pas. Ils alimenteront le suivi de marge réelle sur vos vraies commandes.
-        Les valeurs <strong>estimées</strong> sont pré-remplies (coût Shopify, catégorie, réglages boutique) : toute marge qui en dépend sera signalée « coûts estimés » tant que vous ne les avez pas confirmées.
+        Ici, vos marges réelles : l'app lit vos commandes des 30 derniers jours et calcule ce que chaque vente vous a vraiment rapporté, avec les coûts que vous saisissez ci-dessous.
       </div>
 
-      {/* Réglage boutique : pays d'import par défaut */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-        <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Pays d'import par défaut</span>
-        <select value={country} onChange={e => changeCountry(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
-          {PAYS_KEYS.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <span style={{ fontSize: "11px", color: "#6D7175" }}>Les nouvelles variantes en héritent ; chaque variante reste surchargeable.</span>
-      </div>
+      {/* [1] Résumé réel COMPACT, toujours visible (la valeur d'abord) */}
+      <CostSummaryBanner totals={agg.totals} unprofitableCount={agg.unprofitableCount} validCount={agg.validCount} multiCurrency={agg.multiCurrency} feesCurrency={feesCurrency} />
 
-      {/* D2 : taux fees de la boutique (intrants de la sync marge réelle) */}
-      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Vos taux de frais</div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
-          <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Frais Shopify (% des ventes)</div>
-            <input type="text" inputMode="decimal" value={feeForm.shopify_fee_pct} onChange={setFee("shopify_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 2" />
-          </label>
-          <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Frais du processeur (% des ventes)</div>
-            <input type="text" inputMode="decimal" value={feeForm.processor_fee_pct} onChange={setFee("processor_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 1,5" />
-          </label>
-          <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Fixe processeur (par transaction)</div>
-            <input type="text" inputMode="decimal" value={feeForm.processor_fixed_fee} onChange={setFee("processor_fixed_fee")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 0,25" />
-          </label>
-          <button
-            onClick={() => feesFetcher.submit({ _action: "set_fees", ...feeForm }, { method: "POST", encType: "application/json" })}
-            disabled={feesFetcher.state !== "idle"}
-            style={{ padding: "7px 14px", background: feesFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: feesFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: feesFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
-            {feesFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer les taux"}
-          </button>
-          {feesFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Taux enregistrés.</span>}
-          {feesFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {feesFetcher.data.warning}</span>}
-          {feesFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{feesFetcher.data.error}</span>}
-        </div>
-        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Frais fixe du processeur : {formatMoney(parseFloat(String(feeForm.processor_fixed_fee).replace(",", ".")) || 0, feesCurrency)} par transaction. Ces taux s'appliquent aux prochaines synchronisations. Les commandes déjà analysées conservent les taux en vigueur au moment de leur calcul.
-        </div>
-      </div>
+      {/* [2] Compteur de fiabilité (point 4) */}
+      <ReliabilityCounter reliability={reliability} titleFor={titleFor} onSelectProduct={selectProduct} />
 
-      {/* Seuil de rentabilité (% global boutique) — pilote l'email quotidien B7 ET l'audit catalogue */}
-      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil de rentabilité</div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
-          <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% des ventes)</div>
-            <input type="text" inputMode="decimal" value={thresholdForm} onChange={e => setThresholdForm(e.target.value)} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 15" />
-          </label>
-          <button
-            onClick={() => thresholdFetcher.submit({ _action: "set_profitability_threshold", profitability_threshold_pct: thresholdForm }, { method: "POST", encType: "application/json" })}
-            disabled={thresholdFetcher.state !== "idle"}
-            style={{ padding: "7px 14px", background: thresholdFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: thresholdFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: thresholdFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
-            {thresholdFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le seuil"}
-          </button>
-          {thresholdFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Seuil enregistré.</span>}
-          {thresholdFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {thresholdFetcher.data.warning}</span>}
-          {thresholdFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{thresholdFetcher.data.error}</span>}
-        </div>
-        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          L'email quotidien de rentabilité se déclenche quand la marge nette cumulée d'un produit passe sous ce seuil ; l'audit catalogue l'utilise aussi pour classer vos produits. <strong>0 %</strong> = alerte uniquement à perte réelle (marge négative).
-        </div>
-      </div>
-
-      {/* CPA prescriptif : CPA actuel déclaré (B6) — Expert uniquement (C3), suit B5 : son seul
-          usage est la comparaison au plafond, désormais Expert-only. Action gardée côté serveur. */}
-      {isExpert && (
-      <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Votre CPA d'acquisition actuel</div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
-          <label style={{ fontSize: "11px", color: "#6D7175" }}>
-            <div style={{ marginBottom: "4px" }}>CPA par commande ({feesCurrency})</div>
-            <input type="text" inputMode="decimal" value={cpaForm} onChange={e => setCpaForm(e.target.value)} style={{ ...inputStyle, width: "110px" }} placeholder="ex : 25" />
-          </label>
-          <button
-            onClick={() => cpaFetcher.submit({ _action: "set_current_cpa", current_cpa: cpaForm }, { method: "POST", encType: "application/json" })}
-            disabled={cpaFetcher.state !== "idle"}
-            style={{ padding: "7px 14px", background: cpaFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: cpaFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: cpaFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
-            {cpaFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le CPA"}
-          </button>
-          {cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#6D7175" }}>CPA effacé.</span>}
-          {cpaFetcher.data?.success && !cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#008060" }}>✓ CPA enregistré.</span>}
-          {cpaFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {cpaFetcher.data.warning}</span>}
-          {cpaFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{cpaFetcher.data.error}</span>}
-        </div>
-        <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
-          Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord, sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
-        </div>
-      </div>
-      )}
-
+      {/* [3] Marge réelle sur vos commandes : synchroniser + compléter le détail + corriger sans coût */}
       {/* Brique B : synchronisation des vraies commandes (backfill 30 j) */}
       <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F6F3FF", border: "1px solid #7C3AED33", marginBottom: "16px" }}>
         <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Marge réelle sur vos commandes</div>
@@ -2365,16 +2313,16 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
         </div>
       </div>
 
-      {/* UI Monitor : sous-bloc repliable (lecture seule) de l'historique order_margins */}
+      {/* [3bis] Détail complet du monitor (accordéon, replié comme aujourd'hui, inchangé) */}
       <MarginMonitor
         orderMargins={orderMargins} orderMarginsTotal={orderMarginsTotal}
         orderMarginsCapped={orderMarginsCapped} orderMarginsCap={orderMarginsCap}
         productTitleById={productTitleById ?? {}}
         cpaTargets={cpaTargets} cpaByProduct={cpaByProduct} currentCpaDeclaredLabel={currentCpaDeclaredLabel} thresholdPct={profitabilityThresholdPct}
         isExpert={isExpert}
-        onGoToCosts={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
+        onGoToCosts={() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
 
-      {/* Fiabilité douane : bandeau de feedback PERSISTANT (survit à la disparition du panneau) + panneau */}
+      {/* [4] Classification douanière : bandeau de feedback PERSISTANT (survit à la disparition du panneau) + panneau */}
       {customsFeedback && (
         <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", display: "flex", alignItems: "flex-start", gap: "10px",
           background: customsFeedback.success ? (customsFeedback.rateChanged ? "#FFF9EC" : "#F1F8F5") : "#FFF4F4",
@@ -2392,12 +2340,11 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           rejetterait). Composant + action confirm_customs_category réutilisés à l'identique (zéro régression). */}
       {!loading && <CustomsClassificationPanel rows={rows.filter(r => r.stored)} onConfirmed={(data) => { setCustomsFeedback((prev) => mergeCustomsFeedback(prev, data)); if (data?.success) reload(); }} />}
 
-      {/* Barre d'actions */}
+      {/* [5] Import / export CSV (l'enregistrement se fait produit par produit dans le panneau) */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
         <button onClick={exportTemplate} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↓ Exporter le modèle CSV</button>
         <button onClick={() => fileRef.current?.click()} disabled={loading} style={{ padding: "7px 14px", background: "#fff", color: "#202223", border: "1px solid #C9CCCF", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: "pointer", fontFamily: "inherit" }}>↑ Importer un CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} style={{ display: "none" }} />
-        <button onClick={saveDirty} disabled={loading || dirty.size === 0} style={{ padding: "7px 14px", background: dirty.size ? "#008060" : "#E4E5E7", color: dirty.size ? "#fff" : "#6D7175", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: dirty.size ? "pointer" : "default", fontFamily: "inherit" }}>Enregistrer les modifications{dirty.size ? ` (${dirty.size})` : ""}</button>
       </div>
 
       {/* Cartes cadeaux exclues de la liste (point 7) : ligne discrète, aucun coût à suivre. */}
@@ -2415,64 +2362,115 @@ function CostTracker({ defaultImportCountry, fees, feesCurrency, profitabilityTh
           {importFetcher.data?.saved > 0 && <div style={{ marginTop: "6px", color: "#008060" }}>{importFetcher.data.saved} ligne(s) importée(s) avec succès.</div>}
         </div>
       )}
-      {saveErrors.length > 0 && (
-        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#FFF4F4", border: "1px solid #D72C0D33", fontSize: "12px", color: "#202223", marginBottom: "12px" }}>
-          <strong style={{ color: "#D72C0D" }}>{saveErrors.length} ligne(s) non enregistrée(s)</strong>
-          <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>{saveErrors.slice(0, 20).map((e, i) => <li key={i}>{e.variant_id ?? "?"} : {e.messages.join(" · ")}</li>)}</ul>
-        </div>
-      )}
+      {/* [7] Liste des produits (remplace la grille par variantes) + panneau d'édition par produit. */}
+      <div ref={listRef}>
+        {loading ? (
+          <div style={{ padding: "40px", textAlign: "center", color: "#6D7175", fontSize: "13px", border: "1px solid #E4E5E7", borderRadius: "10px" }}>Chargement de vos produits…</div>
+        ) : (
+          <ProductCostList
+            products={products} expandedId={expandedId} onToggle={toggleProduct}
+            renderPanel={(p) => (
+              <ProductCostPanel
+                product={p} draft={draft} onEdit={onEdit} onSave={() => saveProduct(p)}
+                saving={saveFetcher.state !== "idle"} saved={saveFetcher.data?.success} errors={saveErrors} feesCurrency={feesCurrency} />
+            )} />
+        )}
+      </div>
 
-      {loading ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Chargement des variantes…</div>
-      ) : rows.length === 0 ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "#6D7175", fontSize: "13px" }}>Aucune variante active trouvée dans la boutique.</div>
-      ) : (
-        <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "10px" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "1000px" }}>
-            <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
-                <th style={th}>Produit / Variante</th>
-                <th style={th}>Prix achat ({feesCurrency})</th>
-                <th style={th}>Port lot ({feesCurrency})</th>
-                <th style={th}>Qté/lot</th>
-                <th style={th}>Emballage ({feesCurrency})</th>
-                <th style={th}>TVA</th>
-                <th style={th}>Expédition</th>
-                <th style={th}>Pays</th>
-                <th style={th}>Catégorie</th>
-                <th style={th}>État</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => {
-                const pill = SOURCE_PILL[r.source] ?? SOURCE_PILL.estimated;
-                return (
-                  <tr key={r.variant_id} style={{ borderBottom: "1px solid #F1F2F4" }}>
-                    <td style={{ padding: "8px", fontSize: "12px", color: "#202223", maxWidth: "220px" }}>
-                      <div style={{ fontWeight: "600" }}>{r.product_title}</div>
-                      {r.variant_title && r.variant_title !== "Default Title" && <div style={{ color: "#6D7175", fontSize: "11px" }}>{r.variant_title}</div>}
-                    </td>
-                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.prix_achat} onChange={e => editRow(r.variant_id, "prix_achat", e.target.value)} style={inputStyle} /></td>
-                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.port_entrant} onChange={e => editRow(r.variant_id, "port_entrant", e.target.value)} style={inputStyle} /></td>
-                    <td style={{ padding: "6px", width: "70px" }}><input type="number" step="1" min="1" value={r.qty_par_lot} onChange={e => editRow(r.variant_id, "qty_par_lot", e.target.value)} style={inputStyle} /></td>
-                    <td style={{ padding: "6px" }}><input type="number" step="0.01" min="0" value={r.cout_emballage} onChange={e => editRow(r.variant_id, "cout_emballage", e.target.value)} style={inputStyle} /></td>
-                    <td style={{ padding: "6px" }}><select value={r.vat_regime} onChange={e => editRow(r.variant_id, "vat_regime", e.target.value)} style={inputStyle}>{VAT_REGIMES.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
-                    <td style={{ padding: "6px" }}><select value={r.shipping_model} onChange={e => editRow(r.variant_id, "shipping_model", e.target.value)} style={inputStyle}>{SHIPPING_MODELS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
-                    <td style={{ padding: "6px" }}><select value={r.pays_import} onChange={e => editRow(r.variant_id, "pays_import", e.target.value)} style={inputStyle}>{PAYS_KEYS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
-                    <td style={{ padding: "6px" }}><select value={r.categorie} onChange={e => editRow(r.variant_id, "categorie", e.target.value)} style={inputStyle}>{CATEGORIE_KEYS.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
-                    <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "10px", fontWeight: "700", color: pill.color, background: pill.bg }}>{dirty.has(r.variant_id) ? "Modifié" : pill.label}</span>
-                      {/* Classification douane (état ACTUEL de la variante) — confirmée ⇒ rien. */}
-                      {classificationStatus(r.customs_confirmed) === "estimated" &&
-                        <div style={{ fontSize: "9px", fontWeight: "600", color: "#B98900", marginTop: "3px" }} title="Catégorie non confirmée : le taux de douane est estimé.">douane estimée</div>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* [8] RÉGLAGES (en dernier : ils se règlent une fois) — pays, taux de frais, seuil, CPA. */}
+      <div style={{ marginTop: "28px", borderTop: "1px solid #E4E5E7", paddingTop: "18px" }}>
+        <div style={{ fontSize: "12px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "14px" }}>Réglages</div>
+
+        {/* Réglage boutique : pays d'import par défaut */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+          <span style={{ fontSize: "12px", fontWeight: "600", color: "#202223" }}>Pays d'import par défaut</span>
+          <select value={country} onChange={e => changeCountry(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+            {PAYS_KEYS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <span style={{ fontSize: "11px", color: "#6D7175" }}>Les nouvelles variantes en héritent ; chaque variante reste surchargeable.</span>
         </div>
-      )}
+
+        {/* D2 : taux fees de la boutique (intrants de la sync marge réelle) */}
+        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+          <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Vos taux de frais</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "11px", color: "#6D7175" }}>
+              <div style={{ marginBottom: "4px" }}>Frais Shopify (% des ventes)</div>
+              <input type="text" inputMode="decimal" value={feeForm.shopify_fee_pct} onChange={setFee("shopify_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 2" />
+            </label>
+            <label style={{ fontSize: "11px", color: "#6D7175" }}>
+              <div style={{ marginBottom: "4px" }}>Frais du processeur (% des ventes)</div>
+              <input type="text" inputMode="decimal" value={feeForm.processor_fee_pct} onChange={setFee("processor_fee_pct")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 1,5" />
+            </label>
+            <label style={{ fontSize: "11px", color: "#6D7175" }}>
+              <div style={{ marginBottom: "4px" }}>Fixe processeur (par transaction)</div>
+              <input type="text" inputMode="decimal" value={feeForm.processor_fixed_fee} onChange={setFee("processor_fixed_fee")} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 0,25" />
+            </label>
+            <button
+              onClick={() => feesFetcher.submit({ _action: "set_fees", ...feeForm }, { method: "POST", encType: "application/json" })}
+              disabled={feesFetcher.state !== "idle"}
+              style={{ padding: "7px 14px", background: feesFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: feesFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: feesFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+              {feesFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer les taux"}
+            </button>
+            {feesFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Taux enregistrés.</span>}
+            {feesFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {feesFetcher.data.warning}</span>}
+            {feesFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{feesFetcher.data.error}</span>}
+          </div>
+          <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+            Frais fixe du processeur : {formatMoney(parseFloat(String(feeForm.processor_fixed_fee).replace(",", ".")) || 0, feesCurrency)} par transaction. Ces taux s'appliquent aux prochaines synchronisations. Les commandes déjà analysées conservent les taux en vigueur au moment de leur calcul.
+          </div>
+        </div>
+
+        {/* Seuil de rentabilité (% global boutique) — pilote l'email quotidien B7 ET l'audit catalogue */}
+        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+          <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Seuil de rentabilité</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "11px", color: "#6D7175" }}>
+              <div style={{ marginBottom: "4px" }}>Seuil de marge nette (% des ventes)</div>
+              <input type="text" inputMode="decimal" value={thresholdForm} onChange={e => setThresholdForm(e.target.value)} style={{ ...inputStyle, width: "90px" }} placeholder="ex : 15" />
+            </label>
+            <button
+              onClick={() => thresholdFetcher.submit({ _action: "set_profitability_threshold", profitability_threshold_pct: thresholdForm }, { method: "POST", encType: "application/json" })}
+              disabled={thresholdFetcher.state !== "idle"}
+              style={{ padding: "7px 14px", background: thresholdFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: thresholdFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: thresholdFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+              {thresholdFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le seuil"}
+            </button>
+            {thresholdFetcher.data?.success && <span style={{ fontSize: "12px", color: "#008060" }}>✓ Seuil enregistré.</span>}
+            {thresholdFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {thresholdFetcher.data.warning}</span>}
+            {thresholdFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{thresholdFetcher.data.error}</span>}
+          </div>
+          <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+            L'email quotidien de rentabilité se déclenche quand la marge nette cumulée d'un produit passe sous ce seuil ; l'audit catalogue l'utilise aussi pour classer vos produits. <strong>0 %</strong> = alerte uniquement à perte réelle (marge négative).
+          </div>
+        </div>
+
+        {/* CPA prescriptif : CPA actuel déclaré (B6) — Expert uniquement (C3), suit B5 : son seul
+            usage est la comparaison au plafond, désormais Expert-only. Action gardée côté serveur. */}
+        {isExpert && (
+        <div style={{ padding: "12px 14px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #E4E5E7", marginBottom: "16px" }}>
+          <div style={{ fontSize: "12px", fontWeight: "600", color: "#202223", marginBottom: "10px" }}>Votre CPA d'acquisition actuel</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "14px", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "11px", color: "#6D7175" }}>
+              <div style={{ marginBottom: "4px" }}>CPA par commande ({feesCurrency})</div>
+              <input type="text" inputMode="decimal" value={cpaForm} onChange={e => setCpaForm(e.target.value)} style={{ ...inputStyle, width: "110px" }} placeholder="ex : 25" />
+            </label>
+            <button
+              onClick={() => cpaFetcher.submit({ _action: "set_current_cpa", current_cpa: cpaForm }, { method: "POST", encType: "application/json" })}
+              disabled={cpaFetcher.state !== "idle"}
+              style={{ padding: "7px 14px", background: cpaFetcher.state !== "idle" ? "#E4E5E7" : "#008060", color: cpaFetcher.state !== "idle" ? "#6D7175" : "#fff", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: "600", cursor: cpaFetcher.state !== "idle" ? "default" : "pointer", fontFamily: "inherit" }}>
+              {cpaFetcher.state !== "idle" ? "Enregistrement…" : "Enregistrer le CPA"}
+            </button>
+            {cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#6D7175" }}>CPA effacé.</span>}
+            {cpaFetcher.data?.success && !cpaFetcher.data?.cleared && <span style={{ fontSize: "12px", color: "#008060" }}>✓ CPA enregistré.</span>}
+            {cpaFetcher.data?.warning && <span style={{ fontSize: "12px", color: "#B98900" }}>⚠ {cpaFetcher.data.warning}</span>}
+            {cpaFetcher.data?.error && <span style={{ fontSize: "12px", color: "#D72C0D" }}>{cpaFetcher.data.error}</span>}
+          </div>
+          <div style={{ fontSize: "11px", color: "#6D7175", marginTop: "10px", lineHeight: "1.5" }}>
+            Saisissez le montant <strong>dans la devise de votre boutique ({feesCurrency})</strong>. Si votre compte publicitaire facture dans une autre devise, convertissez d'abord, sinon la comparaison avec votre plafond serait faussée. Laissez vide pour ne pas déclarer de CPA.
+          </div>
+        </div>
+        )}
+      </div>
     </div>
   );
 }

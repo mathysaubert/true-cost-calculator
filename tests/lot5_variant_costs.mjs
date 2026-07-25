@@ -6,7 +6,7 @@
 
 import {
   estimateVariantCost, validateCostRow, parseCostsCsv, buildCostsCsv, reconcileEstimatedCost,
-  buildCostRowsForDisplay,
+  buildCostRowsForDisplay, productCostStatus,
   PAYS_KEYS, CATEGORIE_KEYS, VAT_REGIMES, SHIPPING_MODELS, CSV_COLUMNS,
 } from "../app/lib/variantCosts.js";
 import { SHIPPING_ESTIMATES } from "../app/lib/engine.js";
@@ -41,9 +41,16 @@ console.log("\n── Validation ──");
   const bad = validateCostRow({ prix_achat: "-5", port_entrant: "x", qty_par_lot: "1.5", cout_emballage: "0", vat_regime: "tva", shipping_model: "avion", pays_import: "Mars", categorie: "Licorne" });
   ok(bad.value === null, "ligne invalide rejetée (value null)");
   ok(bad.errors.length === 7, `7 erreurs distinctes remontées — prix/port/qty/vat/shipping/pays/catégorie (${bad.errors.length})`);
-  ok(bad.errors.some(m => m.includes("prix_achat")), "prix négatif refusé");
+  ok(bad.errors.some(m => m.includes("prix d'achat fournisseur")), "prix négatif refusé (message dédié)");
   ok(bad.errors.some(m => m.includes("qty_par_lot")), "qty non entière refusée");
   ok(bad.errors.some(m => m.includes("pays_import")), "pays hors domaine refusé");
+
+  // Intégrité (ère XV) : prix d'achat ≤ 0 = coût fictif → refusé, message dédié, zéro écriture.
+  const base = { port_entrant: "8", qty_par_lot: "1", cout_emballage: "0", vat_regime: "assujetti", shipping_model: "dropshipping", pays_import: "Chine", categorie: "Sport" };
+  const zero = validateCostRow({ ...base, prix_achat: "0" });
+  ok(zero.value === null, "prix d'achat 0 → ligne refusée (coût fictif)");
+  ok(zero.errors.some(m => m.includes("Indiquez le prix d'achat fournisseur")), "prix 0 → message « Indiquez le prix d'achat fournisseur »");
+  ok(validateCostRow({ ...base, prix_achat: "0,01" }).value !== null, "prix d'achat > 0 (0,01) accepté");
 
   ok(VAT_REGIMES.length === 2 && SHIPPING_MODELS.length === 2, "enums vat/shipping fermés");
   ok(PAYS_KEYS.includes("Chine") && CATEGORIE_KEYS.includes("Autre"), "domaines pays/catégorie = clés moteur");
@@ -135,6 +142,17 @@ console.log("\n── buildCostRowsForDisplay : suggestion display-only vs ligne
   const a = JSON.stringify(buildCostRowsForDisplay({ variants, storedMap: new Map(), defaultCountry: "Chine" }));
   const b = JSON.stringify(buildCostRowsForDisplay({ variants, storedMap: new Map(), defaultCountry: "Chine" }));
   ok(a === b, "pur : appels répétés identiques (aucun effet de bord, aucune écriture)");
+}
+
+// ── productCostStatus : complétude d'un produit (« renseigné » = saisie marchand seulement) ──
+console.log("\n── productCostStatus : complet / partiel / à compléter ──");
+{
+  ok(productCostStatus([{ source: "confirmed" }, { source: "imported" }]).key === "complete", "toutes confirmées/importées → complete");
+  ok(productCostStatus([{ source: "estimated" }, { source: "estimated" }]).key === "todo", "toutes estimées (suggestion) → à compléter");
+  ok(productCostStatus([{ source: "estimated" }]).key === "todo" && productCostStatus([]).key === "todo", "estimée seule / aucune variante → à compléter");
+  const partial = productCostStatus([{ source: "confirmed" }, { source: "estimated" }, { source: "estimated" }]);
+  ok(partial.key === "partial" && partial.label === "Partiel : 1 variante sur 3", "1 confirmée sur 3 → « Partiel : 1 variante sur 3 »");
+  ok(productCostStatus([{ source: "confirmed" }, { source: "confirmed" }, { source: "estimated" }]).label === "Partiel : 2 variantes sur 3", "pluriel « 2 variantes »");
 }
 
 console.log("\n" + "═".repeat(66));

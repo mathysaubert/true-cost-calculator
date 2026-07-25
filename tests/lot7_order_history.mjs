@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot7_order_history.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { aggregateOrderMargins, formatMoney, lineBreakdown, groupLinesByFingerprint } from "../app/lib/orderHistory.js";
+import { aggregateOrderMargins, formatMoney, lineBreakdown, groupLinesByFingerprint, computeCostReliability } from "../app/lib/orderHistory.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -328,6 +328,44 @@ console.log("\n── [CENTIME] somme des produits = total, à 3 niveaux ──"
   // Niveau 3 : idem pour le CA net.
   const sumProdRev = a.byProduct.reduce((s, x) => s + x.net_revenue, 0);
   ok(cents(sumProdRev) === cents(a.totals.net_revenue), `niveau 3 : Σ produits = total CA net (${a.totals.net_revenue})`);
+}
+
+// ── [R] computeCostReliability : compteur de fiabilité (point 4, option A) ──────────────────
+// X % = CA confirmed+imported / CA chiffré (confirmed+imported+estimated). missing hors % (CA null),
+// comptés à part. Top-3 « à compléter » par UNITÉS vendues, missing prioritaire. Aucun recalcul.
+console.log("\n── [R] computeCostReliability : X %, missing à part, top-3 par unités ──");
+{
+  // Mélange : confirmed 60 + imported 40 (= 100 « sûrs »), estimated 100 (chiffré mais non sûr) → 100/200 = 50 %.
+  const rel = computeCostReliability([
+    row({ order: "O1", product: "P1", rev: 60, source: "confirmed", qty: 2 }),
+    row({ order: "O2", product: "P2", rev: 40, source: "imported",  qty: 1 }),
+    row({ order: "O3", product: "P3", rev: 100, source: "estimated", qty: 3 }),
+    // missing : CA null (comme à l'ingestion) → hors dénominateur, compté à part.
+    { shop_domain: "s", order_id: "O4", product_id: "P4", effective_qty: 9, line_net_revenue: null, line_net_margin: null, cost_source: "missing" },
+  ]);
+  ok(Math.round(rel.reliabilityPct) === 50, `X % = 50 (100 sûrs / 200 chiffrés) — reçu ${Math.round(rel.reliabilityPct)}`);
+  ok(rel.confirmedRevenue === 100 && rel.pricedRevenue === 200, "dénominateur = chiffré (200), numérateur = confirmé+importé (100)");
+  ok(rel.missingCount === 1 && rel.missingProducts[0].product_id === "P4", "missing compté à part (P4), jamais dans le %");
+  // Top-3 par unités : P4(9) > P3(3) ; P1/P2 sont confirmés/importés → hors « à compléter ».
+  ok(rel.topIncomplete.length === 2, "top à compléter = seulement estimated+missing (P3, P4)");
+  ok(rel.topIncomplete[0].product_id === "P4" && rel.topIncomplete[0].status === "missing", "1er = P4 (9 unités), status missing (marge inconnue)");
+  ok(rel.topIncomplete[1].product_id === "P3" && rel.topIncomplete[1].status === "estimated", "2e = P3 (3 unités), status estimated");
+
+  // Cas TOUT-MISSING : aucune ligne chiffrée → pct null (l'UI montre l'invite, pas un %).
+  const allMissing = computeCostReliability([
+    { shop_domain: "s", order_id: "M1", product_id: "P1", effective_qty: 5, line_net_revenue: null, line_net_margin: null, cost_source: "missing" },
+    { shop_domain: "s", order_id: "M2", product_id: "P2", effective_qty: 2, line_net_revenue: null, line_net_margin: null, cost_source: "missing" },
+  ]);
+  ok(allMissing.reliabilityPct === null, "tout-missing → reliabilityPct null (pas de division 0/0)");
+  ok(allMissing.missingCount === 2 && allMissing.hasSales === true, "tout-missing → 2 produits à renseigner, ventes présentes");
+
+  // Borne 100 % : aucune ligne estimated/missing → pct 100, rien à compléter.
+  const full = computeCostReliability([ row({ order: "F1", product: "P1", rev: 80, source: "confirmed" }) ]);
+  ok(Math.round(full.reliabilityPct) === 100 && full.topIncomplete.length === 0 && full.missingCount === 0, "100 % → aucun produit à compléter");
+
+  // Aucune vente : pct null, hasSales false (l'UI montre « synchronisez »).
+  const none = computeCostReliability([]);
+  ok(none.reliabilityPct === null && none.hasSales === false && none.missingCount === 0, "aucune vente → null, hasSales false");
 }
 
 console.log("\n" + "═".repeat(66));

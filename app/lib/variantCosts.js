@@ -109,6 +109,22 @@ export function buildCostRowsForDisplay({ variants = [], storedMap, defaultCount
   });
 }
 
+// ── Statut de complétude des coûts d'UN produit (liste du Suivi, ère XV) — PUR ───────────────
+// Sur les lignes AFFICHÉES d'un produit (buildCostRowsForDisplay). « Renseigné » = source marchand
+// (confirmed | imported) ; une suggestion estimée ou une variante non stockée reste « à compléter ».
+//   toutes renseignées      → { key:"complete", label:"Coûts complets" }
+//   aucune renseignée       → { key:"todo",     label:"À compléter" }
+//   partiel                 → { key:"partial",  label:"Partiel : N variantes sur M" }
+const MERCHANT_SOURCES = new Set(["confirmed", "imported"]);
+export function productCostStatus(variantRows = []) {
+  const total = variantRows.length;
+  const done  = variantRows.filter((r) => MERCHANT_SOURCES.has(r.source)).length;
+  if (total === 0)     return { key: "todo", label: "À compléter", done: 0, total: 0 };
+  if (done === total)  return { key: "complete", label: "Coûts complets", done, total };
+  if (done === 0)      return { key: "todo", label: "À compléter", done, total };
+  return { key: "partial", label: `Partiel : ${done} ${done > 1 ? "variantes" : "variante"} sur ${total}`, done, total };
+}
+
 // ── Validation d'un jeu de coûts (saisie UI ou ligne CSV) ───────────────────
 // Renvoie { value, errors } : value = objet nettoyé prêt à persister (champs
 // PERSISTED_COLUMNS), errors = liste de messages lisibles (jamais d'avalage silencieux).
@@ -129,7 +145,9 @@ function enumField(raw, label, allowed, errors) {
 export function validateCostRow(raw = {}) {
   const errors = [];
   const value = {
-    prix_achat:     numField(raw.prix_achat,     "prix_achat",     { min: 0 }, errors),
+    // prix_achat parsé sans borne basse ici (min négatif large) → le contrôle d'intégrité ci-dessous
+    // donne UN message unifié pour tout prix ≤ 0 (le scandale des marges gonflées « confirmées »).
+    prix_achat:     numField(raw.prix_achat,     "prix_achat",     { min: -MAX_AMOUNT }, errors),
     port_entrant:   numField(raw.port_entrant,   "port_entrant",   { min: 0 }, errors),
     qty_par_lot:    numField(raw.qty_par_lot,    "qty_par_lot",    { min: 1, max: 1000000, integer: true }, errors),
     cout_emballage: numField(raw.cout_emballage, "cout_emballage", { min: 0 }, errors),
@@ -138,6 +156,12 @@ export function validateCostRow(raw = {}) {
     pays_import:    enumField(raw.pays_import,    "pays_import",    PAYS_KEYS, errors),
     categorie:      enumField(raw.categorie,      "categorie",      CATEGORIE_KEYS, errors),
   };
+  // Intégrité (ère XV) : un prix d'achat ≤ 0 = coût fictif. Refus explicite → JAMAIS de ligne persistée
+  // (confirmée ou importée) à marge gonflée. Vaut pour le repli du panneau (suggestion 0 sans unitCost)
+  // comme pour l'import CSV. La variante fautive n'est pas écrite ; les autres du produit le sont.
+  if (value.prix_achat != null && value.prix_achat <= 0) {
+    errors.push("Indiquez le prix d'achat fournisseur");
+  }
   return { value: errors.length ? null : value, errors };
 }
 
