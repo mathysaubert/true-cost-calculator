@@ -3462,7 +3462,7 @@ export default function Index() {
             </div>
 
             <div style={{ fontSize: "13px", color: "#6D7175", marginBottom: "12px", lineHeight: "1.6" }}>
-              L'alerte apparaît en rouge en haut de l'app à chaque connexion, sur les 20 derniers calculs.
+              L'alerte apparaît en rouge en haut de l'app à chaque connexion, sur les 20 derniers calculs. Vous recevez aussi ces alertes par email, à l'adresse de votre boutique Shopify. Pensez à vérifier vos courriers indésirables lors du premier envoi.
             </div>
 
             {/* Contrat de déclenchement (même contenu que l'email d'alerte, ère XV) */}
