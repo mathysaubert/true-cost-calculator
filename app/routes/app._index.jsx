@@ -34,6 +34,10 @@ import { resolveEntitlement } from "../lib/plan.server";
 import { planToOrderCap, alertingEnabled, previousMonth } from "../lib/plan.js";
 import { betaTrialOverride } from "../lib/betaShops.js";
 
+// Même pattern que les crons : l'action de sync (backfill_orders) peut retenir la requête ~25 s
+// (poll bulk) — 60 s est un plafond, pas une réservation (sans effet sur les requêtes courtes).
+export const config = { maxDuration: 60 };
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_ALERT_THRESHOLD = 25;

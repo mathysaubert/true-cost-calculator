@@ -9,6 +9,7 @@
 // Entrées : { admin } (client Admin GraphQL, online OU offline), supabase (service role),
 //            shop (shop_domain). Sortie : { success, ingested?, orders?, message?, error? }.
 import { parseBulkJsonl, buildOrderHistoryRows, countDistinctOrders } from "./orderIngest.js";
+import { decideBulkResume } from "./bulkResume.js";
 
 export async function syncShopOrders({ admin, supabase, shop }) {
   // Fenêtre J-30 en UTC, ISO 8601 explicite (filtre Shopify created_at en UTC).
@@ -31,15 +32,37 @@ export async function syncShopOrders({ admin, supabase, shop }) {
     processorFixedFee: plan?.processor_fixed_fee ?? 0.25,
   };
 
-  // Une seule bulk op QUERY par boutique à la fois : ne pas lancer en double.
+  // ── Reprise (P0 audit) : lire l'op courante AVANT toute création — decideBulkResume (pur, lot22).
+  // Ne JAMAIS créer par-dessus une op RUNNING ; reprendre une op COMPLETED de NOTRE requête non
+  // encore ingérée au lieu de l'écraser (sinon : relance infinie dès que le bulk dépasse le budget
+  // de poll). Lecture d'état KO → cur null → 'create' (comportement d'avant : on tente la création).
+  let cur = null;
   try {
-    const cr = await admin.graphql(`{ currentBulkOperation(type: QUERY) { id status } }`);
-    const cj = await cr.json();
-    const cur = cj.data?.currentBulkOperation;
-    if (cur && (cur.status === "RUNNING" || cur.status === "CREATED")) {
-      return { success: false, error: "Une synchronisation est déjà en cours. Réessayez dans un instant." };
-    }
+    const cr = await admin.graphql(`{ currentBulkOperation(type: QUERY) { id status errorCode url query } }`);
+    cur = (await cr.json()).data?.currentBulkOperation ?? null;
   } catch (e) { console.error("[Backfill] currentBulkOperation:", e?.message); }
+  // « Déjà ingérée ? » : couple (bulk_operation_id, status) DÉJÀ persisté par ce module — lu
+  // seulement quand une op COMPLETED est là (aucune requête ajoutée sur le chemin courant).
+  let syncState = null;
+  if (cur?.status === "COMPLETED") {
+    const { data } = await supabase.from("order_sync_state")
+      .select("bulk_operation_id, status, window_start").eq("shop_domain", shop).maybeSingle();
+    syncState = data ?? null;
+  }
+  const decision = decideBulkResume({ op: cur, state: syncState });
+  if (decision === "busy") {
+    return { success: false, error: "Une synchronisation est déjà en cours. Réessayez dans un instant." };
+  }
+  if (decision === "ingest") {
+    // Reprise : fenêtre d'ORIGINE de l'op si connue (refunds cohérents avec ses commandes),
+    // sinon fenêtre courante. Échec de téléchargement (URL expirée ~7 j, réseau) → op FRAÎCHE
+    // dans la même invocation (P0.7) : jamais de boucle sur une URL morte.
+    try {
+      return await ingestBulkResult({ admin, supabase, shop, op: cur, bulkId: cur.id, windowStart: syncState?.window_start ?? windowStart, shopSettings });
+    } catch (e) {
+      console.error(`[Backfill] reprise op ${cur.id} KO, création d'une op fraîche:`, e?.message);
+    }
+  }
 
   // Connexions SANS first: (le bulk paginera) ; __typename pour le re-stitch.
   // Bulk = orders + lineItems UNIQUEMENT. refunds est une LISTE contenant des
@@ -60,18 +83,24 @@ export async function syncShopOrders({ admin, supabase, shop }) {
       } }
     }
   }`;
-  const runResp = await admin.graphql(
-    `mutation Run($q: String!) { bulkOperationRunQuery(query: $q) { bulkOperation { id status } userErrors { field message } } }`,
-    { variables: { q: bulkQuery } }
-  );
-  const runJson = await runResp.json();
-  const userErrors = runJson.data?.bulkOperationRunQuery?.userErrors ?? [];
-  if (userErrors.length) {
-    await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "failed", window_start: windowStart, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
-    return { success: false, error: "Requête bulk refusée : " + userErrors.map(e => e.message).join(" ; ") };
+  let bulkId;
+  if (decision === "poll") {
+    // Notre op tourne déjà (reprise) : AUCUNE création — on entre directement dans le poll.
+    bulkId = cur.id;
+  } else {
+    const runResp = await admin.graphql(
+      `mutation Run($q: String!) { bulkOperationRunQuery(query: $q) { bulkOperation { id status } userErrors { field message } } }`,
+      { variables: { q: bulkQuery } }
+    );
+    const runJson = await runResp.json();
+    const userErrors = runJson.data?.bulkOperationRunQuery?.userErrors ?? [];
+    if (userErrors.length) {
+      await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "failed", window_start: windowStart, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
+      return { success: false, error: "Requête bulk refusée : " + userErrors.map(e => e.message).join(" ; ") };
+    }
+    bulkId = runJson.data?.bulkOperationRunQuery?.bulkOperation?.id ?? null;
+    await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "running", window_start: windowStart, bulk_operation_id: bulkId }, { onConflict: "shop_domain" });
   }
-  const bulkId = runJson.data?.bulkOperationRunQuery?.bulkOperation?.id ?? null;
-  await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "running", window_start: windowStart, bulk_operation_id: bulkId }, { onConflict: "shop_domain" });
 
   // Poll jusqu'à COMPLETED (budget temps ; en local/dev pas de timeout serverless).
   let op = null;
@@ -89,8 +118,19 @@ export async function syncShopOrders({ admin, supabase, shop }) {
     await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: st, bulk_operation_id: bulkId, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
     return { success: false, error: st === "running" ? "Synchronisation en cours, relancez dans un instant." : `Bulk échoué (${op?.status ?? "?"} ${op?.errorCode ?? ""}).` };
   }
+  return await ingestBulkResult({ admin, supabase, shop, op, bulkId, windowStart, shopSettings });
+}
+
+// ── Téléchargement + ingestion d'une op COMPLETED — extraction À L'IDENTIQUE de la fin de
+// syncShopOrders (Phase 0 I2) : le chemin normal (post-poll) ET la reprise passent ici — aucune
+// logique d'ingestion dupliquée. Corps inchangé ; seuls la signature et l'en-tête ajoutés par
+// l'extraction. Peut THROW (fetch du download) : l'appelant « reprise » catch → op fraîche.
+async function ingestBulkResult({ admin, supabase, shop, op, bulkId, windowStart, shopSettings }) {
   if (!op.url) { // COMPLETED sans url = zéro résultat
-    await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "completed", window_start: windowStart, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
+    // ÉCART d'extraction assumé (rapport) : bulk_operation_id ajouté — sans lui, un état purgé
+    // (désinstallation) + une vieille op zéro-résultat encore COMPLETED = reprise en boucle sans
+    // jamais créer d'op fraîche (« déjà ingérée » exige le couple id+completed persisté).
+    await supabase.from("order_sync_state").upsert({ shop_domain: shop, status: "completed", window_start: windowStart, bulk_operation_id: bulkId, last_backfill_at: new Date().toISOString() }, { onConflict: "shop_domain" });
     return { success: true, ingested: 0, orders: 0, message: "Aucune commande sur les 30 derniers jours." };
   }
 
