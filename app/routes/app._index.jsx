@@ -32,6 +32,7 @@ import { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPane
 import { computeCpaTargets } from "../lib/cpaTargets.js";
 import { resolveEntitlement } from "../lib/plan.server";
 import { planToOrderCap, alertingEnabled, previousMonth } from "../lib/plan.js";
+import { betaTrialOverride } from "../lib/betaShops.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -887,6 +888,8 @@ export const action = async ({ request }) => {
       plan: PLAN_EXPERT,
       isTest: await isDevStore(admin), // dev store → test ; toute incertitude → false (facturation réelle)
       returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
+      // Boutique bêta (BETA_SHOPS) → essai 45 j fusionné par-dessus la config ; sinon {} → config (7 j).
+      ...betaTrialOverride(session.shop, process.env.BETA_SHOPS),
     });
     return null;
   }
