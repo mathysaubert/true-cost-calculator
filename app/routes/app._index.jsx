@@ -1777,7 +1777,7 @@ function LineGroupCard({ group }) {
           perdue. Valeurs STOCKÉES. Capé à GROUP_ORDER_CAP pour borner le DOM à l'échelle. */}
       <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed #E4E5E7" }}>
         <div style={{ fontSize: "10px", fontWeight: "700", color: "#6D7175", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>{multi ? `Commandes concernées (${group.count})` : "Commande"}</div>
-        <div style={{ overflowX: "auto" }}>
+        <div className="tcc-scroll-x" style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "380px" }}>
             <thead><tr style={{ borderBottom: "1px solid #E4E5E7" }}>
               <th style={oth}>Commande</th><th style={oth}>Date</th><th style={oth}>Qté</th><th style={{ ...oth, textAlign: "right" }}>CA net</th><th style={{ ...oth, textAlign: "right" }}>Marge de ligne</th>
@@ -1968,7 +1968,7 @@ function MarginMonitor({ orderMargins, orderMarginsTotal, orderMarginsCapped, or
               {/* table-layout fixe + width:100% → la table épouse la largeur du conteneur (colonne
                   principale Polaris, ~640px), les colonnes prenant leur part en %. minWidth 480 = plancher :
                   la table ne descend pas sous 480 (au-delà, overflowX prend le relais sur très petits écrans). */}
-              <div style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
+              <div className="tcc-scroll-x" style={{ overflowX: "auto", border: "1px solid #E4E5E7", borderRadius: "8px" }}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "480px", tableLayout: "fixed" }}>
                   <thead><tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E4E5E7" }}>
                     <th style={{ ...th, width: cw.prod }}>Produit</th><th style={{ ...th, width: cw.ventes }}>Ventes</th><th style={{ ...th, width: cw.marge }}>Marge nette</th><th style={{ ...th, width: cw.pct }}>% marge</th>{isExpert && <th style={{ ...th, width: cw.dispo }} title={`Ce qu'il vous reste sur chaque vente une fois tous vos coûts payés ET votre objectif de marge (${formatPct(thresholdPct)} %) atteint. C'est votre budget publicité par vente. C'est la marge au-delà de votre objectif, pas la marge avant de perdre de l'argent.`}>Reste pour la pub</th>}<th style={{ ...th, width: cw.etat }}>État</th>
@@ -2868,6 +2868,8 @@ export default function Index() {
   return (
     <s-page heading="Calculateur de Vraie Marge">
       <style>{`
+        /* Ceinture iOS : coupe le text-autosizing Safari (texte gonflé sur débordement, il survit au changement d'onglet). Sans effet sinon. */
+        html { -webkit-text-size-adjust: 100%; }
         @media (max-width: 768px) {
           /* ── Form / Calculator ── */
           .tcc-form-grid    { grid-template-columns: 1fr !important; }
@@ -2900,6 +2902,9 @@ export default function Index() {
 
           /* ── ROAS ── */
           .tcc-roas-num     { font-size: 38px !important; letter-spacing: -1px !important; }
+
+          /* ── Suivi des coûts : wrappers des tables à minWidth — width:0 annule la contribution min-content vers les ancêtres, min-width:100% ré-étire au parent : la table défile DANS le wrapper, le viewport ne s'élargit plus. ── */
+          .tcc-scroll-x { width: 0 !important; min-width: 100% !important; max-width: 100% !important; }
 
           /* ── Prevent iOS auto-zoom on input focus ── */
           input, select, textarea { font-size: 16px !important; }

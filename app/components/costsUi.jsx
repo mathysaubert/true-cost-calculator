@@ -158,7 +158,7 @@ export function ProductCostPanel({ product, draft = {}, onEdit, onSave, saving, 
       <div style={{ fontSize: "11px", color: "#6D7175", marginBottom: "10px", lineHeight: "1.5" }}>
         Ces coûts servent à calculer votre vraie marge sur chaque commande. Renseignez les coûts que Shopify ne connaît pas. Les valeurs grisées sont des suggestions : tapez pour les remplacer. Rien n'est enregistré tant que vous ne cliquez pas sur « Enregistrer ce produit ».
       </div>
-      <div style={{ overflowX: "auto" }}>
+      <div className="tcc-scroll-x" style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "820px" }}>
           <thead>
             <tr style={{ background: "#F9FAFB" }}>
