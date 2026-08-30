@@ -2871,6 +2871,9 @@ export default function Index() {
         /* Ceinture iOS : coupe le text-autosizing Safari (texte gonflé sur débordement, il survit au changement d'onglet). Sans effet sinon. */
         html { -webkit-text-size-adjust: 100%; }
         @media (max-width: 768px) {
+          /* Contention : un débordement invisible (~100px, encapsulation App Bridge/iOS, hors dépôt) élargissait le viewport du WebView en portrait. clip (pas hidden) : pas de conteneur de défilement, sticky intact ; les défilements voulus vivent dans .tcc-scroll-x (overflow local). */
+          body { overflow-x: clip; }
+
           /* ── Form / Calculator ── */
           .tcc-form-grid    { grid-template-columns: 1fr !important; }
           .tcc-cost-grid    { grid-template-columns: 1fr !important; }
