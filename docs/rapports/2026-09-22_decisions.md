@@ -331,3 +331,30 @@ de l'application) :
 GO d'écriture reçu : migrations F1 + `lot23_schema` + module `schema.js` + chiffrement + webhooks
 (fichiers écrits, rien appliqué, rien committé — second GO requis pour appliquer, troisième pour
 committer).
+
+---
+
+## D. Arbitrages F3 — moteur économique (2026-09-22)
+
+Rapport de Phase 0 : `docs/rapports/2026-09-22_f3-moteur_phase0.md`.
+
+| # | Décision | Conséquence dans F3 |
+|---|---|---|
+| A1 | Tout en **TTC** pour ROAS : BE-ROAS = CA TTC ÷ CM2, ROAS cible et POAS sur la même base ; exemple §22 réécrit (119 ÷ 64,17 ≈ **1,85**) | Le MER reste sur CA **HT** (l'exemple « 1 ÷ 0,15 ≈ 6,67 » l'exige, la commission étant sur le HT) — seul écart, documenté. |
+| A2 | COGS sur `quantité − unités restockées` via `RefundLineItem.restockType` ; repli `quantité − remboursées` si absent | F2 devra remonter `restockType` ; `line.js` accepte `restocked_qty` nullable. |
+| A3 | Règle de port marchand par pays (`shipping_cost_rules`), pré-remplie « = port facturé au client » marquée « à confirmer » | Addendum F1 : colonne JSONB ; `dataGaps.unconfirmed_shipping`. |
+| A4 | Emballage par commande (`packaging_cost_per_order`), surcharge optionnelle par variante | Addendum F1 : colonne ; `cout_emballage` variante = surcharge. |
+| A5 | Allocation au prorata du CA HT de ligne (D3) | `allocate.js`. |
+| A6 | Coûts fixes au niveau boutique seulement ; pas de résultat net par produit en V1 | `net_result` produit = non applicable. |
+| A7 | Chaque règle de code présente s'applique ; base = CA HT produits hors port | `aggregate.js`, `commission_base` par règle. |
+| A8 | Taux de TVA standard du pays du marchand (table des 27 dans `econ/`), taux réduits FR conservés ; `engine.js` à 0 diff | `vat.js` ; `computeLandedCost(…, vatRate, …)`. |
+| A9 | `shop_country_code` rempli depuis `shop.billingAddress.countryCode` à la première sync ; hors UE : pas de taxe d'import dans le modèle V1, le marchand qui ne la récupère pas l'inclut dans `duty_rate_pct` (texte d'aide) | Addendum F1 : colonne ; `line.js` formule générique. |
+| A10 | Ventes provisoires comptées partout, retours = 0, `provisional_share` + marquage | `aggregate.js`. |
+| A11 | Seuils `minData` acceptés, avec : (1) chaque nœud dit précisément ce qui manque (« encore 12 commandes ») ; (2) une seule table de configuration modifiable sans toucher au moteur | `econ/config.js` (MIN_DATA) + `minData.js`. |
+| A12 | Objectif saisi par le marchand (`profitability_threshold_pct`) + bande fixe 40-60 en rappel | `config.js` (BENCHMARKS). |
+| A13-A15 | Ouverts, à représenter au chantier concerné (croissance, POAS/attribution, jointure UTM) | V1 du moteur : POAS sur UTM (exact), croissance glissante par défaut — révisables. |
+| A16 | Remboursements nettés sur le **jour de la commande** (confirmé) | `aggregate.js`, feuilles par jour. |
+| A17 | Heures ouvrées = heures d'horloge des jours **lundi-vendredi**, fuseau boutique (confirmé) | `businessHoursBetween`. |
+
+Implémentation : `docs/rapports/2026-09-22_f3-moteur_implementation.md`. Addendum F1 appliqué
+(test puis prod) le 2026-09-22, rollback prouvé sur la base de test.

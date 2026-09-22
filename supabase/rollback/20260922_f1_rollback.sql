@@ -11,6 +11,15 @@
 -- en production l'écrit (set_shipping_model) : la retirer casserait l'app. Sur une base rejouée
 -- depuis zéro elle reste donc après rollback, sans effet (colonne nullable avec défaut).
 
+-- 0. Addendum F3 (F1-24) : colonnes de réglages ajoutées à shop_settings — retirées AVANT la table
+--    (sans effet si la table est ensuite supprimée, mais le rollback reste correct si l'addendum
+--    est appliqué seul sur une base où F1 est conservée).
+ALTER TABLE IF EXISTS public.shop_settings
+  DROP COLUMN IF EXISTS shipping_cost_rules,
+  DROP COLUMN IF EXISTS packaging_cost_per_order,
+  DROP COLUMN IF EXISTS return_cost_per_return,
+  DROP COLUMN IF EXISTS shop_country_code;
+
 -- 1. Fonctions RGPD (F1-23)
 DROP FUNCTION IF EXISTS public.redact_customer(TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.purge_shop(TEXT);

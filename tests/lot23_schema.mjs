@@ -33,7 +33,7 @@ const createdTables = (sql) => [...sql.matchAll(/CREATE TABLE(?: IF NOT EXISTS)?
 // ── 1. RLS + deny_public_access sur chaque table F1 ──
 console.log("\n── 1. RLS deny-all sur chaque table créée par F1 ──");
 {
-  ok(f1Files.length === 23, `23 migrations F1 présentes (trouvées : ${f1Files.length})`);
+  ok(f1Files.length === 24, `24 migrations F1 présentes (23 + addendum F3) (trouvées : ${f1Files.length})`);
   let tables = 0;
   for (const f of f1Files) {
     const sql = read(f);
@@ -170,6 +170,10 @@ console.log("\n── 8. Rollback F1 (supabase/rollback) ──");
   const vcExt = read("20260922_f1_13_variant_costs_extend.sql");
   const vcAdded = [...vcExt.matchAll(/ADD COLUMN IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
   ok(vcAdded.every((c) => omDropped.includes(c)), "les 4 colonnes ajoutées à variant_costs sont retirées");
+  const addendum = read("20260922_f1_24_addendum_f3.sql");
+  const addAdded = [...addendum.matchAll(/ADD COLUMN IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+  ok(addAdded.length === 4 && addAdded.every((c) => omDropped.includes(c)), "les 4 colonnes de l'addendum F3 (shop_settings) sont retirées par le rollback");
+  ok(!/CREATE TABLE/i.test(addendum) && /ALTER TABLE public\.shop_settings/.test(addendum), "addendum F3 : uniquement des colonnes sur shop_settings (aucune table nouvelle)");
   const f1Indexes = f1Files.flatMap((f) => [...read(f).matchAll(/CREATE INDEX IF NOT EXISTS (\w+) ON public\.(order_margins|variant_costs)/g)].map((m) => m[1]));
   ok(f1Indexes.every((i) => rb.includes(`DROP INDEX IF EXISTS public.${i}`)), "les index F1 posés sur les tables historiques sont retirés");
   ok(!/DROP COLUMN IF EXISTS shipping_model/.test(rb) && /shipping_model n'est PAS retirée/.test(rb), "shop_plans.shipping_model conservée (pré-existante en prod) et documentée");
