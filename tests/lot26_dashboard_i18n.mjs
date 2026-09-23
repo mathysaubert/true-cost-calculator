@@ -96,7 +96,9 @@ const F4_FILES = [
   const missingDyn = need.filter((k) => !enKeys.has(k));
   ok(missingDyn.length === 0, `membres des familles dynamiques présents (${need.length})${missingDyn.length ? " — absents : " + missingDyn.join(", ") : ""}`);
   const used = new Set([...literal, ...navLabels, ...need]);
-  const orphan = [...enKeys].filter((k) => !used.has(k) && !families.some((p) => k.startsWith(p)));
+  // Préfixes réservés à la couche narrative I0 (consommés par le lot 27, écrans en I0-B).
+  const RESERVED = ["insight.", "learn.", "situation.", "confidence.", "factor.", "reference.", "cta.", "impact.", "unlock."];
+  const orphan = [...enKeys].filter((k) => !used.has(k) && !families.some((p) => k.startsWith(p)) && !RESERVED.some((p) => k.startsWith(p)));
   ok(orphan.length === 0, `aucune clé orpheline dans en.js${orphan.length ? " — " + orphan.join(", ") : ""}`);
 }
 

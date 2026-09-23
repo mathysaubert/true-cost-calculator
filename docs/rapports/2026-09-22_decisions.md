@@ -459,7 +459,14 @@ Phase 0 : `docs/rapports/2026-09-23_f4-a_retours-clics_phase0.md`. Implémentati
 | R7 | Navigation cible : 12 sections (Overview, Profit, Growth, Customers, Products, Inventory, Marketing, Cash, Intelligence, Simulator, Experiments, Settings) ; ordre de construction Overview, Profit, Growth, Products, Marketing, Intelligence, Simulator, puis Customers et Inventory ; non livrées grisées « Bientôt » ; écran classique jusqu'à F4-D ; Tableau de bord renommé Vue d'ensemble (`/app/overview`, `/app/dashboard` redirige) | `sections.js`, `app.jsx`, catalogues |
 | R8 | Écart accepté à consigner : `s-app-nav` ne sait ni griser ni badger → menu admin = sections livrées, nav complète « Bientôt » dans le rail app-owned ; prénom = propriétaire de la boutique (`shop.shopOwnerName`), l'API User admin ne donne pas le prénom du membre | rapport d'implémentation §4.4 |
 
-En attente : correspondance des écrans du brief non nommés (rapport d'implémentation §5, options A/B).
+## H. Correspondance des écrans du brief (2026-09-23) : option A partout
+
+Retours → Profit ; Expédition → Stock (« Opérations » à terme) ; SEO → Croissance ; Alertes →
+Intelligence (état) + Réglages (seuils) ; Leviers → Intelligence ; Conversion → Croissance ;
+Réglages des coûts → Réglages > Coûts ; Connexions pub et Search Console → Réglages > Connexions ;
+Codes promo et partenaires → Marketing (saisie dans Réglages). Navigation hybride en trois groupes
+(Piloter / Explorer / Système) décidée le 2026-09-23 : voir `2026-09-23_i0_copilote_phase0.md` §5.4
+(arbitrages I0 en attente).
 
 Réponses courtes « Data protection details » (niveau 1) :
 
