@@ -82,5 +82,9 @@ export const ORDER_MARGINS_SNAPSHOT_COLUMNS = [
   "cm2_alloc",
 ];
 
+// Colonnes de FAITS mutables d'order_margins (quantités remboursées) : les seules que la sync v2
+// (F2) a le droit de mettre à jour après l'insertion — jamais une colonne de snapshot (lot25).
+export const ORDER_MARGINS_MUTABLE_COLUMNS = ["refunded_qty", "effective_qty"];
+
 // Valeurs d'exclusion d'une commande (brief §9) — miroir du CHECK de orders.excluded_reason.
 export const ORDER_EXCLUSION_REASONS = ["test", "cancelled", "gift_card_only", "draft", "b2b"];

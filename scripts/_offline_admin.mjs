@@ -4,7 +4,7 @@
 // l'app dans le dev store pour le rafraîchir, puis relance. probeToken() valide AVANT toute écriture.
 import prisma from "../app/db.server.js";
 
-const API_VERSION = "2025-10"; // = ApiVersion.October25 (app/shopify.server.js)
+const API_VERSION = "2026-01"; // = ApiVersion.January26 (app/shopify.server.js, F2 décision B2)
 
 // Retourne { admin, expires } — admin.graphql(query, { variables }) mime le client Shopify (Response.json()).
 export async function offlineAdmin(shop) {

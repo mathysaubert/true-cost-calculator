@@ -5,13 +5,14 @@
 // par une nouvelle création. Testé lot22 ; couvre les trois déclencheurs (bouton, cron, recalc)
 // puisqu'ils convergent tous vers syncShopOrders.
 
-// Marqueurs de NOTRE requête bulk de sync (orderSync.server.js, bulkQuery). currentBulkOperation
-// est déjà scopée à l'app sur ce shop : les marqueurs n'excluent qu'une future AUTRE requête bulk
-// de l'app. Ils doivent tous apparaître — lot22 vérifie qu'ils matchent le bulkQuery réel du
-// source (toute dérive de la requête qui casserait la reconnaissance fait rougir le test).
+// Marqueurs de NOTRE requête bulk de sync (sync/queries.js, ORDER_NODE_FIELDS). Les ops sont déjà
+// scopées à l'app sur ce shop : les marqueurs n'excluent qu'une future AUTRE requête bulk de l'app
+// (et l'ancienne requête 30 j, qui ne portait pas customerJourneySummary : jamais consommée). Ils
+// doivent tous apparaître — lot22 vérifie qu'ils matchent la requête réelle (toute dérive qui
+// casserait la reconnaissance fait rougir le test).
 export const SYNC_QUERY_MARKERS = [
-  'orders(query: "created_at:>=',
   "discountedUnitPriceAfterAllDiscountsSet",
+  "customerJourneySummary",
 ];
 
 export function isOurSyncQuery(query) {

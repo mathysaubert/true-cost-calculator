@@ -6,14 +6,21 @@ application_url = "https://true-cost-calculator-silk.vercel.app"
 embedded = true
 
 [access_scopes]
-# read_products,read_inventory : audit catalogue + coûts par variante (Brique A).
-# read_orders : monitor de marge réelle sur les vraies commandes (Brique B).
-#   Fenêtre 30 j ⊂ 60 j → read_orders suffit, read_all_orders NON requis (historique long = v1.1).
-#   read_orders lit UNIQUEMENT des champs financiers/line-items (id, dates, devise, quantités, prix,
-#   remboursements) — AUCUNE donnée personnelle de client (ni nom/email/adresse, ni IP/navigateur/
-#   géoloc/OS). La déclaration Protected Customer Data (Partner Dashboard) doit être MINIMISÉE en
-#   conséquence : ne cocher aucun champ de données client (surtout pas IP/géoloc/navigateur/OS).
-scopes = "read_products,read_inventory,read_orders"
+# read_products,read_inventory : audit catalogue + coûts par variante (Brique A), instantané du stock (F2).
+# read_orders : commandes, remboursements, résumé de parcours (UTM), webhooks orders/* et refunds/create.
+#   Fenêtre 60 j par défaut ; read_all_orders (historique 24 mois) sera AJOUTÉ ici après approbation
+#   Shopify (décision B1) — jamais avant : la demande d'un scope non accordé bloque l'installation.
+# read_customers : Order.customer { id } seulement (décision 21) — niveau 1 des données protégées,
+#   AUCUN champ nominatif (ni nom/email/téléphone/adresse). La déclaration Protected Customer Data
+#   (Partner Dashboard) reste au niveau 1 : identifiant client, pays de livraison, résumé de parcours.
+# read_returns : retours et motifs (webhooks returns/*, Order.returns).
+# read_fulfillments : webhooks fulfillments/* et fulfillment_events/create.
+# read_merchant_managed_fulfillment_orders, read_third_party_fulfillment_orders : lecture de
+#   Order.fulfillments (dates d'expédition/livraison) dans le bulk — exigé par l'objet Fulfillment
+#   (vérifié contre le schéma 2026-01, décision B15).
+# read_shopify_payments_accounts : frais réels Shopify Payments (shopifyPaymentsAccount.balanceTransactions,
+#   vérifié contre le schéma 2026-01 : ce n'est PAS read_shopify_payments_payouts — décision B16).
+scopes = "read_products,read_inventory,read_orders,read_customers,read_returns,read_fulfillments,read_merchant_managed_fulfillment_orders,read_third_party_fulfillment_orders,read_shopify_payments_accounts"
 
 [webhooks]
 api_version = "2026-07"
@@ -25,6 +32,34 @@ api_version = "2026-07"
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
+
+  # F2 — commandes : charge utile réduite aux champs lus par le normaliseur (include_fields, B5).
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders"
+  topics = [ "orders/create", "orders/updated", "orders/cancelled" ]
+  include_fields = [
+    "id", "admin_graphql_api_id", "name", "created_at", "processed_at", "cancelled_at", "test",
+    "source_name", "payment_gateway_names", "company", "customer", "currency", "taxes_included",
+    "subtotal_price_set", "total_discounts_set", "total_shipping_price_set", "total_tax_set",
+    "total_price_set", "discount_codes", "shipping_lines", "line_items", "shipping_address",
+    "refunds", "fulfillments", "tags"
+  ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/refunds"
+  topics = [ "refunds/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/returns"
+  topics = [ "returns/request", "returns/approve", "returns/decline", "returns/close", "returns/cancel", "returns/reopen" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/fulfillments"
+  topics = [ "fulfillments/create", "fulfillments/update", "fulfillment_events/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/bulk_operations"
+  topics = [ "bulk_operations/finish" ]
 
   [[webhooks.subscriptions]]
   compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]

@@ -9,19 +9,23 @@
 //       identiques (le dédoublonnage Postgres repose dessus) + scan du source : l'upsert
 //       porte onConflict shop_domain,order_id,line_item_id ET ignoreDuplicates:true
 //       (contrat ON CONFLICT DO NOTHING = jamais de mutation d'un snapshot figé),
-//       marqueurs de reconnaissance présents dans le bulkQuery réel, une SEULE création.
+//       marqueurs de reconnaissance présents dans la requête bulk réelle, une SEULE création.
+//  F2 : la sync vit dans app/lib/sync/ (bulk.server.js, ingest.server.js, queries.js) ;
+//       orderSync.server.js n'est plus qu'un délégué. Le scan T2 suit les fichiers réels.
 //  Pour lancer : node tests/lot22_bulk_resume.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 
 import { readFileSync } from "node:fs";
 import { decideBulkResume, isOurSyncQuery, SYNC_QUERY_MARKERS } from "../app/lib/bulkResume.js";
 import { parseBulkJsonl, buildOrderHistoryRows } from "../app/lib/orderIngest.js";
+import { ordersBulkQuery } from "../app/lib/sync/queries.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
 
-// Requête « nôtre » minimale : porte les DEUX marqueurs (comme le bulkQuery réel, vérifié en T2).
-const OUR_QUERY = `{ orders(query: "created_at:>=2026-07-10T00:00:00.000Z") { edges { node { lineItems { edges { node { discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } } } } } } } } }`;
+// Requête « nôtre » = la requête RÉELLE du générateur (porte les marqueurs, vérifié en T2).
+const OUR_QUERY = ordersBulkQuery({ start: "2026-07-10T00:00:00.000Z", end: "2026-08-10T00:00:00.000Z" });
+const LEGACY_QUERY = `{ orders(query: "created_at:>=2026-07-10T00:00:00.000Z") { edges { node { lineItems { edges { node { discountedUnitPriceAfterAllDiscountsSet { shopMoney { amount } } } } } } } } }`;
 const OTHER_QUERY = `{ products { edges { node { id title } } } }`;
 const OP_ID = "gid://shopify/BulkOperation/111";
 const op = (status, extra = {}) => ({ id: OP_ID, status, query: OUR_QUERY, url: "https://x/y.jsonl", ...extra });
@@ -31,6 +35,7 @@ console.log("\n── T1 : reconnaissance de notre requête ──");
 {
   ok(isOurSyncQuery(OUR_QUERY) === true, "requête portant les deux marqueurs → nôtre");
   ok(isOurSyncQuery(OTHER_QUERY) === false, "requête d'une autre feature → pas la nôtre");
+  ok(isOurSyncQuery(LEGACY_QUERY) === false, "ancienne requête 30 j (sans customerJourneySummary) → pas la nôtre : jamais consommée");
   ok(isOurSyncQuery(null) === false && isOurSyncQuery("") === false, "query null/vide → pas la nôtre (pas de crash)");
   ok(isOurSyncQuery(SYNC_QUERY_MARKERS[0]) === false, "UN seul marqueur ne suffit pas (les deux exigés)");
 }
@@ -99,17 +104,28 @@ console.log("\n── T2 : idempotence d'ingestion (fixtures) ──");
 }
 
 // ── T2 : scan du source — le contrat d'idempotence et la reprise sont bien câblés ──
-console.log("\n── T2 : contrat d'idempotence + câblage de la reprise (scan du source) ──");
+console.log("\n── T2 : contrat d'idempotence + câblage de la reprise (scan du source F2) ──");
 {
-  const src = readFileSync(new URL("../app/lib/orderSync.server.js", import.meta.url), "utf8");
-  const upsertIdx = src.indexOf('.upsert(allRows, { onConflict: "shop_domain,order_id,line_item_id", ignoreDuplicates: true })');
-  ok(upsertIdx !== -1, "upsert order_margins : onConflict (clé unique) + ignoreDuplicates:true → ON CONFLICT DO NOTHING (snapshots jamais mutés)");
-  ok(!/order_margins"\)\s*\n?\s*\.update\(/.test(src), "orderSync : aucun UPDATE sur order_margins (aucun chemin de mutation de snapshot)");
-  ok((src.match(/mutation Run\(\$q/g) ?? []).length === 1, "une SEULE création d'op (un unique site de mutation bulkOperationRunQuery)");
-  ok(src.includes("decideBulkResume({ op: cur, state: syncState })"), "la décision de reprise est appelée à l'ENTRÉE, avant toute création");
+  const strip = (s) => s.replace(/\/\/.*$/gm, "");
+  const ingest = strip(readFileSync(new URL("../app/lib/sync/ingest.server.js", import.meta.url), "utf8"));
+  const bulk = strip(readFileSync(new URL("../app/lib/sync/bulk.server.js", import.meta.url), "utf8"));
+  const queries = readFileSync(new URL("../app/lib/sync/queries.js", import.meta.url), "utf8");
+  const legacy = strip(readFileSync(new URL("../app/lib/orderSync.server.js", import.meta.url), "utf8"));
+  ok(ingest.includes('.upsert(lineRows, { onConflict: "shop_domain,order_id,line_item_id", ignoreDuplicates: true })'),
+    "upsert order_margins : onConflict (clé unique) + ignoreDuplicates:true → ON CONFLICT DO NOTHING (snapshots jamais mutés)");
+  ok((bulk.match(/BULK_RUN_MUTATION/g) ?? []).length === 2 && (queries.match(/bulkOperationRunQuery\(/g) ?? []).length === 1,
+    "une SEULE création d'op (un unique site d'appel de la mutation bulkOperationRunQuery)");
+  ok(bulk.includes("decideBulkResume({ op, state: { bulk_operation_id: job.bulk_operation_id, status: job.status } })"),
+    "la décision de reprise est appelée à l'ENTRÉE (op du job relue par son id), avant toute création");
+  ok(bulk.includes("isOurSyncQuery(o.query)") && bulk.includes('return { op: ours, decision: "busy" }'),
+    "une op de NOTRE sync déjà active → busy, jamais une création par-dessus (B3 : une à la fois)");
+  ok(!bulk.includes("currentBulkOperation") && !ingest.includes("currentBulkOperation") && !queries.includes("currentBulkOperation"),
+    "currentBulkOperation (déprécié) absent : bulkOperation(id:) et bulkOperations (API 2026-01, B2)");
   for (const m of SYNC_QUERY_MARKERS) {
-    ok(src.includes(m), `marqueur « ${m.slice(0, 30)}… » présent dans le bulkQuery réel (la reconnaissance ne peut pas dériver en silence)`);
+    ok(queries.includes(m) && OUR_QUERY.includes(m), `marqueur « ${m.slice(0, 30)}… » présent dans la requête bulk réelle (la reconnaissance ne peut pas dériver en silence)`);
   }
+  ok(legacy.includes("syncNow(") && legacy.includes("export async function syncShopOrders({ admin, supabase, shop })"),
+    "orderSync.server.js : même signature legacy, délègue à syncNow (bouton = cron = recalcul)");
   const route = readFileSync(new URL("../app/routes/app._index.jsx", import.meta.url), "utf8");
   ok(route.includes("export const config = { maxDuration: 60 };"), "route sync : maxDuration 60 (pattern cron) exporté");
 }

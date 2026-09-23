@@ -358,3 +358,79 @@ Rapport de Phase 0 : `docs/rapports/2026-09-22_f3-moteur_phase0.md`.
 
 Implémentation : `docs/rapports/2026-09-22_f3-moteur_implementation.md`. Addendum F1 appliqué
 (test puis prod) le 2026-09-22, rollback prouvé sur la base de test.
+
+---
+
+## E. Arbitrages F2 — sync v2 (2026-09-22)
+
+Rapport de Phase 0 : `docs/rapports/2026-09-22_f2-sync_phase0.md`. Implémentation :
+`docs/rapports/2026-09-22_f2-sync_implementation.md`.
+
+| # | Décision | Conséquence dans F2 |
+|---|---|---|
+| B1 | (a) Backfill borné à 60 jours + webhooks ; à l'approbation de `read_all_orders`, création automatique des fenêtres mensuelles manquantes jusqu'à `history_months` (détection par `app/scopes_update`, repli : replanification quotidienne par le cron) | `windows.js` (`backfillPlan`), `jobs.server.js` (`planBackfill`), `webhooks.app.scopes_update.jsx`. `read_all_orders` n'est PAS dans le TOML avant approbation. |
+| B2 | (a) `apiVersion` 2026-01 ; `bulkOperation(id:)` et `bulkOperations` ; `currentBulkOperation` supprimé | `shopify.server.js`, `sync/queries.js`. Cohabitation notée : webhooks sérialisés en 2026-07 (`[webhooks].api_version`), requêtes en 2026-01. |
+| B3 | (a) Fenêtres mensuelles séquentielles, une op à la fois | `advanceBackfill` : au plus un job `orders_backfill` en cours. |
+| B4 | (a) Remboursements par requête paginée ; retours par requête paginée (leurs lignes sont une connexion de profondeur 3, interdite en bulk) ; `Order.fulfillments` dans le bulk avec `deliveredAt` lu directement (les événements ne servent qu'au temps réel) | `pullRefundsForWindow`, `pullReturnsForWindow`, `fulfillmentFromGraphql`. |
+| B5 | (c) Traitement en ligne dans le handler + `waitUntil` (`@vercel/functions` ajouté) pour les écritures secondaires ; `include_fields` sur `orders/*` | Routes `webhooks.*.jsx`, `background.server.js`. Un échec d'écriture répond 500 → Shopify réessaie ; l'événement `failed` est retraité. |
+| B6 | (a) Hobby : cron quotidien 05:00, 300 s par invocation, ré-invocation signée pour les boutiques restantes ; architecture inchangée pour Pro | `api.cron.sync.jsx`, `vercel.json`. Fluid compute à vérifier (rapport §5). |
+| B7 | (a) Double écriture dans `order_margins` : colonnes legacy (`buildHistoryRow`) + colonnes F1 (`computeLineEconomics`), jusqu'à F4 | `normalize.js` (`normalizeOrder`). Seules `refunded_qty`, `effective_qty` sont mises à jour après insertion (`ORDER_MARGINS_MUTABLE_COLUMNS`). |
+| B8 | (a) `order_sync_state` toujours alimentée ; `sync_jobs` source de vérité ; suppression en F4 | `bulk.server.js` (`legacyState`). |
+| B9 | (a) Réconciliation quotidienne `updated_at` depuis le curseur moins un jour ; re-tirage des attributions non prêtes de moins de 30 jours ; frais Shopify Payments depuis J-7 | `reconcileWindow`, `repullJourneys`, `pullFees`. |
+| B10 | (c) Instantané quotidien du stock seul (webhook `inventory_levels/update` non abonné en V1) | `snapshotInventory` (`productVariants`, quantité agrégée). |
+| B11 | (a) Dernier écrit gagne, clé `refund_id` ; quantités par ligne recalculées depuis tous les remboursements réglés | `ingestRefunds`. |
+| B12 | (a) Remboursement orphelin stocké, rattaché quand le backfill apporte la commande (quantités relues à l'ingestion de la commande) ; (b) vérifié sur la boutique de dev : voir le rapport d'implémentation | `ingestOrders` lit `refunds` avant de figer les lignes. |
+| B13 | (a) Tous les scopes en `scopes` | `shopify.app.toml`. |
+| B14 | (a) Fuseau figé à la première sync, jamais recalculé | `loadShopContext` ne remplit que les valeurs absentes. |
+| B15 | **Nouveau, tranché par le schéma** : `Order.fulfillments` exige un scope de commandes d'exécution ; ajoutés `read_merchant_managed_fulfillment_orders` et `read_third_party_fulfillment_orders` (3PL) en plus de `read_fulfillments` (webhooks) | `shopify.app.toml`. À confirmer par Mathys (sinon retirer `fulfillments` du bulk : l'OTD ne viendrait que des webhooks). |
+| B16 | **Nouveau, tranché par le schéma** : `shopifyPaymentsAccount` exige `read_shopify_payments_accounts` (ou `read_shopify_payments`), pas `read_shopify_payments_payouts` | `shopify.app.toml` ; la liste de la décision 21 est corrigée en conséquence. |
+| B17 | **Nouveau** : `purchasingEntity { __typename }` seul (B2B détecté sans `read_companies`) ; `purchasing_company_id` reste vide en V1 | `queries.js`, `normalize.js`. |
+
+Variable Vercel `SCOPES` : à aligner sur le TOML au déploiement (R7 : action de Mathys).
+
+### E.1 Données clients protégées — niveau 1 : quoi cocher, quoi coller
+
+Parcours (doc « Work with protected customer data », vérifié le 2026-09-22) : Partner Dashboard →
+Apps → True Cost Calculator → **API access requests** → carte **Protected customer data access**
+→ **Request access**.
+
+Cases à cocher :
+
+1. **Protected customer data** : OUI (c'est le niveau 1). Motifs proposés par le formulaire :
+   cocher **App functionality** (les indicateurs de l'app) et **Analytics** (agrégats par cohorte) ;
+   ne pas cocher Marketing, ni Advertising, ni « Sharing with third parties ».
+2. **Protected customer fields** (niveau 2) : **ne cocher AUCUN champ** : ni Name, ni Address, ni
+   Phone, ni Email. (La demande de niveau 2 pour ShopifyQL, §B.2, est un dossier séparé, à ne
+   déposer qu'au chantier Conversion.)
+3. **Data protection details** : répondre aux questions du niveau 1 (minimisation, transparence,
+   finalités, consentement, chiffrement) ; les cinq réponses courtes sont ci-dessous.
+
+Champs effectivement lus (à citer si le formulaire le demande) : `Order.customer.id`,
+`Order.shippingAddress.countryCodeV2` (code pays seul), `Order.customerJourneySummary`
+(source de trafic, UTM, rang de commande), webhooks `orders/*` limités par `include_fields` aux
+mêmes champs. Aucun nom, e-mail, téléphone, adresse, IP, navigateur ni géolocalisation.
+
+Texte à coller (motif d'usage) :
+
+> True Cost Calculator computes contribution margins and retention metrics for the merchant who
+> installed the app. To do so, we process protected customer data at level 1 only: the customer
+> ID on each order (to count new versus returning customers, build monthly cohorts, and compute
+> lifetime value), the shipping country code (margin by destination country and shipping cost
+> rules), and the order's customer journey summary (traffic source and UTM parameters, to
+> attribute orders to marketing channels). We do not request, read, or store any name, email,
+> phone number, street address, IP address, browser or geolocation data. Webhook payloads are
+> restricted with include_fields to the same fields. Data is used exclusively to display
+> metrics to the merchant, is never shared or sold, is encrypted in transit (TLS) and at rest
+> (Supabase, Vercel), and is deleted on uninstall and on the shop/redact and customers/redact
+> webhooks, which are implemented.
+
+Réponses courtes « Data protection details » (niveau 1) :
+
+> Minimum data: customer ID, country code and journey summary only; no identifying fields.
+> Transparency: our privacy policy lists the fields processed and the purpose (profitability and
+> retention metrics for the merchant).
+> Purpose limitation: data is processed only to compute and display metrics inside the app.
+> Consent: we do not market to customers; opt-out decisions are respected because no customer
+> is contacted or profiled outside the merchant's own store metrics.
+> Encryption: TLS in transit; encrypted at rest on Supabase (Postgres) and Vercel; third-party
+> tokens are encrypted with AES-256-GCM before storage.
