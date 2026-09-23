@@ -134,6 +134,60 @@ note la mémoire du projet (jeton offline expirant, rafraîchi à l'ouverture de
 autre action tentée. À prouver après déploiement (liste §6, point 9), ou avant si vous ouvrez
 l'app dans la boutique de dev et me demandez de relancer le script.
 
+### 4.5 Preuves après déploiement sur la boutique de dev (2026-09-23)
+
+Contexte : commit `eb03762` déployé sur Vercel (success), `SCOPES` alignée, Fluid compute vérifié
+(région dub1), `shopify app deploy --allow-updates` → version `true-cost-calculator-42` active,
+app ouverte et scopes approuvés par Mathys. `CRON_SECRET` n'est pas sur le poste : le dispatcher
+a été exécuté localement pour la seule boutique de dev (mêmes modules que la route, base de prod,
+jeton offline lu sans être affiché) ; la boutique de revue Shopify (jeton expiré depuis le 20/09)
+n'a pas été touchée.
+
+| Point §6 | Résultat |
+|---|---|
+| 1 Ré-autorisation | Session offline de la boutique de dev : les 9 scopes du TOML ; jeton valide (HTTP 200). |
+| 2 Abonnements | Non listables par `webhookSubscriptions` (la doc le confirme : les abonnements TOML n'y figurent pas) ; prouvés par les livraisons du point 11. |
+| 8 / 10 Réconciliation | Job `orders_incremental` `completed` en 7 s : 6 commandes, 6 lignes ; `order_sync_state` `completed` (B8) ; `shop_settings` remplie (fuseau America/New_York, USD, US). |
+| 11 Fin d'op par webhook | 4 `BULK_OPERATIONS_FINISH` reçus par la prod et traités en 1 à 2 s chacun ; les 3 fenêtres de backfill se sont enchaînées seules (09:40:18, :21, :26) sans cron. |
+| 9 B12 (b) | `order(id:)` sur une commande du 18/07 (67 jours) → `null` sans erreur : la limite de 60 jours vaut aussi par id. (b) est impossible ; (a) reste le seul chemin. |
+| Attribution | `customer_order_index = 1` et `attribution_ready = true` fournis par le bulk (résumé de parcours) ; aucun candidat au re-tirage (commandes de plus de 30 jours). |
+| Frais | `skipped: no_shopify_payments` (attendu sur une boutique de dev). |
+| Stock | 26 variantes capturées pour le 2026-09-23 (`tracked`, `available`, `in_stock` ; `cost_per_unit` vide : aucun coût par article saisi). |
+
+Constats à retenir :
+
+- Les 6 commandes de la boutique de dev sont des commandes brouillon (`shopify_draft_order`) :
+  toutes portent `excluded_reason = 'draft'` (brief §9). Une commande passée au checkout d'une
+  boutique de dev est marquée `test` et sera exclue de même. Les faits sont stockés ; seuls les
+  KPI les ignorent. Pour voir des KPI sur la boutique de dev, F4 devra prévoir un réglage
+  « inclure les commandes test/brouillon » réservé aux boutiques de développement (arbitrage F4).
+- Les 20 lignes `order_margins` legacy ne sont pas réécrites (contrat DO NOTHING) : leurs colonnes
+  F1 restent vides. Le recalcul des marges estimées (point 13) les recréerait avec les colonnes
+  F1 ; à déclencher sur décision.
+- `ca_ht = total_ttc` sur ces commandes : aucune ligne de taxe dans la boutique de dev.
+Points 3, 5, 6, 7 (commande #1022 créée par Mathys : client rattaché, expédiée avec suivi,
+livrée, retour #1022-R1 motif défectueux, remboursée avec remise en stock) :
+
+| Point §6 | Résultat en base |
+|---|---|
+| 3 Commande temps réel | `orders` #1022 en 5 s après création (`ingested_at` 09:46:50 pour `created_at` 09:46:45) : `day_local`, `ca_ht` 600, client présent, `excluded_reason = 'draft'` (brouillon), `attribution_ready = false` (webhook, re-tirage différé). Ligne `order_margins` `breakdown_version = 2`, `cost_source = 'missing'` (aucun coût de variante saisi sur la boutique de dev). 14 webhooks traités entre 86 ms et 1 157 ms (limite 5 s). |
+| 5 Remboursement | `refunds` : `settled = true`, `total_refunded` 600, ligne `restock_type = 'return'`, transaction REFUND/SUCCESS. `order_margins.refunded_qty` 1, `effective_qty` 0 ; snapshot intact (`computed_at` 09:46:50 antérieur au remboursement 09:55:10). |
+| 6 Retour | `returns` #1022-R1 : `status = CLOSED`, ligne `return_reason = 'DEFECTIVE'`, `closed_at` posé, lignes conservées à la clôture (fusion). `requested_at` vide : le retour a été approuvé sans demande préalable (`returns/approve` puis `returns/close`) ; amélioration possible : poser `requested_at` à l'approbation. |
+| 7 Expédition | `fulfillments` : `created_at` 09:49:25, transporteur DPD Local, numéro de suivi, `status = SUCCESS`, `delivered_at` 09:51:03 posé par `fulfillment_events/create` (DELIVERED). `promised_at` vide (aucune promesse réglée) ; `country_code` vide (adresse absente du webhook sans approbation niveau 1). |
+| 4 Doublon | **Prouvé** : rejeu vers la prod d'une livraison `orders/updated` signée HMAC avec le `X-Shopify-Webhook-Id` d'un événement déjà traité → HTTP 200 en 1,3 s, `webhook_events.processed_at` inchangé, `orders.updated_at` inchangée. Un premier essai avec un secret périmé dans `.env` local avait reçu 401 : la vérification HMAC rejette une signature invalide sans rien écrire. |
+
+`customers_agg` reste vide : la commande est exclue (brouillon), donc hors cohortes, ce qui est
+le comportement attendu.
+
+| Point §6 | Résultat |
+|---|---|
+| 13 Recalcul des marges estimées | `recalcEstimatedMargins` exécuté pour la boutique de dev (11 s) : 1 ligne recalculable dans la fenêtre de 30 jours (celle de #1022), supprimée puis recréée par la sync v2 avec `breakdown_version = 2`, quantités remboursées conservées (1 remboursée, 0 effective : les remboursements en base sont relus à l'ingestion), 0 ligne restaurée, aucune perte (21 lignes avant et après). Les 20 lignes legacy de juillet sont hors fenêtre : elles gardent leurs colonnes F1 vides, comme attendu du contrat de non-réécriture. |
+
+Observation : quand le poll de repli et le webhook `bulk_operations/finish` traitent la même op,
+les deux ingestions sont idempotentes et le `payload` du job reflète le dernier écrivant (ici
+`inserted = 0` côté poll alors que le webhook avait déjà inséré la ligne). Sans effet sur les
+données ; le compteur mensuel de commandes n'est incrémenté qu'une fois (par l'insertion réelle).
+
 ## 5. Vercel : Fluid compute (B6)
 
 Documentation Vercel lue le 2026-09-22 (`/docs/fluid-compute`, mise à jour 2026-08-24) :
