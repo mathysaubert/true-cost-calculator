@@ -184,7 +184,13 @@ check("insuffisant → is-insufficient, « Not enough data yet: 9 more orders. �
   wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "aov") })),
   (h) => /is-insufficient/.test(h) && /Not enough data yet: 9 more orders\./.test(h));
 check("insuffisant (fr) → « encore 9 commandes »", wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisMissing, "aov") })), (h) => /encore 9 commandes/.test(h));
-check("tuile sans courbe (une seule journée) → aucun svg, valeur présente", wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "ca_ht") })), (h) => !/tcc-spark/.test(h) && /\$600\.00/.test(h));
+check("tuile sans courbe (une seule journée) → aucun svg, valeur présente, aucune sous-ligne de remboursement", wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "ca_ht") })), (h) => !/tcc-spark/.test(h) && /\$600\.00/.test(h) && !/tcc-tile__sub/.test(h));
+const aggRefunded = aggregate({ orders: [mkOrder("r1", "2026-09-10")], lines: [lineFromOrderMarginsRow({ order_id: "r1", line_item_id: "Lr1", product_id: "P", variant_id: "V", quantity: 1, refunded_qty: 1, effective_qty: 0, unit_price_ht: 600, tax_lines: [], cm1_unit: null, cost_source: "missing", breakdown_version: 2, currency_code: "USD", day_local: "2026-09-10" })], settings: ovSettings, window: ovWin, now: ovNow });
+const kpisRefunded = buildKpis({ current: aggRefunded, previous: aggEmpty, window: ovWin });
+check("vrai zéro (option A, fr) : « 0,00 $ » + sous-ligne « 600,00 $ remboursés sur 600,00 $ vendus » en ambre (is-full), data-refunded=\"full\"",
+  wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisRefunded, "ca_ht") })),
+  (h) => /data-refunded="full"/.test(h) && /tcc-tile__value">0,00/.test(h) && /class="tcc-tile__sub is-full">600,00.\$ remboursés sur 600,00.\$ vendus</.test(h));
+check("vrai zéro (en) : « $600.00 refunded out of $600.00 sold »", wrap("en", React.createElement(KpiTile, { kpi: byId(kpisRefunded, "ca_ht") })), (h) => /\$600\.00 refunded out of \$600\.00 sold/.test(h));
 check("thème sombre : wrapper data-theme=\"dark\" rendu (les jetons sombres sont vérifiés par le lot 26)",
   wrap("en", React.createElement(KpiTile, { kpi: byId(kpisFull, "ca_ht") }), "dark"),
   (h) => /class="tcc" data-theme="dark"/.test(h) && /\$1,200\.00/.test(h));
@@ -228,7 +234,7 @@ check("boutique de dev OFF → bandeau info + « Include draft and test orders �
   (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && (h.match(/<s-banner/g) ?? []).length === 1);
 check("emplacements réservés : 7 cartes .tcc-slot, jamais un chiffre, « Disponible avec Intelligence », « Disponible à la prochaine version », badge Bientôt",
   wrap("fr", React.createElement(ReservedSlots)),
-  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 7 && /Disponible avec Intelligence/.test(h) && /Disponible à la prochaine version/.test(h) && (h.match(/Bientôt/g) ?? []).length === 7 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
+  (h) => /<div class="tcc-slots-wrap"><div class="tcc-slots tcc-slots--main">/.test(h) && (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 7 && /Disponible avec Intelligence/.test(h) && /Disponible à la prochaine version/.test(h) && (h.match(/Bientôt/g) ?? []).length === 7 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
 check("bandeau du moteur : 5 étapes numérotées, 15 puces, titre et pied traduits (en)",
   wrap("en", React.createElement(EngineBanner)),
   (h) => /The economics engine behind every section/.test(h) && (h.match(/tcc-engine__step"/g) ?? []).length === 5 && (h.match(/<li>/g) ?? []).length === 15 && /One source of truth/.test(h));

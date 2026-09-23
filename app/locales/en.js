@@ -107,6 +107,7 @@ export default {
   "overview.missing.days_one": "{{count}} more day",
   "overview.missing.days_other": "{{count}} more days",
 
+  "overview.tile.refunds": "{{refunded}} refunded out of {{gross}} sold",
   "overview.delta.vs_prev": "vs previous period",
   "overview.delta.none": "no previous period to compare",
   "overview.spark.title": "{{label}}, daily trend over {{count}} days",

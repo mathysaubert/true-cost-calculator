@@ -38,7 +38,7 @@ export function ReservedSlots({ slots = OVERVIEW_RESERVED }) {
   const aside = slots.filter((s) => s.size === "aside");
   const quarters = slots.filter((s) => s.size === "quarter");
   return (
-    <div className="tcc-stack">
+    <div className="tcc-slots-wrap">
       <div className="tcc-slots tcc-slots--main">
         {main.map((s) => <ReservedSlot key={s.id} slot={s} />)}
         {aside.map((s) => <ReservedSlot key={s.id} slot={s} />)}

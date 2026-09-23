@@ -141,6 +141,8 @@
 
 /* ── Primitives ────────────────────────────────────────────────────────────────────────────── */
 .tcc *, .tcc *::before, .tcc *::after { box-sizing: border-box; }
+/* Toute icône SVG a une taille par défaut (1em) : jamais un SVG sans dimension (retour : icône géante). */
+.tcc svg:not(.tcc-spark) { inline-size: 1em; block-size: 1em; flex: none; }
 .tcc h1, .tcc h2, .tcc h3, .tcc h4, .tcc p, .tcc ul, .tcc ol { margin: 0; }
 .tcc ul, .tcc ol { padding: 0; list-style: none; }
 .tcc a { color: var(--tcc-accent-ink); }
@@ -159,6 +161,7 @@
   font-size: 0.75rem; font-weight: 600; line-height: 1.4;
   background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink);
 }
+.tcc-badge svg { inline-size: 12px; block-size: 12px; }
 .tcc-badge--accent { background: var(--tcc-accent-soft); color: var(--tcc-accent-ink); }
 .tcc-badge--good { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
 .tcc-badge--bad { background: var(--tcc-bad-soft); color: var(--tcc-bad-ink); }
@@ -237,7 +240,7 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 
 /* ── Tuile KPI ─────────────────────────────────────────────────────────────────────────────── */
 .tcc-tile {
-  position: relative; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 8px;
+  position: relative; display: grid; grid-auto-rows: auto; gap: 8px;
   min-block-size: 168px; padding: 16px 16px 12px; overflow: hidden;
   background: var(--tcc-surface); border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius); box-shadow: var(--tcc-shadow);
   --tcc-tone: var(--tcc-section); --tcc-tone-ink: var(--tcc-section-ink); --tcc-tone-soft: var(--tcc-section-soft);
@@ -266,6 +269,8 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-tile__label { font-size: 0.8125rem; font-weight: 600; color: var(--tcc-ink-2); line-height: 1.3; }
 .tcc-tile__value { font: var(--tcc-num); letter-spacing: -0.02em; color: var(--tcc-ink); word-break: break-word; }
 .tcc-tile.is-hero .tcc-tile__value { font: var(--tcc-num-hero); letter-spacing: -0.025em; }
+.tcc-tile__sub { font-size: 0.75rem; line-height: 1.4; color: var(--tcc-ink-2); }
+.tcc-tile__sub.is-full { color: var(--tcc-warn-ink); font-weight: 600; }
 .tcc-tile__status { font-size: 0.8125rem; line-height: 1.45; color: var(--tcc-tone-ink); }
 .tcc-tile__status strong { font-weight: 600; }
 .tcc-tile__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--tcc-ink-3); }
@@ -274,7 +279,7 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-delta--good { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
 .tcc-delta--bad { background: var(--tcc-bad-soft); color: var(--tcc-bad-ink); }
 .tcc-delta--neutral { background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink); }
-.tcc-spark { inline-size: 100%; block-size: 40px; display: block; color: var(--tcc-tone); align-self: end; }
+.tcc-spark { inline-size: 100%; block-size: 40px; display: block; color: var(--tcc-tone); align-self: end; margin-block-start: auto; }
 .tcc-spark__area { fill: url(#tcc-spark-gradient); }
 .tcc-tile__foot { display: flex; justify-content: flex-end; }
 
@@ -306,7 +311,10 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-cta { display: inline-flex; align-items: center; min-block-size: 40px; padding: 0 16px; border-radius: 10px; font-weight: 600; text-decoration: none; background: var(--tcc-accent); color: var(--tcc-accent-contrast); }
 .tcc-cta--ghost { background: var(--tcc-surface-2); color: var(--tcc-accent-ink); border: 1px solid var(--tcc-line); }
 
-.tcc-slots { display: grid; gap: var(--tcc-gap); container-type: inline-size; container-name: tcc-slots; }
+/* Le CONTENEUR de requête est le parent (.tcc-slots-wrap) : une container query ne peut styler que
+   des descendants, jamais l'élément qui porte container-type (retour iPhone : 4 colonnes figées). */
+.tcc-slots-wrap { display: grid; gap: var(--tcc-gap); container-type: inline-size; container-name: tcc-slots; }
+.tcc-slots { display: grid; gap: var(--tcc-gap); }
 .tcc-slots--main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 .tcc-slots--quarters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @container tcc-slots (max-width: 900px) { .tcc-slots--main { grid-template-columns: minmax(0, 1fr); } .tcc-slots--quarters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -321,18 +329,19 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-slot p { font-size: 0.875rem; }
 .tcc-slot strong { color: var(--tcc-ink); }
 
-.tcc-engine { display: grid; gap: 14px; padding: 20px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-engine { display: grid; gap: 14px; padding: 20px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); container-type: inline-size; container-name: tcc-engine; }
 .tcc-engine__head { display: flex; gap: 12px; align-items: flex-start; }
 .tcc-engine__head h3 { font-size: 1rem; font-weight: 700; }
 .tcc-engine__head p { color: var(--tcc-ink-2); font-size: 0.8125rem; }
-.tcc-engine__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: step; container-type: inline-size; }
+.tcc-engine__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .tcc-engine__step { display: grid; gap: 6px; padding: 14px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); border: 1px solid var(--tcc-line); }
 .tcc-engine__step h4 { font-size: 0.875rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .tcc-engine__num { inline-size: 24px; block-size: 24px; border-radius: 8px; display: grid; place-items: center; font-size: 0.75rem; background: var(--tcc-accent-soft); color: var(--tcc-accent-ink); }
 .tcc-engine__step ul { display: grid; gap: 2px; font-size: 0.8125rem; color: var(--tcc-ink-2); padding-inline-start: 14px; list-style: disc; }
 .tcc-engine__foot { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--tcc-good-ink); font-weight: 600; }
-@container (max-width: 900px) { .tcc-engine__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container (max-width: 480px) { .tcc-engine__steps { grid-template-columns: minmax(0, 1fr); } }
+.tcc-engine__foot svg { inline-size: 16px; block-size: 16px; }
+@container tcc-engine (max-width: 900px) { .tcc-engine__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container tcc-engine (max-width: 480px) { .tcc-engine__steps { grid-template-columns: minmax(0, 1fr); } }
 
 .tcc-notes { display: grid; gap: 4px; font-size: 0.8125rem; color: var(--tcc-ink-2); }
 

@@ -190,6 +190,17 @@ boutique de dev ON/OFF/marchande ; 7 emplacements sans aucun chiffre ; bandeau d
 7. **Compteur animé** non réalisé : les valeurs finales sont rendues en SSR (aucun décalage) et
    le budget de mouvement se limite à la cascade et au survol ; à décider en F4-B avec la courbe.
 
+### 4.5 Corrections après tes captures (2026-09-23, ordinateur et iPhone)
+
+| # | Défaut vu | Cause | Correction | Preuve |
+|---|---|---|---|---|
+| 1 | Icône du pied du moteur géante | SVG sans règle de taille (seules les icônes de tuile, marque, emplacement en avaient) | `.tcc svg:not(.tcc-spark)` = 1em par défaut ; pied du moteur 16 px ; badges 12 px | lot 26 : règle présente |
+| 2 | Emplacements réservés et étapes du moteur figés en 4 et 5 colonnes sur iPhone | Une container query ne peut styler que des DESCENDANTS du conteneur ; `.tcc-slots` et `.tcc-engine__steps` étaient à la fois conteneur et cible, et deux blocs `@container` du moteur n'avaient pas de nom | Conteneur = parent (`.tcc-slots-wrap`, `.tcc-engine`) ; blocs nommés ; 2 colonnes sous 900 px, 1 sous 480 px | lot 26 : garde-fou « chaque `@container` nomme un conteneur déclaré et ne cible jamais son propre conteneur ni un modificateur du même bloc », prouvé sur la feuille fautive de `HEAD` (2 blocs sans nom, 3 auto-ciblages détectés) ; `render_check` : `.tcc-slots-wrap` rendu |
+| 3 | « CA net HT 0,00 $ » avec 1 commande, vrai zéro (#1022 remboursée) sans explication | Le remboursement annule la vente : le chiffre est juste mais muet | **Option A** : sous-ligne « {remboursé} remboursés sur {vendu} vendus » sur CA HT, panier moyen, CM2 %, CM3, résultat net dès qu'un remboursement existe sur la période (pas seulement à zéro) ; en ambre et gras quand tout le CA brut est remboursé (`data-refunded="full"`) | lot 26 : #1022 → CA HT 0 « ok » + sous-ligne 600 sur 600 intégral ; partiel 600 sur 704 non intégral ; aucune sous-ligne sans remboursement ; `render_check` : « 600,00 $ remboursés sur 600,00 $ vendus » (fr) et « $600.00 refunded out of $600.00 sold » (en) |
+
+Gate après corrections : lint 0 erreur (431 warnings, tous `prop-types`), 26 lots (lot 26 : 118
+assertions), 57 rendus réels, build OK, zéro diff sur les fichiers protégés.
+
 ## 5. Correspondance à trancher : écrans du brief sans section nommée
 
 | Écran du brief | Option A (recommandée) | Option B | Implication |
@@ -235,7 +246,11 @@ rail défilant, aucun débordement) ; capture de la modale « Voir le calcul ».
 
 ## 7. Ce qui reste
 
-1. Ton GO pour commit unique + push (statut Vercel via l'API GitHub, sans session Vercel).
-2. Preuves §6, puis rapport de preuves.
-3. Arbitrages §5 (correspondance des écrans) et §4.4 point 1 (nav admin).
+Faits le 2026-09-23 (GO reçu, écarts nav admin et prénom acceptés) : **commit `a968f89` poussé
+sur `main`** (35 fichiers) ; déploiement Vercel Production `6617903916` en `success` à 15:33:08
+UTC, lu par l'API GitHub `commits/<sha>/status` (contexte « Vercel »), sans session Vercel. TOML
+inchangé : aucun `shopify app deploy` nécessaire.
+
+1. Preuves §6, puis rapport de preuves.
+2. Arbitrage §5 (correspondance des écrans du brief).
 4. F4-B : grande courbe (Polaris Viz / React 19 / `polarisUrl`), compteur animé éventuel.

@@ -154,6 +154,18 @@ export function calcRows(agg, def) {
   });
 }
 
+// Option A (retour 3) : un vrai zéro s'explique. Sur les KPI de revenu et de marge, quand des
+// remboursements existent sur la période, la tuile porte « {remboursé} remboursés sur {vendu} »
+// (feuilles rembours / ca_brut) ; `full` = tout le CA brut a été remboursé.
+const REFUND_NOTE_IDS = new Set(["ca_ht", "aov", "cm2_pct", "cm3", "net_result"]);
+export function kpiRefunds(agg, def) {
+  if (!REFUND_NOTE_IDS.has(def.id)) return null;
+  const lv = agg?.shop?.leaves ?? {};
+  const refunded = num(lv.rembours), gross = num(lv.ca_brut);
+  if (!(refunded > 0)) return null;
+  return { refunded, gross: gross ?? 0, full: gross != null && refunded >= gross };
+}
+
 // Vue complète des 12 KPI pour la page (valeurs brutes ; le formatage est fait par l'écran).
 export function buildKpis({ current, previous, window } = {}) {
   return KPI_DEFS.map((def) => {
@@ -161,7 +173,8 @@ export function buildKpis({ current, previous, window } = {}) {
     const prev = kpiStatus(previous, def);
     const delta = st.status === "ok" && prev.status === "ok" ? kpiDelta(def, st.value, prev.value) : null;
     const series = st.status === "ok" ? kpiSeries(current, def, window) : null;
-    return { id: def.id, group: def.group, unit: def.unit, primary: def.primary, ...st, previous: prev.status === "ok" ? prev.value : null, delta, series, calc: calcRows(current, def) };
+    const refunds = st.status === "ok" ? kpiRefunds(current, def) : null;
+    return { id: def.id, group: def.group, unit: def.unit, primary: def.primary, ...st, previous: prev.status === "ok" ? prev.value : null, delta, series, refunds, calc: calcRows(current, def) };
   });
 }
 

@@ -167,6 +167,26 @@ console.log("\n── 5. app/styles/overview.css : jetons --tcc-*, contrastes, s
   ok(/transition:[^;]*\b(transform|opacity|background-color|color|box-shadow)\b/.test(CSS) && !/transition:[^;]*\b(width|height|top|margin)\b/.test(CSS), "transitions sur transform/opacity/couleurs seulement");
   ok(/font-variant-numeric:\s*tabular-nums/.test(CSS) && /"Inter"/.test(CSS), "chiffres en tabular-nums, police Inter (déjà chargée)");
   ok(/repeat\(4, minmax\(0, 1fr\)\)/.test(CSS) && /repeat\(2, minmax\(0, 1fr\)\)/.test(CSS) && /@container tcc-group \(max-width: 480px\)/.test(CSS), "grille app-owned 4 / 2 / 1 colonnes par container queries (retour 2)");
+  // Piège des container queries (retour iPhone) : une règle @container ne peut styler que des
+  // DESCENDANTS du conteneur ; le sélecteur qui porte container-name ne doit jamais être ciblé
+  // dans son propre bloc @container, et chaque @container doit nommer un conteneur déclaré.
+  const containers = [...CSS.matchAll(/^([^@{}\n]+)\{[^}]*container-name:\s*([\w-]+)/gm)].map((m) => ({ selectors: m[1].split(",").map((s) => s.trim()), name: m[2] }));
+  const cqBlocks = [...CSS.matchAll(/@container\s+([\w-]+)?\s*\([^)]*\)\s*\{((?:[^{}]*\{[^}]*\})*)/g)].map((m) => ({ name: m[1] ?? null, body: m[2] }));
+  const unnamed = cqBlocks.filter((b) => !b.name);
+  ok(unnamed.length === 0, `chaque @container nomme son conteneur (${cqBlocks.length} blocs)`);
+  const unknown = cqBlocks.filter((b) => b.name && !containers.some((c) => c.name === b.name));
+  ok(unknown.length === 0, `chaque @container vise un conteneur déclaré${unknown.length ? " — " + unknown.map((b) => b.name).join(", ") : ""}`);
+  const selfTargets = [];
+  for (const b of cqBlocks) {
+    const c = containers.find((x) => x.name === b.name); if (!c) continue;
+    const inner = [...b.body.matchAll(/([^{}]+)\{/g)].flatMap((m) => m[1].split(",").map((s) => s.trim()));
+    // Cible interdite : le conteneur lui-même, ou un modificateur BEM du même bloc (.x--y porte aussi .x).
+    const own = c.selectors.map((s) => new RegExp("^" + s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(--[\\w-]+)?(\\.[\\w-]+)*$"));
+    for (const s of inner) if (own.some((re) => re.test(s))) selfTargets.push(`${b.name}: ${s}`);
+  }
+  ok(selfTargets.length === 0, `aucune @container ne cible son propre conteneur${selfTargets.length ? " — " + selfTargets.join(", ") : ""}`);
+  ok(/\.tcc svg:not\(\.tcc-spark\)\s*\{[^}]*inline-size: 1em/.test(CSS), "toute icône SVG a une taille par défaut (retour : icône géante du pied du moteur)");
+  ok(/\.tcc-slots-wrap \{[^}]*container-name: tcc-slots/.test(CSS) && /\.tcc-engine \{[^}]*container-name: tcc-engine/.test(CSS), "emplacements réservés et bandeau du moteur : conteneur = parent, s'empilent sur conteneur étroit");
 }
 
 // ── 6. Adaptateur ligne stockée → ligne moteur (C7) ──
@@ -260,6 +280,16 @@ console.log("\n── 10. buildKpis : vide / legacy / coûts manquants / coûts 
   ok(k2.cm3.status === "unknown" && k2.cm3.reason === "costs" && k2.cm3.unknown_cost_lines === 1, "CM3 : inconnu, 1 ligne sans coût");
   ok(k2.cvr.status === "unavailable" && k2.cvr.source === "sessions" && k2.cac_global.status === "unavailable", "CVR / CAC : sources non connectées");
   ok(k2.ca_ht.series === null, "série : une seule journée non nulle → pas de mini-courbe");
+  ok(k2.ca_ht.refunds === null, "aucun remboursement → aucune sous-ligne");
+  // Option A (retour 3) : #1022 vendue 600 puis remboursée 600 → vrai zéro expliqué.
+  const l1022 = [lineFromOrderMarginsRow({ ...row1022, order_id: "o1", day_local: "2026-09-10" })];
+  const on1022 = ordersForEngine([orderRows[0]], { includeTestOrders: true, lines: l1022 });
+  const e1022 = aggregate({ orders: on1022.orders, lines: l1022, settings, window: win, now });
+  const kr = Object.fromEntries(buildKpis({ current: e1022, previous: e1, window: win }).map((k) => [k.id, k]));
+  ok(kr.ca_ht.status === "ok" && kr.ca_ht.value === 0 && kr.ca_ht.refunds && close(kr.ca_ht.refunds.refunded, 600) && close(kr.ca_ht.refunds.gross, 600) && kr.ca_ht.refunds.full === true, "vrai zéro : CA HT 0 « ok » avec sous-ligne 600 remboursés sur 600 vendus, intégral");
+  ok(kr.orders.refunds === null && kr.aov.status === "insufficient" && !kr.aov.refunds, "sous-ligne réservée aux KPI de revenu/marge affichés (commandes : non ; panier moyen insuffisant : rien)");
+  const kp = Object.fromEntries(buildKpis({ current: aggregate({ orders: [...on1022.orders, orderRows[4]], lines: [...l1022, lineO5], settings, window: win, now }), previous: e1, window: win }).map((k) => [k.id, k]));
+  ok(kp.ca_ht.refunds && close(kp.ca_ht.refunds.refunded, 600) && close(kp.ca_ht.refunds.gross, 704) && kp.ca_ht.refunds.full === false, "remboursement partiel de la période : 600 sur 704 vendus, non intégral");
   // État 3 : 12 commandes à coût connu, 10 avant → séries, écarts, calcul.
   const many = Array.from({ length: 12 }, (_, i) => ({ order_id: `m${i}`, day_local: `2026-09-${String(10 + i).padStart(2, "0")}`, created_at: `2026-09-${String(10 + i).padStart(2, "0")}T10:00:00Z`, excluded_reason: null, currency_code: "USD", discounts_amount: 0, shipping_charged: 0, customer_order_index: 1 }));
   const manyLines = many.map((o) => lineFromOrderMarginsRow({ ...row1022, order_id: o.order_id, line_item_id: `L${o.order_id}`, quantity: 1, refunded_qty: 0, effective_qty: 1, unit_price_ht: 100, cm1_unit: 60, cost_source: "confirmed", day_local: o.day_local }));

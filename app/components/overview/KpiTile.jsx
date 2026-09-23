@@ -53,7 +53,7 @@ export function KpiTile({ kpi, index = 0 }) {
   const sparkTitle = kpi.series ? t("overview.spark.title", { label, count: int(kpi.series.length) }) : null;
 
   return (
-    <article className={cls} data-kpi={kpi.id} data-i={index}>
+    <article className={cls} data-kpi={kpi.id} data-i={index} data-refunded={kpi.refunds?.full ? "full" : undefined}>
       <header className="tcc-tile__head">
         <span className="tcc-tile__icon"><Icon id={kpi.id} /></span>
         <h3 className="tcc-tile__label">{label}</h3>
@@ -61,6 +61,9 @@ export function KpiTile({ kpi, index = 0 }) {
       {value != null
         ? <div className="tcc-tile__value">{value}</div>
         : <p className="tcc-tile__status"><strong>{status ?? t("common.na")}</strong></p>}
+      {value != null && kpi.refunds && (
+        <p className={`tcc-tile__sub${kpi.refunds.full ? " is-full" : ""}`}>{t("overview.tile.refunds", { refunded: byUnit(kpi.refunds.refunded, "money"), gross: byUnit(kpi.refunds.gross, "money") })}</p>
+      )}
       <div className="tcc-tile__meta">
         {d && (
           <>
