@@ -21,6 +21,7 @@ export function I18nProvider({ locale = DEFAULT_LOCALE, catalogs = {}, currency 
       delta: (v, opts) => fmt.formatDelta(v, locale, { pointsLabel: t("common.points"), ...opts }),
       day: (d, opts) => fmt.formatDay(d, locale, { timeZone, ...opts }),
       dateTime: (d) => fmt.formatDateTime(d, locale, { timeZone }),
+      relative: (d, now) => fmt.formatRelative(d, locale, now),
       byUnit: (v, unit) => fmt.formatByUnit(v, unit, locale, currency),
     };
   }, [locale, catalogs, currency, timeZone]);

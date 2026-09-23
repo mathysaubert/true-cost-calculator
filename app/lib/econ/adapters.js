@@ -1,4 +1,4 @@
-// ── Adaptateurs faits stockés → entrées du moteur — PUR (arbitrages C6, C7 de F4) ─────────────
+// ── Adaptateurs faits stockés → entrées du moteur — PUR (arbitrages C6, C7 de F4, retour 1) ────
 // aggregate() consomme la forme de computeLineEconomics ; order_margins v2 ne stocke pas tout.
 // Dérivations et approximations DOCUMENTÉES (Phase 0 F4 §5.2) :
 //   revenue_units        = effective_qty (même définition D4)                                  exact
@@ -9,6 +9,8 @@
 //   unit_price_original_ht = null → remise par ligne = 0 ; la remise de COMMANDE
 //                          (orders.discounts_amount) est réinjectée au niveau boutique/jour (C7b)
 // Une ligne sans breakdown_version (ingérée avant F2) n'est PAS convertible : null + compteur.
+// Retour 1 (principe 5) : une commande dont AUCUNE ligne n'est analysable sort de tous les KPI,
+// compte de commandes compris, avec la raison interne « legacy » (jamais écrite en base).
 import { evaluate } from "./nodes.js";
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -18,6 +20,8 @@ const round2 = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 export const LINE_ENGINE_VERSION_MIN = 2;
 // Raisons d'exclusion qu'une boutique de DÉVELOPPEMENT peut réintégrer (C6). Jamais les autres.
 export const DEV_INCLUDABLE_REASONS = ["draft", "test"];
+// Raison INTERNE (mémoire seulement) : commande sans ligne analysable par le moteur v2.
+export const LEGACY_REASON = "legacy";
 
 export function lineFromOrderMarginsRow(row) {
   if (!row || row.breakdown_version == null || num(row.breakdown_version) < LINE_ENGINE_VERSION_MIN) return null;
@@ -54,16 +58,20 @@ export function linesFromOrderMarginsRows(rows = []) {
   return { lines, legacy };
 }
 
-// Commandes stockées → commandes moteur : port remboursé (table refunds), remappage C6.
+// Commandes stockées → commandes moteur : port remboursé (table refunds), remappage C6, retour 1.
 //   includeTestOrders : true SEULEMENT si la boutique est une boutique de développement (garde en amont).
-export function ordersForEngine(rows = [], { refunds = [], includeTestOrders = false } = {}) {
+//   lines : lignes moteur (sortie de linesFromOrderMarginsRows) ; si fournies, une commande incluse
+//           sans aucune ligne analysable reçoit la raison interne « legacy » et sort des KPI.
+export function ordersForEngine(rows = [], { refunds = [], includeTestOrders = false, lines = null } = {}) {
   const shippingRefunded = new Map();
   for (const r of refunds) if (r?.settled !== false) shippingRefunded.set(r.order_id, (shippingRefunded.get(r.order_id) ?? 0) + num(r.shipping_refunded));
-  const excluded = { test: 0, draft: 0, cancelled: 0, gift_card_only: 0, b2b: 0 };
+  const analyzable = lines ? new Set(lines.filter((l) => l.cost_source !== "excluded").map((l) => l.order_id)) : null;
+  const excluded = { test: 0, draft: 0, cancelled: 0, gift_card_only: 0, b2b: 0, [LEGACY_REASON]: 0 };
   let reincluded = 0;
   const orders = rows.map((o) => {
     let reason = o.excluded_reason ?? null;
     if (reason && includeTestOrders && DEV_INCLUDABLE_REASONS.includes(reason)) { reason = null; reincluded++; }
+    if (!reason && analyzable && !analyzable.has(o.order_id)) reason = LEGACY_REASON;
     if (reason) excluded[reason] = (excluded[reason] ?? 0) + 1;
     return { ...o, excluded_reason: reason, shipping_refunded: shippingRefunded.get(o.order_id) ?? 0 };
   });

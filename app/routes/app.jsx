@@ -3,6 +3,8 @@
 // tcc_locale > Accept-Language > en. Le cookie est posé quand la locale vient du paramètre ou
 // d'une surcharge, pour les navigations client suivantes (qui ne portent plus ?locale=).
 // Le rendu serveur et le client utilisent la MÊME locale (jamais celle lue côté client par App Bridge).
+// Navigation admin (s-app-nav) : App Bridge n'offre ni badge ni état désactivé → seules les sections
+// LIVRÉES y figurent ; la nav complète avec « Bientôt » vit dans le rail app-owned de chaque page.
 import { Outlet, useLoaderData, useRouteError, data } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -11,6 +13,7 @@ import { supabase } from "../supabase.server";
 import { resolveLocale, readCookie, localeCookieHeader, localeDir, LOCALE_COOKIE } from "../lib/i18n/resolveLocale.js";
 import { catalogsFor } from "../locales/index.js";
 import { I18nProvider } from "../lib/i18n/context.jsx";
+import { LIVE_SECTIONS } from "../lib/sections.js";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -54,8 +57,8 @@ export default function App() {
   );
 }
 
-// Navigation admin (s-app-nav) : le lien rel="home" fixe la page d'accueil (/app, écran classique,
-// masqué du menu par l'admin) ; le Tableau de bord est la première entrée visible (C11a).
+// rel="home" fixe la page d'accueil (/app, écran classique, masqué du menu par l'admin) ; puis les
+// sections livrées ; enfin l'écran classique, accessible jusqu'à F4-D.
 function AppNav() {
   const { catalogs, locale } = useLoaderData();
   const cat = catalogs[locale] ?? catalogs.en ?? {};
@@ -63,7 +66,7 @@ function AppNav() {
   return (
     <s-app-nav>
       <s-link rel="home" href="/app">{label("nav.home")}</s-link>
-      <s-link href="/app/dashboard">{label("nav.dashboard")}</s-link>
+      {LIVE_SECTIONS.map((s) => <s-link key={s.id} href={s.path}>{label(`nav.${s.id}`)}</s-link>)}
       <s-link href="/app">{label("nav.legacy")}</s-link>
     </s-app-nav>
   );

@@ -1,0 +1,344 @@
+/* ── Vue d'ensemble — direction B « Signal » (décision du 2026-09-23) ─────────────────────────
+   Style maison UNIQUEMENT sur les zones que l'app possède (wrapper .tcc et descendants) ; les
+   composants Polaris (s-page, s-section, s-banner, s-modal) gardent leur style.
+   Jetons --tcc-* définis UNE fois ici (clair) + variante sombre ; aucune couleur en dur ailleurs.
+   Chaque paire encre/fond est vérifiée AA (≥ 4,5:1) par le lot 26 (calcul de ratio).
+   Mouvement : transform et opacity seulement, courts ; tout désactivé sous prefers-reduced-motion.
+   RTL-ready : propriétés logiques uniquement. */
+
+.tcc {
+  /* Encre et surfaces */
+  --tcc-page: #f6f6f8;
+  --tcc-surface: #ffffff;
+  --tcc-surface-2: #f7f7fb;
+  --tcc-line: #e4e4ea;
+  --tcc-ink: #1a1c21;
+  --tcc-ink-2: #5a5e68;
+  --tcc-ink-3: #6b6f7a;
+  /* Accent (violet-indigo : Expert, IA, période active) */
+  --tcc-accent: #5b4bd6;
+  --tcc-accent-ink: #4a3bc2;
+  --tcc-accent-soft: #eeecfb;
+  --tcc-accent-contrast: #ffffff;
+  /* Teintes de section */
+  --tcc-revenue: #2a78d6;
+  --tcc-revenue-ink: #1b5aa6;
+  --tcc-revenue-soft: #e8f0fb;
+  --tcc-margins: #6a56d9;
+  --tcc-margins-ink: #4a3aa7;
+  --tcc-margins-soft: #ece9f9;
+  --tcc-acquisition: #eb6834;
+  --tcc-acquisition-ink: #a8411a;
+  --tcc-acquisition-soft: #fdeee6;
+  /* États (priment sur la teinte de section) */
+  --tcc-good: #1f9d55;
+  --tcc-good-ink: #146b3a;
+  --tcc-good-soft: #e5f5ea;
+  --tcc-warn: #b47c00;
+  --tcc-warn-ink: #7d5400;
+  --tcc-warn-soft: #fff4d6;
+  --tcc-bad: #d03b3b;
+  --tcc-bad-ink: #a82a2a;
+  --tcc-bad-soft: #fdecec;
+  --tcc-neutral: #8a8f9a;
+  --tcc-neutral-ink: #5a5e68;
+  --tcc-neutral-soft: #f0f1f4;
+  /* Formes, ombres, typographie */
+  --tcc-radius: 14px;
+  --tcc-radius-s: 10px;
+  --tcc-shadow: 0 1px 2px rgba(20, 22, 30, 0.04), 0 6px 20px rgba(20, 22, 30, 0.06);
+  --tcc-shadow-hover: 0 2px 4px rgba(20, 22, 30, 0.05), 0 14px 32px rgba(20, 22, 30, 0.10);
+  --tcc-ring: rgba(91, 75, 214, 0.35);
+  --tcc-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --tcc-num: 600 1.75rem/1.15 var(--tcc-font);
+  --tcc-num-hero: 700 2.25rem/1.1 var(--tcc-font);
+  --tcc-gap: 16px;
+  --tcc-motion: 160ms;
+  color: var(--tcc-ink);
+  font-family: var(--tcc-font);
+  font-variant-numeric: tabular-nums;
+  display: block;
+}
+
+/* Thème sombre : suit l'OS (sauf clair forcé) ou l'attribut data-theme="dark". */
+.tcc[data-theme="dark"],
+:root[data-theme="dark"] .tcc {
+  --tcc-page: #0f1114;
+  --tcc-surface: #171a20;
+  --tcc-surface-2: #1d2128;
+  --tcc-line: #2b303a;
+  --tcc-ink: #f2f3f5;
+  --tcc-ink-2: #b7bbc4;
+  --tcc-ink-3: #a3a8b2;
+  --tcc-accent: #8b7cf0;
+  --tcc-accent-ink: #b9b0f8;
+  --tcc-accent-soft: #272449;
+  --tcc-accent-contrast: #14121f;
+  --tcc-revenue: #3987e5;
+  --tcc-revenue-ink: #8fc2ff;
+  --tcc-revenue-soft: #15263c;
+  --tcc-margins: #9085e9;
+  --tcc-margins-ink: #c3bbf6;
+  --tcc-margins-soft: #262147;
+  --tcc-acquisition: #d95926;
+  --tcc-acquisition-ink: #ffb08e;
+  --tcc-acquisition-soft: #3a2015;
+  --tcc-good: #2fa85c;
+  --tcc-good-ink: #86d7a0;
+  --tcc-good-soft: #13301d;
+  --tcc-warn: #d99a00;
+  --tcc-warn-ink: #f3c95a;
+  --tcc-warn-soft: #3a2e0e;
+  --tcc-bad: #e05252;
+  --tcc-bad-ink: #ffa39c;
+  --tcc-bad-soft: #3d1a19;
+  --tcc-neutral: #8a8f9a;
+  --tcc-neutral-ink: #b7bbc4;
+  --tcc-neutral-soft: #262a32;
+  --tcc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+  --tcc-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 14px 32px rgba(0, 0, 0, 0.5);
+  --tcc-ring: rgba(139, 124, 240, 0.5);
+}
+@media (prefers-color-scheme: dark) {
+  .tcc:not([data-theme="light"]) {
+    --tcc-page: #0f1114;
+    --tcc-surface: #171a20;
+    --tcc-surface-2: #1d2128;
+    --tcc-line: #2b303a;
+    --tcc-ink: #f2f3f5;
+    --tcc-ink-2: #b7bbc4;
+    --tcc-ink-3: #a3a8b2;
+    --tcc-accent: #8b7cf0;
+    --tcc-accent-ink: #b9b0f8;
+    --tcc-accent-soft: #272449;
+    --tcc-accent-contrast: #14121f;
+    --tcc-revenue: #3987e5;
+    --tcc-revenue-ink: #8fc2ff;
+    --tcc-revenue-soft: #15263c;
+    --tcc-margins: #9085e9;
+    --tcc-margins-ink: #c3bbf6;
+    --tcc-margins-soft: #262147;
+    --tcc-acquisition: #d95926;
+    --tcc-acquisition-ink: #ffb08e;
+    --tcc-acquisition-soft: #3a2015;
+    --tcc-good: #2fa85c;
+    --tcc-good-ink: #86d7a0;
+    --tcc-good-soft: #13301d;
+    --tcc-warn: #d99a00;
+    --tcc-warn-ink: #f3c95a;
+    --tcc-warn-soft: #3a2e0e;
+    --tcc-bad: #e05252;
+    --tcc-bad-ink: #ffa39c;
+    --tcc-bad-soft: #3d1a19;
+    --tcc-neutral: #8a8f9a;
+    --tcc-neutral-ink: #b7bbc4;
+    --tcc-neutral-soft: #262a32;
+    --tcc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+    --tcc-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 14px 32px rgba(0, 0, 0, 0.5);
+    --tcc-ring: rgba(139, 124, 240, 0.5);
+  }
+}
+
+/* ── Primitives ────────────────────────────────────────────────────────────────────────────── */
+.tcc *, .tcc *::before, .tcc *::after { box-sizing: border-box; }
+.tcc h1, .tcc h2, .tcc h3, .tcc h4, .tcc p, .tcc ul, .tcc ol { margin: 0; }
+.tcc ul, .tcc ol { padding: 0; list-style: none; }
+.tcc a { color: var(--tcc-accent-ink); }
+.tcc :focus-visible { outline: 2px solid var(--tcc-accent); outline-offset: 2px; border-radius: 6px; }
+.tcc-stack { display: grid; gap: var(--tcc-gap); }
+.tcc-card {
+  background: var(--tcc-surface);
+  border: 1px solid var(--tcc-line);
+  border-radius: var(--tcc-radius);
+  box-shadow: var(--tcc-shadow);
+  padding: 20px;
+}
+.tcc-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 0.75rem; font-weight: 600; line-height: 1.4;
+  background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink);
+}
+.tcc-badge--accent { background: var(--tcc-accent-soft); color: var(--tcc-accent-ink); }
+.tcc-badge--good { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
+.tcc-badge--bad { background: var(--tcc-bad-soft); color: var(--tcc-bad-ink); }
+.tcc-badge--warn { background: var(--tcc-warn-soft); color: var(--tcc-warn-ink); }
+.tcc-muted { color: var(--tcc-ink-2); }
+.tcc-eyebrow { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tcc-ink-3); }
+
+/* ── En-tête de page ───────────────────────────────────────────────────────────────────────── */
+.tcc-hero { display: grid; gap: 18px; }
+.tcc-brand { display: flex; align-items: center; gap: 12px; }
+.tcc-brand__mark {
+  inline-size: 40px; block-size: 40px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--tcc-accent-soft); color: var(--tcc-accent-ink);
+}
+.tcc-brand__mark svg { inline-size: 22px; block-size: 22px; }
+.tcc-brand h1 { font-size: 1.125rem; font-weight: 700; line-height: 1.3; }
+.tcc-brand p { font-size: 0.8125rem; color: var(--tcc-ink-2); }
+.tcc-hero__row { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end; }
+.tcc-hero__greet h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+.tcc-hero__greet p { color: var(--tcc-ink-2); margin-block-start: 4px; }
+.tcc-hero__side { display: grid; gap: 10px; justify-items: end; }
+.tcc-sync { display: inline-grid; justify-items: end; gap: 2px; font-size: 0.8125rem; }
+.tcc-sync__state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--tcc-good-ink); }
+.tcc-sync__state.is-idle { color: var(--tcc-neutral-ink); }
+.tcc-sync__dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: currentColor; }
+.tcc-sync small { color: var(--tcc-ink-2); font-size: 0.75rem; }
+
+/* Sélecteur de période : contrôle segmenté app-owned, liens, aria-current sur l'actif */
+.tcc-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--tcc-surface-2); border: 1px solid var(--tcc-line); }
+.tcc-seg a {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-inline-size: 44px; min-block-size: 36px; padding: 0 14px; border-radius: 999px;
+  font-size: 0.8125rem; font-weight: 600; text-decoration: none; color: var(--tcc-ink-2);
+  transition: background-color var(--tcc-motion) ease, color var(--tcc-motion) ease, transform var(--tcc-motion) ease;
+}
+.tcc-seg a:hover { color: var(--tcc-ink); }
+.tcc-seg a[aria-current="page"] { background: var(--tcc-accent); color: var(--tcc-accent-contrast); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.tcc-period { font-size: 0.8125rem; color: var(--tcc-ink-2); text-align: end; }
+
+/* ── Rail des sections (nav cible, « Bientôt » grisé) ─────────────────────────────────────── */
+.tcc-rail { overflow-x: auto; scrollbar-width: thin; }
+.tcc-rail ul { display: flex; gap: 6px; min-inline-size: max-content; padding-block: 2px; }
+.tcc-rail__item {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px;
+  font-size: 0.8125rem; font-weight: 600; text-decoration: none; color: var(--tcc-ink-2); border: 1px solid transparent;
+  transition: background-color var(--tcc-motion) ease, color var(--tcc-motion) ease;
+}
+a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink); }
+.tcc-rail__item[aria-current="page"] { background: var(--tcc-accent-soft); color: var(--tcc-accent-ink); border-color: var(--tcc-accent-soft); }
+.tcc-rail__item.is-soon { color: var(--tcc-ink-3); cursor: default; }
+.tcc-rail__item.is-soon .tcc-badge { padding-block: 1px; font-size: 0.6875rem; }
+
+/* ── Sections de KPI et grille ─────────────────────────────────────────────────────────────── */
+.tcc-group { container-type: inline-size; container-name: tcc-group; display: grid; gap: 12px; }
+.tcc-group__head { display: flex; align-items: center; gap: 10px; }
+.tcc-group__dot { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--tcc-section); }
+.tcc-group__head h3 { font-size: 0.9375rem; font-weight: 700; }
+.tcc-group--revenue { --tcc-section: var(--tcc-revenue); --tcc-section-ink: var(--tcc-revenue-ink); --tcc-section-soft: var(--tcc-revenue-soft); }
+.tcc-group--margins { --tcc-section: var(--tcc-margins); --tcc-section-ink: var(--tcc-margins-ink); --tcc-section-soft: var(--tcc-margins-soft); }
+.tcc-group--acquisition { --tcc-section: var(--tcc-acquisition); --tcc-section-ink: var(--tcc-acquisition-ink); --tcc-section-soft: var(--tcc-acquisition-soft); }
+.tcc-grid { display: grid; gap: var(--tcc-gap); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container tcc-group (max-width: 900px) { .tcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container tcc-group (max-width: 480px) { .tcc-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Secondaires : masqués sur conteneur étroit tant que .tcc-groups--more n'est pas posé */
+.tcc-groups { display: grid; gap: 24px; container-type: inline-size; container-name: tcc-groups; }
+.tcc-more { display: none; }
+@container tcc-groups (max-width: 480px) {
+  .tcc-groups:not(.tcc-groups--more) .tcc-tile.is-secondary { display: none; }
+  .tcc-groups:not(.tcc-groups--more) .tcc-more { display: inline-flex; }
+}
+.tcc-more {
+  align-items: center; justify-content: center; gap: 6px; min-block-size: 44px; padding: 0 18px;
+  border-radius: 999px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-accent-ink);
+  font: inherit; font-weight: 600; font-size: 0.875rem; cursor: pointer;
+}
+
+/* ── Tuile KPI ─────────────────────────────────────────────────────────────────────────────── */
+.tcc-tile {
+  position: relative; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 8px;
+  min-block-size: 168px; padding: 16px 16px 12px; overflow: hidden;
+  background: var(--tcc-surface); border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius); box-shadow: var(--tcc-shadow);
+  --tcc-tone: var(--tcc-section); --tcc-tone-ink: var(--tcc-section-ink); --tcc-tone-soft: var(--tcc-section-soft);
+  transition: transform var(--tcc-motion) ease, box-shadow var(--tcc-motion) ease;
+}
+.tcc-tile::before {
+  content: ""; position: absolute; inset-block-start: 0; inset-inline: 0; block-size: 3px;
+  background: linear-gradient(90deg, var(--tcc-tone), color-mix(in srgb, var(--tcc-tone) 35%, transparent));
+}
+.tcc-tile::after {
+  content: ""; position: absolute; inset-block-start: -40px; inset-inline-end: -40px; inline-size: 140px; block-size: 140px; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--tcc-tone) 9%, transparent), transparent); pointer-events: none;
+}
+@media (hover: hover) {
+  .tcc-tile:hover { transform: translateY(-2px); box-shadow: var(--tcc-shadow-hover), 0 0 0 1px color-mix(in srgb, var(--tcc-tone) 35%, transparent); }
+}
+/* L'état prime sur la teinte de section */
+.tcc-tile.is-unknown { --tcc-tone: var(--tcc-warn); --tcc-tone-ink: var(--tcc-warn-ink); --tcc-tone-soft: var(--tcc-warn-soft); }
+.tcc-tile.is-insufficient, .tcc-tile.is-unavailable { --tcc-tone: var(--tcc-neutral); --tcc-tone-ink: var(--tcc-neutral-ink); --tcc-tone-soft: var(--tcc-neutral-soft); }
+.tcc-tile__head { display: flex; align-items: center; gap: 10px; }
+.tcc-tile__icon {
+  inline-size: 34px; block-size: 34px; border-radius: 10px; display: grid; place-items: center; flex: none;
+  background: var(--tcc-tone-soft); color: var(--tcc-tone-ink);
+}
+.tcc-tile__icon svg { inline-size: 18px; block-size: 18px; }
+.tcc-tile__label { font-size: 0.8125rem; font-weight: 600; color: var(--tcc-ink-2); line-height: 1.3; }
+.tcc-tile__value { font: var(--tcc-num); letter-spacing: -0.02em; color: var(--tcc-ink); word-break: break-word; }
+.tcc-tile.is-hero .tcc-tile__value { font: var(--tcc-num-hero); letter-spacing: -0.025em; }
+.tcc-tile__status { font-size: 0.8125rem; line-height: 1.45; color: var(--tcc-tone-ink); }
+.tcc-tile__status strong { font-weight: 600; }
+.tcc-tile__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--tcc-ink-3); }
+.tcc-delta { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+.tcc-delta svg { inline-size: 12px; block-size: 12px; }
+.tcc-delta--good { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
+.tcc-delta--bad { background: var(--tcc-bad-soft); color: var(--tcc-bad-ink); }
+.tcc-delta--neutral { background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink); }
+.tcc-spark { inline-size: 100%; block-size: 40px; display: block; color: var(--tcc-tone); align-self: end; }
+.tcc-spark__area { fill: url(#tcc-spark-gradient); }
+.tcc-tile__foot { display: flex; justify-content: flex-end; }
+
+/* Entrée en cascade (opacité + translation seulement), décalage par rang dans la grille */
+.tcc-tile { animation: tcc-in 360ms ease both; }
+.tcc-grid > :nth-child(2) { animation-delay: 40ms; }
+.tcc-grid > :nth-child(3) { animation-delay: 80ms; }
+.tcc-grid > :nth-child(4) { animation-delay: 120ms; }
+.tcc-group:nth-of-type(2) .tcc-tile { animation-delay: 160ms; }
+.tcc-group:nth-of-type(3) .tcc-tile { animation-delay: 320ms; }
+@keyframes tcc-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── Bloc « Voir le calcul » (dans la s-modal) ─────────────────────────────────────────────── */
+.tcc-calc { display: grid; gap: 14px; font-family: var(--tcc-font); color: var(--tcc-ink); font-variant-numeric: tabular-nums; }
+.tcc-calc__formula { color: var(--tcc-ink-2); font-size: 0.875rem; line-height: 1.5; }
+.tcc-calc__rows { display: grid; gap: 0; border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius-s); overflow: hidden; }
+.tcc-calc__row { display: grid; grid-template-columns: 1.25rem 1fr auto; gap: 8px; align-items: baseline; padding: 8px 12px; font-size: 0.875rem; border-block-start: 1px solid var(--tcc-line); }
+.tcc-calc__row:first-child { border-block-start: 0; }
+.tcc-calc__op { color: var(--tcc-ink-3); text-align: center; }
+.tcc-calc__amount { text-align: end; font-weight: 500; }
+.tcc-calc__row.is-strong { background: var(--tcc-surface-2); font-weight: 700; }
+.tcc-calc__note { font-size: 0.8125rem; color: var(--tcc-ink-2); }
+
+/* ── État vide, emplacements réservés, bandeau du moteur ──────────────────────────────────── */
+.tcc-empty { display: grid; gap: 10px; justify-items: start; padding: 28px 24px; }
+.tcc-empty h3 { font-size: 1.125rem; font-weight: 700; }
+.tcc-empty p { color: var(--tcc-ink-2); max-inline-size: 60ch; }
+.tcc-empty__reasons { color: var(--tcc-warn-ink); font-weight: 600; }
+.tcc-cta { display: inline-flex; align-items: center; min-block-size: 40px; padding: 0 16px; border-radius: 10px; font-weight: 600; text-decoration: none; background: var(--tcc-accent); color: var(--tcc-accent-contrast); }
+.tcc-cta--ghost { background: var(--tcc-surface-2); color: var(--tcc-accent-ink); border: 1px solid var(--tcc-line); }
+
+.tcc-slots { display: grid; gap: var(--tcc-gap); container-type: inline-size; container-name: tcc-slots; }
+.tcc-slots--main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.tcc-slots--quarters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container tcc-slots (max-width: 900px) { .tcc-slots--main { grid-template-columns: minmax(0, 1fr); } .tcc-slots--quarters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container tcc-slots (max-width: 480px) { .tcc-slots--quarters { grid-template-columns: minmax(0, 1fr); } }
+.tcc-slot {
+  display: grid; align-content: center; justify-items: center; gap: 8px; text-align: center; min-block-size: 140px; padding: 20px;
+  border: 1px dashed var(--tcc-line); border-radius: var(--tcc-radius); background: var(--tcc-surface-2); color: var(--tcc-ink-2);
+}
+.tcc-slot--wide { min-block-size: 220px; }
+.tcc-slot__icon { inline-size: 36px; block-size: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--tcc-surface); color: var(--tcc-accent-ink); border: 1px solid var(--tcc-line); }
+.tcc-slot__icon svg { inline-size: 18px; block-size: 18px; }
+.tcc-slot p { font-size: 0.875rem; }
+.tcc-slot strong { color: var(--tcc-ink); }
+
+.tcc-engine { display: grid; gap: 14px; padding: 20px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-engine__head { display: flex; gap: 12px; align-items: flex-start; }
+.tcc-engine__head h3 { font-size: 1rem; font-weight: 700; }
+.tcc-engine__head p { color: var(--tcc-ink-2); font-size: 0.8125rem; }
+.tcc-engine__steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: step; container-type: inline-size; }
+.tcc-engine__step { display: grid; gap: 6px; padding: 14px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); border: 1px solid var(--tcc-line); }
+.tcc-engine__step h4 { font-size: 0.875rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.tcc-engine__num { inline-size: 24px; block-size: 24px; border-radius: 8px; display: grid; place-items: center; font-size: 0.75rem; background: var(--tcc-accent-soft); color: var(--tcc-accent-ink); }
+.tcc-engine__step ul { display: grid; gap: 2px; font-size: 0.8125rem; color: var(--tcc-ink-2); padding-inline-start: 14px; list-style: disc; }
+.tcc-engine__foot { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--tcc-good-ink); font-weight: 600; }
+@container (max-width: 900px) { .tcc-engine__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 480px) { .tcc-engine__steps { grid-template-columns: minmax(0, 1fr); } }
+
+.tcc-notes { display: grid; gap: 4px; font-size: 0.8125rem; color: var(--tcc-ink-2); }
+
+/* ── Mouvement réduit : rien ne bouge ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .tcc-tile { animation: none; }
+  .tcc *, .tcc *::before, .tcc *::after { transition: none !important; animation: none !important; }
+  .tcc-tile:hover { transform: none; }
+}

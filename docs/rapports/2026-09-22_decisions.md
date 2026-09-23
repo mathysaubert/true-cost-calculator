@@ -443,6 +443,24 @@ Implémentation F4-A : `docs/rapports/2026-09-23_f4-a_implementation.md`.
 | C10 | (a) 4 KPI secondaires sous « Voir plus » sur conteneur étroit ; vérification iPhone | Secondaires = CVR, MER, POAS, LTV/CAC (liste de la décision 14, qui n'inclut pas l'OTD). |
 | C11 | (a) `/app/dashboard` nouveau, `/app` inchangé | `app.dashboard.jsx`, `s-link rel="home"` sur `/app`. |
 
+## G. Retours clics F4-A, design et navigation cible (2026-09-23)
+
+Phase 0 : `docs/rapports/2026-09-23_f4-a_retours-clics_phase0.md`. Implémentation :
+`docs/rapports/2026-09-23_f4-a2_overview-design_implementation.md`.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| R1 | Commande sans ligne analysable (legacy) exclue de tous les KPI, compte compris ; trou « N commandes lues par l'ancienne version, non comptées » ; réingestion de juillet attendra `read_all_orders` (rattrapage automatique) ; règle générale : aucun KPI n'affiche une valeur quand ses entrées manquent | `econ/adapters.js` (raison interne `legacy`), `overview.js` (`legacy_orders`) |
+| R2 | Grille CSS app-owned 4 / 2 / 1 colonnes, plus de `s-grid` | `app/styles/overview.css`, `KpiGrid` |
+| R3 | Sélecteur de période segmenté app-owned, liens `?days=`, `aria-current="page"`, aucun champ contrôlé | `OverviewHeader` |
+| R4 | Journée en cours incluse et marquée partielle ; période précédente décalée d'autant | `overviewWindows` |
+| R5 | Direction B « Signal » : fond clair, cartes blanches, accent violet-indigo (Expert, IA), teintes par section (revenus bleu, marges violet, acquisition orange), états vert/ambre/rouge/neutre qui priment ; paires AA calculées ; jamais la couleur seule ; jetons `--tcc-*` clair + sombre ; Inter, `tabular-nums` ; mouvement `transform`/`opacity` court, coupé sous `prefers-reduced-motion` ; propriétés logiques ; mobile 8 + « Afficher 4 de plus » | `overview.css`, composants `app/components/overview/` |
+| R6 | Vue d'ensemble = en-tête (marque, salutation, sync, période), tuiles avec icône, écart, mini-courbe SVG maison, statuts, modale de calcul ; emplacements réservés sans faux contenu (courbe, IA, 3 changements, produits, marketing, funnel, stock) ; bandeau du moteur réalisé | `Blocks.jsx`, `sections.js` |
+| R7 | Navigation cible : 12 sections (Overview, Profit, Growth, Customers, Products, Inventory, Marketing, Cash, Intelligence, Simulator, Experiments, Settings) ; ordre de construction Overview, Profit, Growth, Products, Marketing, Intelligence, Simulator, puis Customers et Inventory ; non livrées grisées « Bientôt » ; écran classique jusqu'à F4-D ; Tableau de bord renommé Vue d'ensemble (`/app/overview`, `/app/dashboard` redirige) | `sections.js`, `app.jsx`, catalogues |
+| R8 | Écart accepté à consigner : `s-app-nav` ne sait ni griser ni badger → menu admin = sections livrées, nav complète « Bientôt » dans le rail app-owned ; prénom = propriétaire de la boutique (`shop.shopOwnerName`), l'API User admin ne donne pas le prénom du membre | rapport d'implémentation §4.4 |
+
+En attente : correspondance des écrans du brief non nommés (rapport d'implémentation §5, options A/B).
+
 Réponses courtes « Data protection details » (niveau 1) :
 
 > Minimum data: customer ID, country code and journey summary only; no identifying fields.

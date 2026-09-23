@@ -204,11 +204,13 @@ inchangé).
 10. **Ancien écran** : `/app` fonctionne à l'identique (zéro diff), y compris `?tab=costs` des
     e-mails d'alerte.
 
-## 7. Ce qui reste (sur GO séparés)
+## 7. Ce qui reste
 
-1. Application de la migration `20260923_f4_01_dev_shop_settings.sql` : base de test, rollback
-   prouvé, puis prod (mêmes scripts scratchpad que F1/F3).
-2. Commit unique + push, statut Vercel via l'API GitHub.
-3. Preuves §6, puis rapport de preuves.
-4. F4-B (Phase 0 courte : React 19 / Polaris Viz / `polarisUrl`), addendum F2 (C7c :
+Faits le 2026-09-23 (GO reçus) : migration appliquée (§4.4) ; **commit `ff4e520` poussé sur
+`main`** (28 fichiers) ; déploiement Vercel Production `6615827784` en `success` à 13:59:18 UTC,
+lu par l'API GitHub `deployments` et `commits/<sha>/status` (contexte « Vercel »), sans session
+Vercel. Le TOML n'a pas changé : aucun `shopify app deploy` nécessaire.
+
+1. Preuves §6, puis rapport de preuves.
+2. F4-B (Phase 0 courte : React 19 / Polaris Viz / `polarisUrl`), addendum F2 (C7c :
    `restocked_qty`, `unit_price_original_ht`, `unit_price_ttc`, `tax_per_unit`).

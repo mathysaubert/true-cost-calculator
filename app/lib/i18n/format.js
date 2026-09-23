@@ -74,6 +74,18 @@ export function formatDateTime(iso, locale = "en", { timeZone = "UTC" } = {}) {
   catch { return new Intl.DateTimeFormat(safeLocale(locale), { dateStyle: "medium", timeStyle: "short" }).format(d); }
 }
 
+// « il y a 2 h » / « 2 hours ago » : Intl.RelativeTimeFormat, unité la plus lisible.
+export function formatRelative(iso, locale = "en", now = new Date()) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const diff = (t - (now instanceof Date ? now.getTime() : Date.parse(now))) / 1000;
+  const abs = Math.abs(diff);
+  const [unit, div] = abs < 60 ? ["second", 1] : abs < 3600 ? ["minute", 60] : abs < 86400 ? ["hour", 3600] : ["day", 86400];
+  try { return new Intl.RelativeTimeFormat(safeLocale(locale), { numeric: "auto" }).format(Math.round(diff / div), unit); }
+  catch { return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(Math.round(diff / div), unit); }
+}
+
 // Formate une valeur de nœud selon son unité (nodes.js : money | pct | ratio | count).
 export function formatByUnit(value, unit, locale, currency) {
   switch (unit) {
