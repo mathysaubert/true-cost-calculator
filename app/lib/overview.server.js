@@ -1,16 +1,22 @@
-// ── Vue d'ensemble — lectures Supabase → moteur (F4-A, retours du 2026-09-23) ─────────────────
-// Aucun calcul ici : on lit les faits F1/F2, on les adapte (econ/adapters.js) et on appelle
-// aggregate() pour la période courante ET la précédente. Admin GraphQL : une lecture de
-// shop.plan.partnerDevelopment (C6, mémorisée) et, à chaque chargement, shop { name shopOwnerName }
-// pour la salutation (en parallèle des lectures Supabase).
+// ── Vue d'ensemble, Indicateurs, Fiabilité — lectures Supabase → moteur → briefing (I0-B) ────
+// Aucun calcul ici : on lit les faits F1/F2 sur la période courante ET les 4 précédentes (D1),
+// on les adapte (econ/adapters.js), on appelle aggregate() par période, puis confidence.js et
+// insights/buildBriefing. Admin GraphQL : shop.plan.partnerDevelopment (C6, mémorisé),
+// shop { name shopOwnerName } (salutation) et les titres des produits cités par les insights.
 import { aggregate } from "./econ/aggregate.js";
 import { linesFromOrderMarginsRows, ordersForEngine, applyOrderDiscounts } from "./econ/adapters.js";
 import { overviewWindows, buildKpis, buildNotes, buildGaps, OVERVIEW_LINES_CAP } from "./overview.js";
+import { dataConfidence } from "./confidence.js";
+import { buildBriefing } from "./insights/index.js";
+import { REFERENCE_PERIODS } from "./insights/config.js";
 
 const DEV_SHOP_QUERY = `{ shop { plan { partnerDevelopment } } }`;
 const SHOP_NAME_QUERY = `{ shop { name shopOwnerName } }`;
+const PRODUCT_TITLES_QUERY = `query Titles($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title } } }`;
+const DAY_MS = 86_400_000;
 const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
 const rows = ({ data, error }, label) => { if (error) throw new Error(`overview (${label}) : ${error.message}`); return data ?? []; };
+const shiftDay = (day, n) => new Date(Date.parse(day + "T00:00:00Z") + n * DAY_MS).toISOString().slice(0, 10);
 
 // Réglages boutique + détection « boutique de développement » (lue une fois, mémorisée si la
 // colonne existe ; sinon la valeur reste en mémoire pour cette requête).
@@ -43,7 +49,6 @@ export async function setIncludeTestOrders({ supabase, shop, value }) {
   return { ok: true, include_test_orders: value === true };
 }
 
-// Nom de la boutique et prénom du propriétaire (salutation). Jamais bloquant.
 async function loadShopIdentity(admin) {
   if (!admin) return { shopName: null, firstName: null };
   try {
@@ -54,12 +59,31 @@ async function loadShopIdentity(admin) {
   } catch (e) { console.error("[Overview] shop identity :", e?.message); return { shopName: null, firstName: null }; }
 }
 
-// Lecture des faits sur [previous.start, current.end] puis agrégation des deux fenêtres.
-export async function loadOverview({ supabase, shop, admin = null, days, now = new Date(), hasAllOrders = false }) {
+// Titres des produits cités (sujets d'insights) : une requête, jamais bloquante.
+async function loadProductTitles(admin, ids = []) {
+  const gids = [...new Set(ids.filter((id) => typeof id === "string" && id.startsWith("gid://shopify/Product/")))].slice(0, 20);
+  if (!admin || !gids.length) return {};
+  try {
+    const j = await (await admin.graphql(PRODUCT_TITLES_QUERY, { variables: { ids: gids } })).json();
+    return Object.fromEntries((j?.data?.nodes ?? []).filter(Boolean).map((n) => [n.id, n.title]));
+  } catch (e) { console.error("[Overview] product titles :", e?.message); return {}; }
+}
+
+// Fenêtres précédentes contiguës (D1 : jusqu'à 4), de la plus récente à la plus ancienne.
+export function previousWindows(win, count = REFERENCE_PERIODS) {
+  const out = [];
+  let end = shiftDay(win.current.start, -1);
+  for (let i = 0; i < count; i++) { const start = shiftDay(end, -(win.days - 1)); out.push({ start, end }); end = shiftDay(start, -1); }
+  return out;
+}
+
+// Lecture des faits sur [plus ancienne fenêtre de référence, aujourd'hui] puis agrégation par période.
+export async function loadOverview({ supabase, shop, admin = null, days, now = new Date(), hasAllOrders = false, withBriefing = true }) {
   const { settings, isDevShop, devShopSource, includeTestOrders } = await loadOverviewSettings({ supabase, shop, admin });
   const timeZone = settings.shop_timezone || "UTC";
   const win = overviewWindows({ now, timeZone, days });
-  const from = win.previous.start, to = win.current.end;
+  const prevWins = previousWindows(win);
+  const from = prevWins[prevWins.length - 1].start, to = win.current.end;
 
   const [identity, ordersRows, lineRows, refunds, returns, fulfillments, fixedCosts, codeRules, manualCommissions, variantCosts, adSpend, sessions, customers, lastJob, firstOrder, invLast] = await Promise.all([
     loadShopIdentity(admin),
@@ -93,12 +117,20 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
   const { orders, excluded, reincluded } = ordersForEngine(orderSlice, { refunds, includeTestOrders, lines });
   const vcMap = new Map(variantCosts.map((v) => [v.variant_id, v]));
   const base = { orders, lines, fees, returns, fulfillments, adSpend, codeRules, manualCommissions, fixedCosts, sessions, inventory, variantCosts: vcMap, customers, settings, now };
-  const current = applyOrderDiscounts(aggregate({ ...base, window: win.current }), orders, win.current);
-  const previous = applyOrderDiscounts(aggregate({ ...base, window: win.previous }), orders, win.previous);
+  const aggFor = (w) => applyOrderDiscounts(aggregate({ ...base, window: w }), orders, w);
+  const current = aggFor(win.current);
+  const previous = aggFor(win.previous);
+  const previousPeriods = prevWins.map(aggFor);
 
   const inWin = (o) => o.day_local >= win.current.start && o.day_local <= win.current.end;
   const excludedCurrent = { test: 0, draft: 0, cancelled: 0, gift_card_only: 0, b2b: 0, legacy: 0 };
   for (const o of orders) if (o.excluded_reason && inWin(o)) excludedCurrent[o.excluded_reason] = (excludedCurrent[o.excluded_reason] ?? 0) + 1;
+
+  const sources = { ads: (current.shop.leaves.ad_spend ?? 0) > 0 || (current.shop.leaves.commissions ?? 0) > 0, sessions: (current.counts?.sessions ?? 0) > 0, customers: (current.counts?.customers ?? 0) > 0 };
+  const confidence = dataConfidence({ agg: current, settings, sources, lines });
+  const briefing = withBriefing ? buildBriefing({ current, previousPeriods, settings, window: win.current, confidence, variantCosts: vcMap }) : null;
+  const productIds = briefing ? [...briefing.priorities, ...briefing.insights].map((i) => i.subject?.kind === "product" ? i.subject.key : null).filter(Boolean) : [];
+  const titles = await loadProductTitles(admin, productIds);
 
   return {
     days, windows: win, timeZone, now: now.toISOString(),
@@ -111,5 +143,7 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     excluded, excludedCurrent,
     ordersInPeriod: current.shop.leaves.orders, mixedCurrency: current.currency === "MIXED",
     lastSync: lastJob?.finished_at ?? null, historySince: firstOrder, hasAllOrders,
+    confidence, briefing, titles,
+    waterfall: { leaves: current.shop.leaves, nodes: current.shop.nodes },
   };
 }

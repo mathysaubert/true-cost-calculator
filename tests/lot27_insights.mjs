@@ -56,6 +56,8 @@ console.log("\n── 1. buildReference (D1) ──");
   const withNull = buildReference({ periods: [{ shop: { nodes: { cm2_pct: 50, mer: null }, leaves: {} } }, { shop: { nodes: { cm2_pct: 40, mer: 4 }, leaves: {} } }], periodDays: 30 });
   ok(close(withNull.nodes.cm2_pct, 45) && close(withNull.nodes.mer, 4) && withNull.counts.mer === 1, "moyenne null-aware : un nœud absent d'une période est ignoré pour ce nœud");
   ok(buildReference({ periods: prev.concat(prev), periodDays: 30 }).count === 4, "au plus 4 périodes retenues");
+  const emptyAgg = { shop: { nodes: { cm2_pct: null }, leaves: {} }, counts: { orders: 0 } };
+  ok(buildReference({ periods: [emptyAgg, emptyAgg, prev[0]], periodDays: 30 }).count === 1, "une période sans commande (historique non chargé) n'est pas une période de référence");
 }
 
 // ── 2. Pont de contribution ──
@@ -235,7 +237,7 @@ console.log("\n── 10. Scans : déterminisme, aucune phrase en dur, aucune I/
   const dir = "app/lib/insights/";
   const files = readdirSync(new URL(dir, ROOT)).map((f) => dir + f).concat(["app/lib/confidence.js"]);
   const src = Object.fromEntries(files.map((f) => [f, read(f)]));
-  ok(files.length === 10, `10 fichiers (${files.map((f) => f.split("/").pop()).join(", ")})`);
+  ok(files.length === 11, `11 fichiers (${files.map((f) => f.split("/").pop()).join(", ")})`);
   ok(Object.values(src).every((s) => !/Math\.random|Date\.now\(|new Date\(\)|fetch\(|supabase|import\s+.*react/i.test(s)), "aucun aléa, aucune date courante, aucune I/O, aucun React");
   // Chaînes littérales de ≥ 4 mots (phrases) interdites, sauf les formules déclarées (`formula: "…"`).
   const sentences = Object.entries(src).flatMap(([f, s]) => [...s.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)]

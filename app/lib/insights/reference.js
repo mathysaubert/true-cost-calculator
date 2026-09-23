@@ -8,7 +8,9 @@ import { REFERENCE_PERIODS, REFERENCE_SIX_MONTHS_DAYS } from "./config.js";
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
 
 export function buildReference({ periods = [], periodDays = 30 } = {}) {
-  const usable = periods.filter((p) => p?.shop?.nodes).slice(0, REFERENCE_PERIODS);
+  // Une période sans commande (historique non encore chargé) n'est pas une période de référence.
+  // Une période sans commande (historique pas encore chargé) n'est pas une référence.
+  const usable = periods.filter((p) => p?.shop?.nodes && (p.shop.leaves?.orders ?? p.counts?.orders ?? 1) > 0).slice(0, REFERENCE_PERIODS);
   if (!usable.length) return { kind: "none", count: 0, days: 0, weeks: 0, nodes: {}, leaves: {}, counts: {} };
   const avg = (getter) => {
     const out = {}; const cnt = {};

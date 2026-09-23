@@ -20,6 +20,7 @@ function check(label, element, expect) {
     const ok = expect(html);
     if (!ok) ko++;
     console.log(`  ${ok ? "OK " : "ERR"} ${label}`);
+    if (!ok && process.env.RC_FULL) console.log(`       FULL → ${html}`);
     console.log(`       → ${html === "" ? "(vide — composant retourne null)" : html.replace(/\s+/g, " ").slice(0, 120) + (html.length > 120 ? "…" : "")}`);
   } catch (e) { ko++; console.log(`  ERR ${label} → THROW ${e.constructor.name}: ${e.message}`); }
 }
@@ -216,9 +217,9 @@ check("en-tête sans prénom ni sync → « Bonjour 👋 », « En attente de la
 check("sélecteur segmenté : 3 liens ?days=, aria-current=\"page\" sur 30 seulement, aucun s-button-group",
   wrap("fr", React.createElement(PeriodSelector, { days: 30 })),
   (h) => /<nav class="tcc-seg" aria-label="Période">/.test(h) && (h.match(/href="\/?\?days=/g) ?? []).length === 3 && (h.match(/aria-current="page"/g) ?? []).length === 1 && /aria-current="page"[^>]*>30 jours/.test(h) && !/s-button-group/.test(h));
-check("rail : Vue d'ensemble = lien aria-current, 11 sections grisées aria-disabled avec badge « Bientôt »",
+check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Indicateurs et Fiabilité = liens, 10 sections grisées « Bientôt », ni Trésorerie ni Expériences",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && (h.match(/is-soon/g) ?? []).length === 11 && (h.match(/Bientôt/g) ?? []).length === 11 && /aria-disabled="true"/.test(h) && /Trésorerie/.test(h) && /Expériences/.test(h));
+  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 3 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && (h.match(/is-soon/g) ?? []).length === 10 && (h.match(/Bientôt/g) ?? []).length === 10 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
 
 console.log("\n=== RENDU RÉEL — Bandeaux, état vide, emplacements réservés, moteur ===");
 check("trous → s-banner warning : 6 commandes lues par l'ancienne version, 1 ligne sans coût, plafond, 2 exclues",
@@ -232,12 +233,103 @@ check("état vide avec 6 legacy → titre, « 6 commandes … (6 lues par l'anci
 check("boutique de dev OFF → bandeau info + « Include draft and test orders » (form POST) ; ON (fr) → « Exclure… » ; marchande → null",
   wrap("en", React.createElement("div", null, React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: false }), React.createElement(DevShopBanner, { isDevShop: false, includeTestOrders: true }))),
   (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && (h.match(/<s-banner/g) ?? []).length === 1);
-check("emplacements réservés : 7 cartes .tcc-slot, jamais un chiffre, « Disponible avec Intelligence », « Disponible à la prochaine version », badge Bientôt",
-  wrap("fr", React.createElement(ReservedSlots)),
-  (h) => /<div class="tcc-slots-wrap"><div class="tcc-slots tcc-slots--main">/.test(h) && (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 7 && /Disponible avec Intelligence/.test(h) && /Disponible à la prochaine version/.test(h) && (h.match(/Bientôt/g) ?? []).length === 7 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
+check("emplacements réservés : 2 cartes .tcc-slot (courbe, cascade), jamais un chiffre, « Disponible à la prochaine version », badge Bientôt ; only=[chart] → 1",
+  wrap("fr", React.createElement("div", null, React.createElement(ReservedSlots), React.createElement(ReservedSlots, { only: ["chart"] }))),
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 3 && /Évolution de la contribution/.test(h) && /Cascade de profit/.test(h) && (h.match(/Disponible à la prochaine version/g) ?? []).length === 3 && !/Disponible avec/.test(h) && (h.match(/Bientôt/g) ?? []).length === 3 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
 check("bandeau du moteur : 5 étapes numérotées, 15 puces, titre et pied traduits (en)",
   wrap("en", React.createElement(EngineBanner)),
   (h) => /The economics engine behind every section/.test(h) && (h.match(/tcc-engine__step"/g) ?? []).length === 5 && (h.match(/<li>/g) ?? []).length === 15 && /One source of truth/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  I0-B — Briefing : composant Analyse (3 niveaux), 3 résultats, situation, priorités (3, vide,
+//  partiels), opportunité, cascade en tableau, indicateurs repliés, fiabilité (bloc et règles),
+//  rail en 3 groupes, état vide actionnable, contenu pédagogique. Fixtures du lot 27.
+// ════════════════════════════════════════════════════════════════════════════════
+const { Analysis } = await vite.ssrLoadModule("/app/components/overview/Analysis.jsx");
+const { Results, Situation, Priorities, Opportunity, WaterfallTable, AllIndicators, PartialConclusions } = await vite.ssrLoadModule("/app/components/overview/Briefing.jsx");
+const { DataHealth, HealthRules } = await vite.ssrLoadModule("/app/components/overview/DataHealth.jsx");
+const { MetricsLearn } = await vite.ssrLoadModule("/app/components/overview/MetricsLearn.jsx");
+const { makeShop, WINDOWS } = await vite.ssrLoadModule("/tests/fixtures/i0_shops.mjs");
+const { buildBriefing } = await vite.ssrLoadModule("/app/lib/insights/index.js");
+const { dataConfidence } = await vite.ssrLoadModule("/app/lib/confidence.js");
+const shopOf = (p) => makeShop(p);
+const briefingOf = (shop) => {
+  const sources = { ads: (shop.current.agg.shop.leaves.ad_spend ?? 0) > 0 };
+  const confidence = dataConfidence({ agg: shop.current.agg, settings: shop.settings, sources, lines: shop.current.lines });
+  return { confidence, briefing: buildBriefing({ current: shop.current.agg, previousPeriods: shop.previous.map((p) => p.agg), settings: shop.settings, window: WINDOWS[0], confidence }), kpis: buildKpis({ current: shop.current.agg, previous: shop.previous[0].agg, window: WINDOWS[0] }) };
+};
+const DEC = briefingOf(shopOf("declining")), HEA = briefingOf(shopOf("healthy")), MIS = briefingOf(shopOf("missing"));
+const wrapEur = (locale, element) => React.createElement(I18nProvider, { locale, catalogs: { en: CATALOGS.en, [locale]: CATALOGS[locale] }, currency: "EUR", timeZone: "UTC" }, React.createElement("div", { className: "tcc" }, element));
+
+console.log("\n=== RENDU RÉEL — Analyse (5 s / 30 s / complet) ===");
+const drop = DEC.briefing.priorities.find((p) => p.id === "cm2_drop") ?? DEC.briefing.insights.find((i) => i.id === "cm2_drop");
+check("cm2_drop (fr) : nom, observation « a baissé de … points », fourchette « Toutes choses égales par ailleurs », badge Confirmé, « Pourquoi cette conclusion ? », dépliage 30 s avec Question / Impact / Action et barres de cause (svg), modale avec preuves",
+  wrapEur("fr", React.createElement(Analysis, { insight: drop, rank: 1 })),
+  (h) => /class="tcc-analysis is-degradation"/.test(h) && /Marge de contribution en baisse/.test(h) && /a baissé de 1\d(?:,\d)? points\./.test(h) && !/pt points/.test(h) && /Toutes choses égales par ailleurs, environ/.test(h) && /tcc-confidence tcc-confidence--confirmed"[^>]*>Confirmé</.test(h) && /Pourquoi cette conclusion/.test(h) && /<details>/.test(h) && /Ce qui se passe/.test(h) && /contre 52,4.% vs vos 17 dernières semaines\./.test(h) && /<svg class="tcc-cause__bar"/.test(h) && /le taux de coût produit/.test(h) && /<s-modal/.test(h) && /Preuves du moteur/.test(h) && /Marge de contribution 2 \(%\) \(référence\)/.test(h) && !/cm2_pct_reference/.test(h) && /de l(?:&#x27;|')écart est expliqué/.test(h) && !/ style="/.test(h));
+check("même insight en en : « fell by », « Very likely » ou « Confirmed », Read more", wrapEur("en", React.createElement(Analysis, { insight: drop })), (h) => /fell by/.test(h) && /(Confirmed|Very likely)/.test(h) && /Read more/.test(h));
+const cc = MIS.briefing.insights.find((i) => i.id === "cost_coverage");
+check("règle de données (cost_coverage) : is-data, CTA « Compléter les données » vers /app/data-health, « Pas encore de montant »",
+  wrapEur("fr", React.createElement(Analysis, { insight: cc })),
+  (h) => /is-data/.test(h) && /href="\/app\/data-health"[^>]*>Compléter les données</.test(h) && /Inconnu tant que les coûts ne sont pas saisis/.test(h) && /Aucune cause n(?:&#x27;|')est affirmée/.test(h) && /Lignes de commande sans coût produit/.test(h) && !/unknown_cost_lines/.test(h) && !/tcc-analysis__impact/.test(h));
+check("insight=null → rien", wrapEur("en", React.createElement(Analysis, { insight: null })), (h) => /<div class="tcc"><\/div>/.test(h));
+
+console.log("\n=== RENDU RÉEL — Trois résultats, situation ===");
+check("saine : 3 résultats ok (CA net, Contribution avec %, Résultat estimé non estimé), « Voir le calcul » ×3",
+  wrapEur("fr", React.createElement(Results, { results: HEA.briefing.results, kpis: HEA.kpis })),
+  (h) => (h.match(/data-status="ok"/g) ?? []).length === 3 && /CA net/.test(h) && /du CA/.test(h) && /Résultat estimé/.test(h) && !/data-result="net_result"[^>]*>[\s\S]*?tcc-result__status/.test(h.split('data-result="net_result"')[1]?.split("</div>")[0] ?? "") && (h.match(/Voir le calcul/g) ?? []).length === 3 && (h.match(/<s-modal/g) ?? []).length === 3);
+check("manquante : résultat « estimation · coûts fixes non renseignés » (D9a), contribution sur 50 % du CA à coût connu",
+  wrapEur("fr", React.createElement(Results, { results: MIS.briefing.results, kpis: MIS.kpis })),
+  (h) => /estimation · coûts fixes non renseignés/.test(h) && /sur 50.% du CA à coût connu/.test(h));
+check("0 commande → « encore 1 commande » sur les trois, aucun montant",
+  wrapEur("fr", React.createElement(Results, { results: { ca_ht: { status: "insufficient", missing: { orders: 1 } }, cm2: { status: "insufficient", missing: { orders: 1 } }, net_result: { status: "insufficient", missing: { orders: 1 } } }, kpis: [] })),
+  (h) => (h.match(/encore 1 commande/g) ?? []).length === 3 && !/tcc-result__value/.test(h));
+check("situation (fr, en baisse) : « perd/gagne de l'argent », « Le CA progresse plus vite que la contribution », facteur « le taux de coût produit », fiabilité élevée",
+  wrapEur("fr", React.createElement(Situation, { slots: DEC.briefing.situation })),
+  (h) => /Votre situation/.test(h) && /de l(?:&#x27;|')argent/.test(h) && /Le CA progresse plus vite que la contribution/.test(h) && /le taux de coût produit/.test(h) && /fiabilité des données est élevée/.test(h));
+check("situation (en, manquante) : « estimated result » via result.positive, single period, reliability low",
+  wrapEur("en", React.createElement(Situation, { slots: MIS.briefing.situation })),
+  (h) => /Your store is (making|losing) money/.test(h) && /(One period only|Revenue and contribution)/.test(h) && /reliability is low/.test(h));
+
+console.log("\n=== RENDU RÉEL — Priorités, opportunité, cascade, replié ===");
+check("en baisse : 3 analyses classées 1-2-3, leviers distincts, aucune règle de données",
+  wrapEur("fr", React.createElement(Priorities, { priorities: DEC.briefing.priorities, partials: [] })),
+  (h) => (h.match(/<article class="tcc-analysis/g) ?? []).length === 3 && /tcc-analysis__rank" aria-hidden="true">1</.test(h) && /aria-hidden="true">3</.test(h) && !/is-data/.test(h));
+check("aucune priorité + partiels → état vide actionnable « Aucune priorité à afficher » + « Signaux en attente de données » avec « Débloque : … »",
+  wrapEur("fr", React.createElement(Priorities, { priorities: [], partials: [{ id: "product_loss", status: "partial", missing: { known_orders: 2 }, vars: { product: "gid://shopify/Product/1", units: 1 }, unlocks: ["cm2_pct"] }] })),
+  (h) => /Aucune priorité à afficher/.test(h) && /Signaux en attente de données/.test(h) && /Produit vendu à perte/.test(h) && /Exige un coût connu et au moins 3 commandes/.test(h) && /Débloque : Marge de contribution 2\./.test(h));
+check("opportunité (saine) : bloc, badge Simulation, « par mois », avant → après, hypothèses « commandes constantes avec un panier plus grand »",
+  wrapEur("fr", React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity })),
+  (h) => /Opportunité principale/.test(h) && /tcc-confidence--simulation/.test(h) && /par mois/.test(h) && /→/.test(h) && /commandes constantes avec un panier plus grand/.test(h));
+check("opportunité absente → rien", wrapEur("en", React.createElement(Opportunity, { opportunity: null })), (h) => /<div class="tcc"><\/div>/.test(h));
+check("cascade en tableau : 12 lignes, 3 totaux (=), CA net → … → Résultat net, note",
+  wrapEur("fr", React.createElement(WaterfallTable, { leaves: DEC.briefing ? shopOf("declining").current.agg.shop.leaves : {}, nodes: shopOf("declining").current.agg.shop.nodes })),
+  (h) => (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && (h.match(/is-total/g) ?? []).length === 3 && /Où est passé votre argent/.test(h) && /Résultat net/.test(h) && /version graphique/.test(h));
+check("indicateurs repliés : <details>, 3 lignes, lien /app/metrics",
+  wrapEur("fr", React.createElement(AllIndicators, { kpis: HEA.kpis })),
+  (h) => /<details class="tcc-fold">/.test(h) && (h.match(/tcc-fold__row/g) ?? []).length === 3 && /href="\/app\/metrics"/.test(h) && /Ouvrir tous les indicateurs/.test(h));
+
+console.log("\n=== RENDU RÉEL — Fiabilité, rail, pédagogie ===");
+check("fiabilité compacte (manquante, fr) : anneau 30, niveau faible, 3 manques avec « +N pt » et « Débloque … », lien vers la page",
+  wrapEur("fr", React.createElement(DataHealth, { confidence: MIS.confidence, compact: true })),
+  (h) => /tcc-ring is-low/.test(h) && /tcc-ring__value">30</.test(h) && /faible/.test(h) && (h.match(/tcc-health__gap"/g) ?? []).length === 3 && /\+20 pt/.test(h) && /Débloque/.test(h) && /href="\/app\/data-health"/.test(h));
+check("fiabilité (saine, en) : anneau 100, « high », « Everything the engine needs is in place »",
+  wrapEur("en", React.createElement(DataHealth, { confidence: HEA.confidence, compact: true })),
+  (h) => /tcc-ring is-high/.test(h) && /tcc-ring__value">100</.test(h) && /Everything the engine needs is in place/.test(h));
+check("règles (manquante) : 7 règles, points « x / y », jauge svg, « la fiabilité atteindrait … », aucune couleur en dur",
+  wrapEur("fr", React.createElement(HealthRules, { confidence: MIS.confidence })),
+  (h) => (h.match(/class="tcc-health-rule( is-na)?" data-rule=/g) ?? []).length === 7 && /15 \/ 30/.test(h) && /0 \/ 20/.test(h) && /<svg class="tcc-health-rule__meter"/.test(h) && /la fiabilité atteindrait/.test(h) && /ROAS de point mort/.test(h) && !/health\.unlock\./.test(h) && !/#[0-9a-fA-F]{6}\b/.test(h) && !/ style="/.test(h));
+check("rail : 3 groupes titrés (Piloter, Explorer, Système), 3 liens (Aujourd'hui actif, Indicateurs, Fiabilité des données), 10 « Bientôt »",
+  wrap("fr", React.createElement(SectionRail, { current: "overview" })),
+  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 3 && (h.match(/is-soon/g) ?? []).length === 10 && /Fiabilité des données/.test(h) && /Demander/.test(h));
+check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit » avec un partiel",
+  wrap("fr", React.createElement(OverviewEmptyState, { excluded: { legacy: 6 }, partials: [{ id: "cost_coverage", status: "partial", missing: { orders: 1 }, vars: { lines: 2 }, unlocks: ["cm2_pct"] }] })),
+  (h) => /6 lues par l(?:&#x27;|')ancienne version/.test(h) && /Ce qui peut déjà être dit/.test(h) && /Coûts produits manquants/.test(h) && /Débloque/.test(h));
+check("pédagogie : 12 dépliages, 4 champs chacun (Ce que c'est, Pourquoi, Comment, Surveiller)",
+  wrap("fr", React.createElement(MetricsLearn)),
+  (h) => (h.match(/<details class="tcc-fold" data-learn=/g) ?? []).length === 12 && (h.match(/Ce que c(?:&#x27;|')est/g) ?? []).length === 12 && /Comment c(?:&#x27;|')est calculé/.test(h));
+check("réservé : seule la courbe est un emplacement (la cascade a son tableau)",
+  wrap("fr", React.createElement(ReservedSlots, { only: ["chart"] })),
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && /Évolution de la contribution/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

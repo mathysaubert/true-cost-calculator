@@ -16,6 +16,7 @@ export function I18nProvider({ locale = DEFAULT_LOCALE, catalogs = {}, currency 
       t, locale, dir: localeDir(locale), currency, timeZone,
       money: (v, opts) => fmt.formatMoney(v, locale, currency, opts),
       int: (v) => fmt.formatInt(v, locale),
+      number: (v, opts) => fmt.formatNumber(v, locale, opts),
       pct: (v, opts) => fmt.formatPct(v, locale, opts),
       ratio: (v, opts) => fmt.formatRatio(v, locale, opts),
       delta: (v, opts) => fmt.formatDelta(v, locale, { pointsLabel: t("common.points"), ...opts }),

@@ -198,12 +198,16 @@
   transition: background-color var(--tcc-motion) ease, color var(--tcc-motion) ease, transform var(--tcc-motion) ease;
 }
 .tcc-seg a:hover { color: var(--tcc-ink); }
-.tcc-seg a[aria-current="page"] { background: var(--tcc-accent); color: var(--tcc-accent-contrast); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+/* C12 : l'actif est neutre (encre sur surface), jamais un aplat violet ; l'accent reste réservé à Expert et au copilote. */
+.tcc-seg a[aria-current="page"] { background: var(--tcc-surface); color: var(--tcc-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); border: 1px solid var(--tcc-line); }
 .tcc-period { font-size: 0.8125rem; color: var(--tcc-ink-2); text-align: end; }
 
-/* ── Rail des sections (nav cible, « Bientôt » grisé) ─────────────────────────────────────── */
+/* ── Rail des sections (nav hybride en 3 groupes, « Bientôt » grisé) ─────────────────────── */
 .tcc-rail { overflow-x: auto; scrollbar-width: thin; }
-.tcc-rail ul { display: flex; gap: 6px; min-inline-size: max-content; padding-block: 2px; }
+.tcc-rail__groups { display: flex; gap: 18px; min-inline-size: max-content; padding-block: 2px; }
+.tcc-rail__group { display: grid; gap: 4px; }
+.tcc-rail__group h4 { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tcc-ink-3); padding-inline-start: 6px; }
+.tcc-rail ul { display: flex; gap: 6px; }
 .tcc-rail__item {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px;
   font-size: 0.8125rem; font-weight: 600; text-decoration: none; color: var(--tcc-ink-2); border: 1px solid transparent;
@@ -308,8 +312,10 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-empty h3 { font-size: 1.125rem; font-weight: 700; }
 .tcc-empty p { color: var(--tcc-ink-2); max-inline-size: 60ch; }
 .tcc-empty__reasons { color: var(--tcc-warn-ink); font-weight: 600; }
-.tcc-cta { display: inline-flex; align-items: center; min-block-size: 40px; padding: 0 16px; border-radius: 10px; font-weight: 600; text-decoration: none; background: var(--tcc-accent); color: var(--tcc-accent-contrast); }
-.tcc-cta--ghost { background: var(--tcc-surface-2); color: var(--tcc-accent-ink); border: 1px solid var(--tcc-line); }
+/* C12 : aucun bouton principal violet. Les actions principales sont des s-button Polaris ; .tcc-cta est
+   un lien secondaire neutre (surface, encre), l'accent ne colore que le texte des liens. */
+.tcc-cta { display: inline-flex; align-items: center; gap: 6px; min-block-size: 40px; padding: 0 16px; border-radius: 10px; font-weight: 600; text-decoration: none; background: var(--tcc-surface-2); color: var(--tcc-accent-ink); border: 1px solid var(--tcc-line); }
+.tcc-cta--ghost { background: transparent; }
 
 /* Le CONTENEUR de requête est le parent (.tcc-slots-wrap) : une container query ne peut styler que
    des descendants, jamais l'élément qui porte container-type (retour iPhone : 4 colonnes figées). */
@@ -345,9 +351,114 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 
 .tcc-notes { display: grid; gap: 4px; font-size: 0.8125rem; color: var(--tcc-ink-2); }
 
+/* ── I0-B : trois résultats essentiels ────────────────────────────────────────────────────── */
+/* Le conteneur de requête est le PARENT (.tcc-results-wrap) : une règle @container ne peut pas styler son propre conteneur. */
+.tcc-results-wrap { container-type: inline-size; container-name: tcc-results; }
+.tcc-results { display: grid; gap: var(--tcc-gap); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tcc-result { display: grid; gap: 6px; padding: 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); position: relative; overflow: hidden; }
+.tcc-result::before { content: ""; position: absolute; inset-block-start: 0; inset-inline: 0; block-size: 3px; background: var(--tcc-section, var(--tcc-accent)); }
+.tcc-result--ca_ht { --tcc-section: var(--tcc-revenue); }
+.tcc-result--cm2 { --tcc-section: var(--tcc-margins); }
+.tcc-result--net_result { --tcc-section: var(--tcc-acquisition); }
+.tcc-result__label { font-size: 0.8125rem; font-weight: 600; color: var(--tcc-ink-2); }
+.tcc-result__value { font: var(--tcc-num-hero); letter-spacing: -0.025em; }
+.tcc-result__sub { font-size: 0.75rem; color: var(--tcc-ink-2); }
+.tcc-result__status { font-size: 0.8125rem; color: var(--tcc-warn-ink); font-weight: 600; }
+@container tcc-results (max-width: 720px) { .tcc-results { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── I0-B : « Votre situation » ───────────────────────────────────────────────────────────── */
+.tcc-situation { display: grid; gap: 6px; padding: 18px 20px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-situation h3 { font-size: 0.9375rem; font-weight: 700; }
+.tcc-situation p { font-size: 0.9375rem; line-height: 1.55; }
+
+/* ── I0-B : composant Analyse (3 niveaux : 5 s en tête, 30 s dépliage natif, complet en modale) ── */
+.tcc-analysis { display: grid; gap: 10px; padding: 16px 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); position: relative; overflow: hidden; }
+.tcc-analysis::before { content: ""; position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: 4px; block-size: 100%; background: var(--tcc-tone, var(--tcc-accent)); }
+.tcc-analysis.is-loss, .tcc-analysis.is-degradation { --tcc-tone: var(--tcc-bad); }
+.tcc-analysis.is-opportunity { --tcc-tone: var(--tcc-good); }
+.tcc-analysis.is-data { --tcc-tone: var(--tcc-warn); }
+.tcc-analysis.is-context { --tcc-tone: var(--tcc-neutral); }
+.tcc-analysis__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tcc-analysis__rank { inline-size: 26px; block-size: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; background: var(--tcc-surface-2); color: var(--tcc-ink-2); border: 1px solid var(--tcc-line); }
+.tcc-analysis__name { font-size: 0.9375rem; font-weight: 700; flex: 1; min-inline-size: 12ch; }
+.tcc-analysis__obs { font-size: 0.9375rem; line-height: 1.5; }
+.tcc-analysis__impact { font-size: 0.875rem; font-weight: 600; color: var(--tcc-ink); }
+.tcc-analysis__impact small { font-weight: 500; color: var(--tcc-ink-2); }
+.tcc-analysis__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tcc-analysis details { border-block-start: 1px solid var(--tcc-line); padding-block-start: 8px; }
+.tcc-analysis summary { cursor: pointer; font-size: 0.8125rem; font-weight: 600; color: var(--tcc-accent-ink); list-style: none; display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; }
+.tcc-analysis summary::-webkit-details-marker { display: none; }
+.tcc-analysis details[open] summary .tcc-analysis__chev { transform: rotate(180deg); }
+.tcc-analysis__chev { transition: transform var(--tcc-motion) ease; }
+.tcc-qia-host { container-type: inline-size; container-name: tcc-qia; }
+.tcc-qia { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-block-start: 8px; }
+.tcc-qia__block { display: grid; gap: 4px; padding: 12px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); border: 1px solid var(--tcc-line); font-size: 0.8125rem; line-height: 1.5; }
+.tcc-qia__block h4 { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tcc-ink-3); }
+@container tcc-qia (max-width: 600px) { .tcc-qia { grid-template-columns: minmax(0, 1fr); } }
+.tcc-cause { display: grid; gap: 6px; font-size: 0.8125rem; }
+.tcc-cause__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.tcc-cause__bar { inline-size: 100%; block-size: 6px; border-radius: 999px; background: var(--tcc-surface-2); overflow: hidden; grid-column: 1 / -1; display: block; }
+.tcc-cause__fill { fill: var(--tcc-tone, var(--tcc-accent)); transform-origin: 0 50%; animation: tcc-fill 600ms ease both; }
+@keyframes tcc-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.tcc-confidence { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink); }
+.tcc-confidence--confirmed { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
+.tcc-confidence--likely { background: var(--tcc-revenue-soft); color: var(--tcc-revenue-ink); }
+.tcc-confidence--to_verify { background: var(--tcc-warn-soft); color: var(--tcc-warn-ink); }
+.tcc-confidence--simulation { background: var(--tcc-margins-soft); color: var(--tcc-margins-ink); }
+.tcc-evidence { display: grid; gap: 4px; font-size: 0.8125rem; }
+.tcc-evidence__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 4px 0; border-block-end: 1px solid var(--tcc-line); }
+.tcc-evidence__row:last-child { border-block-end: 0; }
+.tcc-priorities { display: grid; gap: 12px; }
+.tcc-block { display: grid; gap: 10px; }
+.tcc-block__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.tcc-block__head h3 { font-size: 1rem; font-weight: 700; }
+.tcc-block__head a { font-size: 0.8125rem; font-weight: 600; }
+
+/* ── I0-B : fiabilité des données ─────────────────────────────────────────────────────────── */
+.tcc-health-wrap { container-type: inline-size; container-name: tcc-health; }
+.tcc-health { display: grid; gap: 14px; grid-template-columns: auto minmax(0, 1fr); align-items: center; padding: 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-ring { inline-size: 92px; block-size: 92px; display: grid; place-items: center; position: relative; }
+.tcc-ring svg { inline-size: 92px; block-size: 92px; transform: rotate(-90deg); }
+.tcc-ring__track { fill: none; stroke: var(--tcc-surface-2); stroke-width: 8; }
+.tcc-ring__fill { fill: none; stroke: var(--tcc-good); stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 600ms ease; }
+.tcc-ring.is-medium .tcc-ring__fill { stroke: var(--tcc-warn); }
+.tcc-ring.is-low .tcc-ring__fill { stroke: var(--tcc-bad); }
+.tcc-ring__value { position: absolute; font: var(--tcc-num); letter-spacing: -0.02em; }
+.tcc-health__body { display: grid; gap: 8px; }
+.tcc-health__body h3 { font-size: 0.9375rem; font-weight: 700; }
+.tcc-health__gaps { display: grid; gap: 6px; }
+.tcc-health__gap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); font-size: 0.8125rem; }
+.tcc-health__gap strong { display: block; }
+.tcc-health__gap small { color: var(--tcc-ink-2); }
+.tcc-health__points { font-weight: 700; color: var(--tcc-good-ink); white-space: nowrap; }
+@container tcc-health (max-width: 480px) { .tcc-health { grid-template-columns: minmax(0, 1fr); justify-items: start; } }
+.tcc-health-rules { display: grid; gap: 8px; }
+.tcc-health-rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 12px 14px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-size: 0.875rem; }
+.tcc-health-rule.is-na { opacity: 0.6; }
+.tcc-health-rule__meter { grid-column: 1 / -1; inline-size: 100%; block-size: 6px; border-radius: 999px; background: var(--tcc-surface-2); overflow: hidden; display: block; }
+.tcc-health-rule__meter rect { fill: var(--tcc-good); }
+
+/* ── I0-B : cascade en tableau, indicateurs repliés ──────────────────────────────────────── */
+.tcc-waterfall { display: grid; border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius-s); overflow: hidden; font-size: 0.875rem; background: var(--tcc-surface); }
+.tcc-waterfall__row { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 8px 12px; border-block-start: 1px solid var(--tcc-line); }
+.tcc-waterfall__row:first-child { border-block-start: 0; }
+.tcc-waterfall__row.is-total { background: var(--tcc-surface-2); font-weight: 700; }
+.tcc-waterfall__op { color: var(--tcc-ink-3); text-align: center; }
+.tcc-waterfall__amount { text-align: end; }
+.tcc-fold { border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius); background: var(--tcc-surface); }
+.tcc-fold summary { cursor: pointer; padding: 14px 18px; font-weight: 700; font-size: 0.9375rem; list-style: none; display: flex; justify-content: space-between; align-items: center; min-block-size: 44px; }
+.tcc-fold summary::-webkit-details-marker { display: none; }
+.tcc-fold__body { padding: 0 18px 16px; display: grid; gap: 8px; }
+.tcc-fold__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; font-size: 0.875rem; padding: 6px 0; border-block-start: 1px solid var(--tcc-line); }
+.tcc-learn { display: grid; gap: 6px; font-size: 0.8125rem; color: var(--tcc-ink-2); padding-block-start: 8px; }
+.tcc-learn dt { font-weight: 700; color: var(--tcc-ink-3); font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.tcc-learn dd { margin: 0 0 4px; }
+.tcc-partials { display: grid; gap: 6px; font-size: 0.875rem; }
+.tcc-partials li { display: flex; gap: 8px; align-items: flex-start; }
+
 /* ── Mouvement réduit : rien ne bouge ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  .tcc-tile { animation: none; }
+  .tcc-tile, .tcc-cause__fill { animation: none; }
   .tcc *, .tcc *::before, .tcc *::after { transition: none !important; animation: none !important; }
   .tcc-tile:hover { transform: none; }
 }

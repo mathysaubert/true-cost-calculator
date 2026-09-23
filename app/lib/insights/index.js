@@ -92,6 +92,7 @@ export function buildInsights({ current, reference, bridgeCm2, settings = {}, so
     const point = signal.impact?.point ?? null;
     out.push({
       id: rule.id, kind: rule.kind, subject, status,
+      reference: usesReference && reference ? { kind: reference.kind, count: reference.count, periodDays } : null,
       vars: signal.vars, evidence: signal.evidence,
       impact: point == null ? { formula: signal.impact?.formula ?? null, point: null, range: null, precision_only: signal.impact?.precision_only === true } : { formula: signal.impact.formula, point, precision_only: signal.impact.precision_only === true, range: impactRange({ point, score, status, currency, horizon: "period", periodDays }) },
       cause: signal.cause ?? null, explained: signal.explained ?? null,

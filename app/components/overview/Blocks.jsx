@@ -1,56 +1,47 @@
-// ── État vide, emplacements réservés, bandeau du moteur — app-owned, PUR ─────────────────────
+// ── État vide actionnable, emplacements réservés, bandeau du moteur — app-owned, PUR ─────────
 import { useI18n } from "../../lib/i18n/context.jsx";
 import { OVERVIEW_RESERVED } from "../../lib/sections.js";
 import { Icon } from "./Icons.jsx";
+import { PartialConclusions } from "./Briefing.jsx";
 
-// excluded = compteurs par raison sur la période courante (legacy compris) : le POURQUOI est visible.
-export function OverviewEmptyState({ excluded = {} }) {
+// excluded = compteurs par raison (legacy compris) ; partials = ce qui peut déjà être conclu.
+export function OverviewEmptyState({ excluded = {}, partials = [], titles = {} }) {
   const { t, int } = useI18n();
   const entries = Object.entries(excluded).filter(([, n]) => n > 0);
   const total = entries.reduce((s, [, n]) => s + n, 0);
   const reasons = entries.map(([r, n]) => `${int(n)} ${t(`overview.excluded.${r}`)}`).join(", ");
   return (
-    <div className="tcc-card tcc-empty">
-      <h3>{t("overview.empty.title")}</h3>
-      <p>{t("overview.empty.body")}</p>
-      {total > 0 && <p className="tcc-empty__reasons">{t("overview.empty.body_excluded", { count: total, reasons })}</p>}
-      <a className="tcc-cta tcc-cta--ghost" href="/app">{t("overview.empty.cta_legacy")}</a>
+    <div className="tcc-stack">
+      <div className="tcc-card tcc-empty">
+        <h3>{t("overview.empty.title")}</h3>
+        <p>{t("overview.empty.body")}</p>
+        {total > 0 && <p className="tcc-empty__reasons">{t("overview.empty.body_excluded", { count: total, reasons })}</p>}
+        <a className="tcc-cta" href="/app">{t("overview.empty.cta_legacy")}</a>
+      </div>
+      <PartialConclusions partials={partials} titles={titles} title={t("overview.empty.partial_title")} />
     </div>
   );
 }
 
-// Emplacement réservé : jamais un chiffre, une carte discrète « Disponible avec {section} ».
+// Emplacement réservé : jamais un chiffre, une carte discrète « Disponible … ».
 export function ReservedSlot({ slot }) {
   const { t } = useI18n();
-  const sectionLabel = t(`nav.${slot.section}`);
   return (
     <div className={`tcc-slot tcc-slot--${slot.size}`} data-slot={slot.id} aria-label={t(`overview.reserved.${slot.id}`)}>
-      <span className="tcc-slot__icon"><Icon id={slot.id} /></span>
+      <span className="tcc-slot__icon"><Icon id={slot.id === "waterfall" ? "cm3" : slot.id} /></span>
       <p><strong>{t(`overview.reserved.${slot.id}`)}</strong></p>
-      <p>{slot.section === "overview" ? t("overview.reserved.next_release") : t("overview.reserved.with", { section: sectionLabel })}</p>
+      <p>{slot.section === "overview" ? t("overview.reserved.next_release") : t("overview.reserved.with", { section: t(`nav.${slot.section}`) })}</p>
       <span className="tcc-badge"><Icon id="soon" />{t("nav.soon")}</span>
     </div>
   );
 }
 
-export function ReservedSlots({ slots = OVERVIEW_RESERVED }) {
-  const main = slots.filter((s) => s.size === "wide" || s.size === "narrow");
-  const aside = slots.filter((s) => s.size === "aside");
-  const quarters = slots.filter((s) => s.size === "quarter");
-  return (
-    <div className="tcc-slots-wrap">
-      <div className="tcc-slots tcc-slots--main">
-        {main.map((s) => <ReservedSlot key={s.id} slot={s} />)}
-        {aside.map((s) => <ReservedSlot key={s.id} slot={s} />)}
-      </div>
-      <div className="tcc-slots tcc-slots--quarters">
-        {quarters.map((s) => <ReservedSlot key={s.id} slot={s} />)}
-      </div>
-    </div>
-  );
+export function ReservedSlots({ slots = OVERVIEW_RESERVED, only = null }) {
+  const list = only ? slots.filter((s) => only.includes(s.id)) : slots;
+  return <div className="tcc-slots-wrap">{list.map((s) => <ReservedSlot key={s.id} slot={s} />)}</div>;
 }
 
-// Bandeau « Le moteur économique derrière toutes les sections » : statique, traduit.
+// Bandeau « Le moteur économique derrière toutes les sections » : statique, traduit (page Indicateurs).
 const STEPS = ["data", "engine", "intelligence", "simulator", "results"];
 export function EngineBanner() {
   const { t } = useI18n();

@@ -60,7 +60,7 @@ console.log("\n── 2. createTranslator ──");
 // ── 3. Catalogues en / fr ──
 console.log("\n── 3. Catalogues : fr = en, aucune clé orpheline, aucune clé absente ──");
 const F4_FILES = [
-  "app/routes/app.jsx", "app/routes/app.overview.jsx", "app/root.jsx", "app/lib/i18n/context.jsx",
+  "app/routes/app.jsx", "app/routes/app.overview.jsx", "app/routes/app.metrics.jsx", "app/routes/app.data-health.jsx", "app/root.jsx", "app/lib/i18n/context.jsx", "app/lib/insights/render.js",
   ...readdirSync(new URL("app/components/overview/", ROOT)).map((f) => `app/components/overview/${f}`),
 ];
 {
@@ -70,7 +70,7 @@ const F4_FILES = [
   ok(onlyFr.length === 0, `fr.js n'a aucune clé hors en.js${onlyFr.length ? " — en trop : " + onlyFr.join(", ") : ""}`);
   ok(Object.values(CATALOGS.en).every((v) => typeof v === "string" && v.trim()) && Object.values(CATALOGS.fr).every((v) => typeof v === "string" && v.trim()), "aucune valeur vide");
   ok(!/dashboard\./.test(Object.keys(CATALOGS.en).join(" ")), "renommage : plus aucune clé dashboard.* (Overview / Vue d'ensemble)");
-  ok(CATALOGS.en["nav.overview"] === "Overview" && CATALOGS.fr["nav.overview"] === "Vue d'ensemble" && CATALOGS.fr["nav.soon"] === "Bientôt" && CATALOGS.en["nav.cash"] === "Cash" && CATALOGS.fr["nav.cash"] === "Trésorerie", "libellés de nav imposés (en/fr)");
+  ok(CATALOGS.en["nav.overview"] === "Today" && CATALOGS.fr["nav.overview"] === "Aujourd'hui" && CATALOGS.fr["nav.soon"] === "Bientôt" && CATALOGS.en["nav.data_health"] === "Data health" && CATALOGS.fr["nav.data_health"] === "Fiabilité des données" && CATALOGS.fr["nav.group.steer"] === "Piloter" && CATALOGS.en["nav.group.explore"] === "Explore" && !CATALOGS.en["nav.cash"] && !CATALOGS.en["nav.experiments"], "libellés de la nav hybride imposés (en/fr), Trésorerie et Expériences absentes");
   const src = F4_FILES.map((f) => read(f)).join("\n");
   const literal = [...src.matchAll(/\bt\(\s*"([^"]+)"/g)].map((m) => m[1]);
   const dyn = [...src.matchAll(/\bt\(\s*`([^`$]+)\$\{/g)].map((m) => m[1]);
@@ -90,14 +90,17 @@ const F4_FILES = [
     ...["no_ad_source", "no_fixed_costs", "provisional", "known_share"].map((n) => `overview.note.${n}`),
     ...["legacy_orders", "unknown_cost_lines", "unconfirmed_fees", "unconfirmed_shipping", "no_packaging_cost", "capped", "excluded"].map((g) => `overview.gaps.${g}`),
     ...SECTIONS.map((s) => `nav.${s.id}`),
+    ...["steer", "explore", "system"].map((g) => `nav.group.${g}`),
     ...OVERVIEW_RESERVED.map((s) => `overview.reserved.${s.id}`),
+    ...["results", "situation", "priorities", "opportunity", "chart", "waterfall", "health", "all"].map((b) => `overview.block.${b}`),
+    ...["ca_ht", "cm2", "net_result"].map((r) => `results.${r}.label`),
     ...["data", "engine", "intelligence", "simulator", "results"].flatMap((s) => [`overview.engine.${s}.title`, `overview.engine.${s}.b1`, `overview.engine.${s}.b2`, `overview.engine.${s}.b3`]),
   ];
   const missingDyn = need.filter((k) => !enKeys.has(k));
   ok(missingDyn.length === 0, `membres des familles dynamiques présents (${need.length})${missingDyn.length ? " — absents : " + missingDyn.join(", ") : ""}`);
   const used = new Set([...literal, ...navLabels, ...need]);
   // Préfixes réservés à la couche narrative I0 (consommés par le lot 27, écrans en I0-B).
-  const RESERVED = ["insight.", "learn.", "situation.", "confidence.", "factor.", "reference.", "cta.", "impact.", "unlock."];
+  const RESERVED = ["insight.", "learn.kpi.", "situation.", "confidence.", "factor.", "reference.", "cta.", "impact.", "unlock.", "assumption.", "reason.", "health.rule.", "health.unlock.", "health.level.", "results.gap.", "evidence."];
   const orphan = [...enKeys].filter((k) => !used.has(k) && !families.some((p) => k.startsWith(p)) && !RESERVED.some((p) => k.startsWith(p)));
   ok(orphan.length === 0, `aucune clé orpheline dans en.js${orphan.length ? " — " + orphan.join(", ") : ""}`);
 }
@@ -134,6 +137,12 @@ const CSS = read("app/styles/overview.css");
   ok(!/shopify\.config\.locale/.test(F4_FILES.map(read).join("")), "la locale rendue ne vient jamais d'App Bridge côté client (pas de mismatch d'hydratation)");
   ok(!/<s-button-group|<s-grid/.test(ui.map(read).join("")), "plus aucune dépendance à s-grid / s-button-group (retours 2 et 3)");
   ok(/aria-current=\{n === days \? "page"/.test(read("app/components/overview/OverviewHeader.jsx")), "sélecteur de période : liens + aria-current=\"page\" (retour 3)");
+  // C12 : aucun bouton principal violet ; l'accent ne remplit ni .tcc-cta ni l'actif du segmenté.
+  const ctaBlock = CSS.slice(CSS.indexOf(".tcc-cta {"), CSS.indexOf("}", CSS.indexOf(".tcc-cta {")));
+  ok(!/background:\s*var\(--tcc-accent\)/.test(ctaBlock) && /color:\s*var\(--tcc-accent-ink\)/.test(ctaBlock), "C12 : .tcc-cta est un lien neutre (surface, encre accent), pas un bouton plein violet");
+  const segActive = CSS.slice(CSS.indexOf('.tcc-seg a[aria-current="page"]'), CSS.indexOf("}", CSS.indexOf('.tcc-seg a[aria-current="page"]')));
+  ok(/background:\s*var\(--tcc-surface\)/.test(segActive) && !/--tcc-accent\)/.test(segActive), "C12 : période active neutre (surface + encre), pas d'aplat violet");
+  ok(!/background:\s*var\(--tcc-accent\)\s*;/.test(CSS.replace(/\/\*[\s\S]*?\*\//g, "")), "C12 : aucun fond plein --tcc-accent dans toute la feuille");
 }
 
 // ── 5. Jetons CSS : contrastes AA calculés, thème sombre complet, mouvement réduit, logique ──
@@ -332,10 +341,11 @@ console.log("\n── 11. sparklinePaths ──");
 // ── 12. Navigation cible et emplacements réservés ──
 console.log("\n── 12. sections.js ──");
 {
-  ok(SECTIONS.length === 12 && SECTIONS.map((s) => s.id).join(",") === "overview,profit,growth,customers,products,inventory,marketing,cash,intelligence,simulator,experiments,settings", "12 sections dans l'ordre décidé");
-  ok(LIVE_SECTIONS.length === 1 && LIVE_SECTIONS[0].id === "overview" && LIVE_SECTIONS[0].path === "/app/overview", "seule la Vue d'ensemble est livrée (/app/overview)");
+  ok(SECTIONS.length === 13 && SECTIONS.map((s) => s.id).join(",") === "overview,decisions,simulator,ask,metrics,profit,growth,customers,products,marketing,inventory,data_health,settings", "13 sections en 3 groupes dans l'ordre décidé (Piloter / Explorer / Système)");
+  ok(SECTIONS.filter((s) => s.group === "steer").length === 4 && SECTIONS.filter((s) => s.group === "explore").length === 7 && SECTIONS.filter((s) => s.group === "system").length === 2, "groupes : 4 / 7 / 2");
+  ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,metrics:/app/metrics,data_health:/app/data-health", "livrées : Aujourd'hui, Indicateurs, Fiabilité des données");
   ok(SECTIONS.filter((s) => s.status === "soon").every((s) => s.path === null), "les sections « Bientôt » n'ont pas de route");
-  ok(OVERVIEW_RESERVED.length === 7 && OVERVIEW_RESERVED.every((s) => SECTIONS.some((x) => x.id === s.section)), "7 emplacements réservés, chacun rattaché à une section");
+  ok(OVERVIEW_RESERVED.length === 2 && OVERVIEW_RESERVED.every((s) => s.section === "overview"), "2 emplacements réservés (courbe, cascade) rattachés à la Vue d'ensemble");
   ok(/rel="home"/.test(read("app/routes/app.jsx")) && /LIVE_SECTIONS/.test(read("app/routes/app.jsx")), "s-app-nav : rel=\"home\" + sections livrées seulement");
 }
 
