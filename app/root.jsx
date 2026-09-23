@@ -1,8 +1,10 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from "react-router";
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteError, useRouteLoaderData } from "react-router";
 
 export default function App() {
+  // lang/dir suivent la locale résolue par la coquille (routes/app) ; hors /app : en, ltr.
+  const app = useRouteLoaderData("routes/app");
   return (
-    <html lang="en">
+    <html lang={app?.locale ?? "en"} dir={app?.dir ?? "ltr"}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />

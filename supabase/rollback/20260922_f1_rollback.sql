@@ -20,6 +20,11 @@ ALTER TABLE IF EXISTS public.shop_settings
   DROP COLUMN IF EXISTS return_cost_per_return,
   DROP COLUMN IF EXISTS shop_country_code;
 
+-- 0b. Addendum F4 (20260923_f4_01) : réglage boutique de développement — retiré de même.
+ALTER TABLE IF EXISTS public.shop_settings
+  DROP COLUMN IF EXISTS is_dev_shop,
+  DROP COLUMN IF EXISTS include_test_orders;
+
 -- 1. Fonctions RGPD (F1-23)
 DROP FUNCTION IF EXISTS public.redact_customer(TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.purge_shop(TEXT);

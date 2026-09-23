@@ -181,6 +181,22 @@ console.log("\n── 8. Rollback F1 (supabase/rollback) ──");
   ok(!/DELETE FROM|TRUNCATE|UPDATE /.test(rb), "le rollback ne touche à AUCUNE donnée des tables historiques");
 }
 
+// ── 9. Addendum F4 (C6a) : deux colonnes sur shop_settings, défaut neutre, retirées par le rollback ──
+console.log("\n── 9. Addendum F4-01 (réglage boutique de développement) ──");
+{
+  const f4 = read("20260923_f4_01_dev_shop_settings.sql");
+  const rb = readFileSync(new URL("../supabase/rollback/20260922_f1_rollback.sql", import.meta.url), "utf8");
+  const added = [...f4.matchAll(/ADD COLUMN IF NOT EXISTS (\w+)\s+([^,;]+)/g)].map((m) => ({ col: m[1], def: m[2] }));
+  ok(added.length === 2 && added.some((c) => c.col === "is_dev_shop") && added.some((c) => c.col === "include_test_orders"), `2 colonnes (is_dev_shop, include_test_orders) — trouvées : ${added.map((c) => c.col).join(", ")}`);
+  ok(!/CREATE TABLE/i.test(f4) && /ALTER TABLE public\.shop_settings/.test(f4) && !/UPDATE |DELETE FROM/i.test(f4), "addendum F4 : uniquement des colonnes sur shop_settings, aucune donnée touchée");
+  const inc = added.find((c) => c.col === "include_test_orders");
+  ok(inc && /DEFAULT false/i.test(inc.def), "include_test_orders : défaut false (jamais actif par défaut)");
+  const dev = added.find((c) => c.col === "is_dev_shop");
+  ok(dev && !/DEFAULT/i.test(dev.def) && !/NOT NULL/i.test(dev.def), "is_dev_shop : nullable sans défaut (NULL = pas encore lu)");
+  const dropped = [...rb.matchAll(/DROP COLUMN IF EXISTS (\w+)/g)].map((m) => m[1]);
+  ok(added.every((c) => dropped.includes(c.col)), "les 2 colonnes de l'addendum F4 sont retirées par le rollback");
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 23 (schéma F1) : ✓ Tous les tests passent"

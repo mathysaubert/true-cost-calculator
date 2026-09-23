@@ -1,23 +1,71 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+// ── Coquille de l'app embarquée (F4-A) : App Bridge + Polaris WC, navigation, locale ──────────
+// Locale (C3a) : surcharge marchand > ?locale= (chargement initial depuis l'admin) > cookie
+// tcc_locale > Accept-Language > en. Le cookie est posé quand la locale vient du paramètre ou
+// d'une surcharge, pour les navigations client suivantes (qui ne portent plus ?locale=).
+// Le rendu serveur et le client utilisent la MÊME locale (jamais celle lue côté client par App Bridge).
+import { Outlet, useLoaderData, useRouteError, data } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { supabase } from "../supabase.server";
+import { resolveLocale, readCookie, localeCookieHeader, localeDir, LOCALE_COOKIE } from "../lib/i18n/resolveLocale.js";
+import { catalogsFor } from "../locales/index.js";
+import { I18nProvider } from "../lib/i18n/context.jsx";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+
+  let settings = null;
+  try {
+    const { data: row } = await supabase.from("shop_settings").select("locale_override, shop_currency, shop_timezone").eq("shop_domain", session.shop).maybeSingle();
+    settings = row ?? null;
+  } catch (e) { console.error("[App] shop_settings :", e?.message); }
+
+  const cookie = readCookie(request.headers.get("cookie"), LOCALE_COOKIE);
+  const { locale, source } = resolveLocale({
+    override: settings?.locale_override ?? null,
+    param: url.searchParams.get("locale"),
+    cookie,
+    acceptLanguage: request.headers.get("accept-language"),
+  });
+  const headers = {};
+  if ((source === "param" || source === "override") && cookie !== locale) headers["Set-Cookie"] = localeCookieHeader(locale);
+
+  return data({
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    locale, dir: localeDir(locale), localeSource: source,
+    catalogs: catalogsFor(locale),
+    currency: settings?.shop_currency ?? null,
+    timeZone: settings?.shop_timezone ?? "UTC",
+  }, { headers });
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData();
+  const { apiKey, locale, catalogs, currency, timeZone } = useLoaderData();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Accueil</s-link>
-      </s-app-nav>
-      <Outlet />
+      <I18nProvider locale={locale} catalogs={catalogs} currency={currency} timeZone={timeZone}>
+        <AppNav />
+        <Outlet />
+      </I18nProvider>
     </AppProvider>
+  );
+}
+
+// Navigation admin (s-app-nav) : le lien rel="home" fixe la page d'accueil (/app, écran classique,
+// masqué du menu par l'admin) ; le Tableau de bord est la première entrée visible (C11a).
+function AppNav() {
+  const { catalogs, locale } = useLoaderData();
+  const cat = catalogs[locale] ?? catalogs.en ?? {};
+  const label = (k) => cat[k] ?? catalogs.en?.[k] ?? k;
+  return (
+    <s-app-nav>
+      <s-link rel="home" href="/app">{label("nav.home")}</s-link>
+      <s-link href="/app/dashboard">{label("nav.dashboard")}</s-link>
+      <s-link href="/app">{label("nav.legacy")}</s-link>
+    </s-app-nav>
   );
 }
 

@@ -125,6 +125,95 @@ console.log("\n=== RENDU RÉEL — ProductCostPanel (Suivi, champs vides + place
     (h) => /Ces coûts servent à calculer votre vraie marge sur chaque commande/.test(h));
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  F4-A — Tableau de bord : composants Polaris WC RÉELS rendus sous I18nProvider (en puis fr), sur
+//  données chargées, nœuds null (coûts manquants), insuffisant, état vide, trous, boutique de dev.
+//  Les custom elements sortent en balises `s-*` avec leurs attributs camelCase (React 18, SSR).
+// ════════════════════════════════════════════════════════════════════════════════
+const { I18nProvider } = await vite.ssrLoadModule("/app/lib/i18n/context.jsx");
+const { CATALOGS } = await vite.ssrLoadModule("/app/locales/index.js");
+const { KpiTile } = await vite.ssrLoadModule("/app/components/dashboard/KpiTile.jsx");
+const { KpiGrid } = await vite.ssrLoadModule("/app/components/dashboard/KpiGrid.jsx");
+const { DataGapsBanner, DashboardNotes } = await vite.ssrLoadModule("/app/components/dashboard/DataGapsBanner.jsx");
+const { PeriodSelector } = await vite.ssrLoadModule("/app/components/dashboard/PeriodSelector.jsx");
+const { DashboardEmptyState } = await vite.ssrLoadModule("/app/components/dashboard/DashboardEmptyState.jsx");
+const { DevShopBanner } = await vite.ssrLoadModule("/app/components/dashboard/DevShopBanner.jsx");
+const { buildKpis, buildGaps, buildNotes, dashboardWindows } = await vite.ssrLoadModule("/app/lib/dashboard.js");
+const { aggregate } = await vite.ssrLoadModule("/app/lib/econ/aggregate.js");
+const { lineFromOrderMarginsRow } = await vite.ssrLoadModule("/app/lib/econ/adapters.js");
+
+const wrap = (locale, element) => React.createElement(I18nProvider, { locale, catalogs: { en: CATALOGS.en, [locale]: CATALOGS[locale] }, currency: "USD", timeZone: "America/New_York" }, element);
+const dashSettings = { shop_country_code: "US", shop_timezone: "UTC", return_window_days: 30, packaging_cost_per_order: 0, shipping_cost_rules: { default: 0, confirmed: true }, gateway_fee_rules: [{ gateway: "*", pct: 0, fixed: 0, confirmed: true }] };
+const dashNow = new Date("2026-10-20T00:00:00Z");
+const dashWin = { start: "2026-09-01", end: "2026-09-30" }, dashPrev = { start: "2026-08-02", end: "2026-08-31" };
+const mkOrder = (id, day, extra = {}) => ({ order_id: id, day_local: day, created_at: `${day}T10:00:00Z`, excluded_reason: null, currency_code: "USD", discounts_amount: 0, shipping_charged: 0, customer_order_index: 1, ...extra });
+const mkLine = (id, day, ht, cm1) => lineFromOrderMarginsRow({ order_id: id, line_item_id: `L${id}`, product_id: "P", variant_id: "V", quantity: 1, refunded_qty: 0, effective_qty: 1, unit_price_ht: ht, tax_lines: [], cm1_unit: cm1, cost_source: cm1 == null ? "missing" : "confirmed", breakdown_version: 2, currency_code: "USD", day_local: day });
+const full = Array.from({ length: 12 }, (_, i) => mkOrder(`m${i}`, `2026-09-${String(10 + i).padStart(2, "0")}`));
+const fullLines = full.map((o) => mkLine(o.order_id, o.day_local, 100, 60));
+const prevO = full.slice(0, 10).map((o) => mkOrder(`p${o.order_id}`, o.day_local.replace("-09-", "-08-")));
+const prevL = prevO.map((o) => mkLine(o.order_id, o.day_local, 80, 40));
+const aggFull = aggregate({ orders: [...full, ...prevO], lines: [...fullLines, ...prevL], settings: dashSettings, window: dashWin, now: dashNow });
+const aggPrev = aggregate({ orders: [...full, ...prevO], lines: [...fullLines, ...prevL], settings: dashSettings, window: dashPrev, now: dashNow });
+const aggMissing = aggregate({ orders: [mkOrder("x1", "2026-09-10")], lines: [mkLine("x1", "2026-09-10", 600, null)], settings: dashSettings, window: dashWin, now: dashNow });
+const aggEmpty = aggregate({ orders: [], lines: [], settings: dashSettings, window: dashWin, now: dashNow });
+const kpisFull = buildKpis({ current: aggFull, previous: aggPrev });
+const kpisMissing = buildKpis({ current: aggMissing, previous: aggEmpty });
+const byId = (list, id) => list.find((k) => k.id === id);
+
+console.log("\n=== RENDU RÉEL — KpiTile (Tableau de bord F4-A) ===");
+check("ok + écart positif (en) → valeur $, badge arrow-up, « See the calculation », modale avec entrées",
+  wrap("en", React.createElement(KpiTile, { kpi: byId(kpisFull, "ca_ht") })),
+  (h) => /<s-box/.test(h) && /\$1,200\.00/.test(h) && /icon="arrow-up"/.test(h) && /tone="success"/.test(h) && /\+50\.0%/.test(h) && /See the calculation/.test(h) && /<s-modal/.test(h) && /Gross revenue/.test(h));
+check("même KPI en fr → libellé et format français, mêmes chiffres",
+  wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisFull, "ca_ht") })),
+  (h) => /CA net HT/.test(h) && /200,00/.test(h) && !/1,200\.00/.test(h) && /Voir le calcul/.test(h) && /vs période précédente/.test(h));
+check("CM2 % en points : badge +10 pt, valeur 60.0%",
+  wrap("en", React.createElement(KpiTile, { kpi: byId(kpisFull, "cm2_pct") })),
+  (h) => /60\.0%/.test(h) && /\+10\.0 pt/.test(h));
+check("nœud null (coût manquant) → « Unknown: 1 line without a product cost. », aucun chiffre 0",
+  wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "cm3") })),
+  (h) => /Unknown: 1 line without a product cost/.test(h) && !/type="strong"/.test(h));
+check("insuffisant → « Not enough data yet: 9 more orders. » (1 commande, minData 10)",
+  wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "aov") })),
+  (h) => /Not enough data yet: 9 more orders\./.test(h));
+check("insuffisant (fr) → « encore 9 commandes »",
+  wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisMissing, "aov") })),
+  (h) => /encore 9 commandes/.test(h));
+check("source non connectée → « Connect an advertising account »",
+  wrap("en", React.createElement(KpiTile, { kpi: byId(kpisMissing, "cac_global") })),
+  (h) => /Connect an advertising account/.test(h));
+check("kpi=null (ÉTAT INITIAL) → null, ne crashe pas", wrap("en", React.createElement(KpiTile, { kpi: null })), (h) => h === "");
+
+console.log("\n=== RENDU RÉEL — KpiGrid (12 KPI, 3 sections, secondaires masquables) ===");
+check("12 tuiles, 3 s-section, grille @container, 4 secondaires en .tcc-secondary, bouton « Show 4 more indicators »",
+  wrap("en", React.createElement(KpiGrid, { kpis: kpisFull })),
+  (h) => (h.match(/<s-modal/g) ?? []).length === 12 && (h.match(/<s-section/g) ?? []).length === 3 && /gridTemplateColumns="@container/.test(h) && (h.match(/class="tcc-secondary"/g) ?? []).length === 4 && /Show 4 more indicators/.test(h));
+check("kpis=[] → aucune section, aucun bouton", wrap("en", React.createElement(KpiGrid, { kpis: [] })), (h) => !/<s-section/.test(h) && !/Show/.test(h));
+
+console.log("\n=== RENDU RÉEL — DataGapsBanner / DashboardNotes ===");
+check("trous → s-banner warning avec 1 ligne sans coût, 20 legacy, plafond, 2 exclues (raisons)",
+  wrap("en", React.createElement(DataGapsBanner, { gaps: buildGaps({ agg: aggMissing, legacyLines: 20, capped: true, excluded: { draft: 1, cancelled: 1 } }) })),
+  (h) => /tone="warning"/.test(h) && /1 order line has no product cost/.test(h) && /20 order lines were ingested before/.test(h) && /5,000/.test(h) && /2 orders are excluded from every figure: 1 draft, 1 cancelled/.test(h));
+check("aucun trou → null", wrap("en", React.createElement(DataGapsBanner, { gaps: [] })), (h) => h === "");
+check("notes → pub non connectée, coûts fixes absents",
+  wrap("fr", React.createElement(DashboardNotes, { notes: buildNotes(aggFull) })),
+  (h) => /Aucune source publicitaire connectée/.test(h) && /Aucun coût fixe saisi/.test(h));
+
+console.log("\n=== RENDU RÉEL — PeriodSelector / EmptyState / DevShopBanner ===");
+check("sélecteur 30 j actif (primary, disabled), liens ?days=, plage formatée",
+  wrap("en", React.createElement(PeriodSelector, { days: 30, windows: dashboardWindows({ now: new Date("2026-09-23T12:00:00Z"), timeZone: "UTC", days: 30 }) })),
+  (h) => /href="\?days=7"/.test(h) && /href="\?days=90"/.test(h) && /variant="primary" disabled/.test(h) && /Aug 24, 2026 to Sep 22, 2026/.test(h));
+check("état vide avec 7 exclues → titre, raisons, lien /app",
+  wrap("fr", React.createElement(DashboardEmptyState, { excluded: { draft: 7 } })),
+  (h) => /Aucune commande à analyser/.test(h) && /7 commandes de la période sont exclues/.test(h) && /7 brouillon/.test(h) && /href="\/app"/.test(h));
+check("état vide sans exclusion → pas de phrase d'exclusion", wrap("en", React.createElement(DashboardEmptyState, { excluded: {} })), (h) => /No order to analyze/.test(h) && !/excluded/.test(h));
+check("boutique de dev, inclusion OFF → bandeau info + bouton « Include draft and test orders », form POST",
+  wrap("en", React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: false })),
+  (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && /value="1"/.test(h));
+check("boutique de dev, inclusion ON → « Exclude… »", wrap("fr", React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: true })), (h) => /Exclure les commandes brouillon/.test(h));
+check("boutique marchande (isDevShop=false) → null", wrap("en", React.createElement(DevShopBanner, { isDevShop: false, includeTestOrders: true })), (h) => h === "");
+check("isDevShop=null (pas encore lu) → null", wrap("en", React.createElement(DevShopBanner, { isDevShop: null })), (h) => h === "");
+
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
 process.exit(ko === 0 ? 0 : 1);

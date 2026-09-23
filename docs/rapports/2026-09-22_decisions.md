@@ -424,6 +424,25 @@ Texte à coller (motif d'usage) :
 > (Supabase, Vercel), and is deleted on uninstall and on the shop/redact and customers/redact
 > webhooks, which are implemented.
 
+## F. Arbitrages F4 — coquille Polaris WC, i18n, Tableau de bord (2026-09-23)
+
+Rapport de Phase 0 : `docs/rapports/2026-09-23_f4-coquille-i18n-dashboard_phase0.md`.
+Implémentation F4-A : `docs/rapports/2026-09-23_f4-a_implementation.md`.
+
+| # | Décision | Conséquence dans F4-A |
+|---|---|---|
+| C1 | (a) React 18.3 pour F4-A et F4-B ; React 19 retranché en Phase 0 de F4-B | Aucun champ Polaris contrôlé : période par liens, bascule par `<Form>` natif. |
+| C2 | (a) Canal Polaris actuel (`polaris.js` via `AppProvider` 1.2.0) ; montée de version en F4-B | Aucune dépendance modifiée. |
+| C3 | (a) Surcharge > `?locale=` > cookie `tcc_locale` (`SameSite=None; Secure; HttpOnly`) > `Accept-Language` > `en` | `app/lib/i18n/resolveLocale.js`, loader de `app.jsx` ; phrase de politique de confidentialité dans le rapport d'implémentation §5. |
+| C4 | (c) Module maison à API compatible i18next, réévalué en F4-C | `app/lib/i18n/t.js` ; catalogues en modules JS (attributs d'import JSON refusés par ESLint 8). |
+| C5 | (a) `en` + `fr` en F4-A ; 33 autres en une passe en F4-D ; lint `fr = en` | `app/locales/`, lot 26 §3. |
+| C6 | (a) `shop_settings.include_test_orders` + `is_dev_shop` (addendum idempotent + rollback + lot 23), bascule depuis le Tableau de bord, visible si `shop.plan.partnerDevelopment` ; `cancelled`, `gift_card_only`, `b2b` toujours exclues | Migration `20260923_f4_01_dev_shop_settings.sql` (non appliquée), `dashboard.server.js`, `econ/adapters.js`. |
+| C7 | (b) Adaptateur pur + `discounts_amount` injecté comme remise de commande ; (c) addendum F2 noté avant l'écran Produits | `econ/adapters.js` (`lineFromOrderMarginsRow`, `applyOrderDiscounts`). |
+| C8 | (a) Faits lus au chargement, plafond 5 000 lignes signalé | `DASHBOARD_LINES_CAP`, trou `capped`. |
+| C9 | (b) Lint sur tout `app/` sauf liste d'exclusion | lot 26 §4 (77 fichiers scannés). |
+| C10 | (a) 4 KPI secondaires sous « Voir plus » sur conteneur étroit ; vérification iPhone | Secondaires = CVR, MER, POAS, LTV/CAC (liste de la décision 14, qui n'inclut pas l'OTD). |
+| C11 | (a) `/app/dashboard` nouveau, `/app` inchangé | `app.dashboard.jsx`, `s-link rel="home"` sur `/app`. |
+
 Réponses courtes « Data protection details » (niveau 1) :
 
 > Minimum data: customer ID, country code and journey summary only; no identifying fields.
