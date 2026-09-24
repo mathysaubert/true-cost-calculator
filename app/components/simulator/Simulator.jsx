@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Form, Link } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
-import { LEVERS, leverAvailable, runScenario, scenarioSearch, HORIZONS } from "../../lib/simulator/index.js";
+import { LEVERS, leverAvailable, runScenario, scenarioSearch, HORIZONS, deltaTone } from "../../lib/simulator/index.js";
 import { ConfidenceBadge } from "../overview/Analysis.jsx";
 import { Icon } from "../overview/Icons.jsx";
 
@@ -17,7 +17,8 @@ export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {
   const run = runScenario({ leaves, values, periodDays, horizon });
   const set = (id, raw) => setValues((v) => { const n = num(String(raw).replace(",", ".")); const next = { ...v }; if (n == null) delete next[id]; else next[id] = n; return next; });
   const fmt = (n, v) => (v == null ? t("common.na") : n.unit === "money" ? money(v) : ratio(v));
-  const sign = (v) => (v == null ? "" : v > 0 ? "is-up" : v < 0 ? "is-down" : "");
+  // Couleur = sens favorable du nœud (BE-ROAS : une baisse est favorable), jamais le signe seul.
+  const tone = (n) => { const k = deltaTone(n, n.delta); return k ? ` is-${k}` : ""; };
   return (
     <div className="tcc-sim">
       {rule && <p className="tcc-muted tcc-sim__from"><Icon id="spark" />{t("sim.from_rule", { name: t(`insight.${rule}.name`) })}</p>}
@@ -56,7 +57,7 @@ export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {
                 <span role="rowheader">{t.has(`overview.calc.input.${n.id}`) ? t(`overview.calc.input.${n.id}`) : t(`sim.node.${n.id}`)}</span>
                 <span role="cell">{fmt(n, n.before)}</span>
                 <span role="cell"><strong>{fmt(n, n.after)}</strong></span>
-                <span role="cell" className={`tcc-simtable__delta ${sign(n.delta)}`}>{n.delta == null ? t("common.na") : `${n.delta > 0 ? "+" : ""}${fmt(n, n.delta)}`}</span>
+                <span role="cell" className={`tcc-simtable__delta${tone(n)}`} data-tone={deltaTone(n, n.delta) ?? undefined}>{n.delta == null ? t("common.na") : `${n.delta > 0 ? "+" : ""}${fmt(n, n.delta)}`}</span>
                 <span role="cell" className="tcc-muted">{n.low == null ? t("common.na") : `${fmt(n, n.low)} – ${fmt(n, n.high)}`}</span>
               </div>
             ))}

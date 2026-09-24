@@ -16,14 +16,21 @@ export const LEVERS = [
 export const LEVER_IDS = LEVERS.map((l) => l.id);
 export const leverById = (id) => LEVERS.find((l) => l.id === id) ?? null;
 
-// Nœuds affichés (T1) : CA HT, CM2, CM3, résultat, BE-ROAS.
+// Nœuds affichés (T1) : CA HT, CM2, CM3, résultat, BE-ROAS. `good` = sens d'un écart favorable
+// (même convention que goodDirection des KPI) : un seuil qui baisse est une bonne nouvelle.
 export const RESULT_NODES = [
-  { id: "ca_ht",      unit: "money" },
-  { id: "cm2",        unit: "money" },
-  { id: "cm3",        unit: "money" },
-  { id: "net_result", unit: "money" },
-  { id: "be_roas",    unit: "ratio" },
+  { id: "ca_ht",      unit: "money", good: "up" },
+  { id: "cm2",        unit: "money", good: "up" },
+  { id: "cm3",        unit: "money", good: "up" },
+  { id: "net_result", unit: "money", good: "up" },
+  { id: "be_roas",    unit: "ratio", good: "down" },
 ];
+// Ton d'un écart : favorable / défavorable selon le sens du nœud ; null quand nul ou inconnu.
+export function deltaTone(node, delta) {
+  if (delta == null || delta === 0) return null;
+  const favorable = node.good === "down" ? delta < 0 : delta > 0;
+  return favorable ? "good" : "bad";
+}
 
 // Fourchette T5 : volume −10 % / +10 % autour du scénario.
 export const RANGE_VOLUME = { low: 0.9, high: 1.1 };

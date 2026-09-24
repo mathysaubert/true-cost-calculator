@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot30_simulator.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { LEVERS, RESULT_NODES, leverAvailable, econLevers, econOverrides, valuesFromEconLevers, parseScenario, scenarioSearch, runScenario, scenarioRecord, simulatorHref } from "../app/lib/simulator/index.js";
+import { LEVERS, RESULT_NODES, deltaTone, leverAvailable, econLevers, econOverrides, valuesFromEconLevers, parseScenario, scenarioSearch, runScenario, scenarioRecord, simulatorHref } from "../app/lib/simulator/index.js";
 import { applyLevers } from "../app/lib/econ/simulate.js";
 import { buildBriefing } from "../app/lib/insights/index.js";
 import { dataConfidence } from "../app/lib/confidence.js";
@@ -30,6 +30,8 @@ console.log("\n── 1. Leviers → moteur ──");
   ok(leverAvailable(LEVERS.find((l) => l.id === "ad_budget"), L) && !leverAvailable(LEVERS.find((l) => l.id === "ad_budget"), missing.current.agg.shop.leaves) && leverAvailable(LEVERS.find((l) => l.id === "price"), {}), "budget pub indisponible sans dépense pub ; prix toujours disponible");
   ok(JSON.stringify(valuesFromEconLevers({ aov_factor: 1.07, price_factor: 0.95, cac: 18 })) === JSON.stringify({ price: -5, basket: 7, cac: 18 }), "facteurs du moteur → valeurs de l'écran (arrondi 0,1)");
   ok(RESULT_NODES.map((n) => n.id).join(",") === "ca_ht,cm2,cm3,net_result,be_roas" && RESULT_NODES.find((n) => n.id === "be_roas").unit === "ratio", "5 nœuds affichés, BE-ROAS en ratio");
+  const be = RESULT_NODES.find((n) => n.id === "be_roas"), cm2n = RESULT_NODES.find((n) => n.id === "cm2");
+  ok(be.good === "down" && cm2n.good === "up" && deltaTone(be, -0.13) === "good" && deltaTone(be, 0.2) === "bad" && deltaTone(cm2n, 50) === "good" && deltaTone(cm2n, -50) === "bad" && deltaTone(be, 0) === null && deltaTone(be, null) === null, "sens favorable : BE-ROAS en baisse = bon (comme le CAC), CM2 en hausse = bon, nul / inconnu = sans ton");
 }
 
 console.log("\n── 2. URL ↔ scénario ──");
@@ -51,6 +53,7 @@ console.log("\n── 3. Exécution, fourchette, horizon ──");
   const r = runScenario({ leaves: L, values: { basket: 7 }, periodDays: 30 });
   const cm2 = r.nodes.find((n) => n.id === "cm2"), ca = r.nodes.find((n) => n.id === "ca_ht"), be = r.nodes.find((n) => n.id === "be_roas");
   ok(!r.empty && cm2.delta > 0 && ca.delta > 0 && close(ca.after, ca.before * 1.07, 1e-6), "panier +7 % : CA × 1,07, contribution en hausse");
+  ok(be.delta < 0 && deltaTone(be, be.delta) === "good" && be.good === "down", `panier +7 % : BE-ROAS baisse (${be.before.toFixed(2)} → ${be.after.toFixed(2)}), écart favorable`);
   ok(cm2.low < cm2.after && cm2.after < cm2.high, `fourchette T5 : bas ${cm2.low.toFixed(0)} < après ${cm2.after.toFixed(0)} < haut ${cm2.high.toFixed(0)} (volume ±10 %)`);
   ok(r.assumptions.some((a) => a.key === "orders_constant_aov") && r.note === "scenario_not_forecast", "hypothèse « commandes constantes » et note « scénario, pas prévision »");
   const m = runScenario({ leaves: L, values: { basket: 7 }, periodDays: 30, horizon: "month" });

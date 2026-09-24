@@ -459,8 +459,8 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-simtable { display: grid; gap: 4px; font-size: 0.875rem; }
 .tcc-simtable__row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 8px; padding: 8px 10px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-variant-numeric: tabular-nums; }
 .tcc-simtable__row.is-head { background: transparent; border-color: transparent; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tcc-ink-3); }
-.tcc-simtable__delta.is-up { color: var(--tcc-good-ink); font-weight: 600; }
-.tcc-simtable__delta.is-down { color: var(--tcc-bad-ink); font-weight: 600; }
+.tcc-simtable__delta.is-good { color: var(--tcc-good-ink); font-weight: 600; }
+.tcc-simtable__delta.is-bad { color: var(--tcc-bad-ink); font-weight: 600; }
 @container tcc-sim (max-width: 560px) { .tcc-simtable__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tcc-simtable__row.is-head { display: none; } }
 
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */

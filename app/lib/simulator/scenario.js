@@ -52,7 +52,7 @@ export function runScenario({ leaves = {}, values = {}, periodDays = 30, horizon
     const s = n.unit === "money" ? scale : 1;
     const v = (x) => (x == null ? null : x * s);
     const lo = v(low.after[n.id]), hi = v(high.after[n.id]);
-    return { id: n.id, unit: n.unit, before: v(base.before[n.id]), after: v(base.after[n.id]), delta: v(base.delta[n.id]), low: lo == null || hi == null ? null : Math.min(lo, hi), high: lo == null || hi == null ? null : Math.max(lo, hi) };
+    return { id: n.id, unit: n.unit, good: n.good, before: v(base.before[n.id]), after: v(base.after[n.id]), delta: v(base.delta[n.id]), low: lo == null || hi == null ? null : Math.min(lo, hi), high: lo == null || hi == null ? null : Math.max(lo, hi) };
   });
   return { values: active, levers, overrides, nodes, assumptions: base.assumptions, note: base.note, horizon, scale, periodDays, empty: Object.keys(active).length === 0 };
 }
