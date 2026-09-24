@@ -440,6 +440,29 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-status li[data-state="unset"] svg { color: var(--tcc-bad-ink); }
 .tcc-status li[data-state="unconfirmed"] svg { color: var(--tcc-warn-ink); }
 
+/* ── S1 : Simulateur (leviers natifs, table de résultat, fourchette) ─────────────────────── */
+.tcc-sim { display: grid; gap: var(--tcc-gap); }
+.tcc-sim__from { display: inline-flex; align-items: center; gap: 6px; }
+.tcc-sim-host { container-type: inline-size; container-name: tcc-sim; }
+.tcc-sim__grid { display: grid; gap: var(--tcc-gap); grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; }
+@container tcc-sim (max-width: 860px) { .tcc-sim__grid { grid-template-columns: minmax(0, 1fr); } }
+.tcc-lever { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); }
+.tcc-lever.is-off { opacity: 0.6; }
+.tcc-lever label { display: grid; gap: 2px; font-size: 0.875rem; }
+.tcc-lever label small { font-size: 0.75rem; }
+.tcc-lever__controls { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem auto; gap: 8px; align-items: center; }
+.tcc-lever input[type="range"] { inline-size: 100%; accent-color: var(--tcc-accent); }
+.tcc-lever input[type="number"] { inline-size: 100%; min-block-size: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-ink); font: inherit; font-variant-numeric: tabular-nums; }
+.tcc-lever__unit { font-size: 0.8125rem; color: var(--tcc-ink-2); }
+.tcc-seg__btn { min-block-size: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--tcc-line); background: transparent; color: var(--tcc-ink-2); font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+.tcc-seg__btn[aria-pressed="true"] { background: var(--tcc-surface); color: var(--tcc-ink); border-color: var(--tcc-ink-3); }
+.tcc-simtable { display: grid; gap: 4px; font-size: 0.875rem; }
+.tcc-simtable__row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 8px; padding: 8px 10px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-variant-numeric: tabular-nums; }
+.tcc-simtable__row.is-head { background: transparent; border-color: transparent; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tcc-ink-3); }
+.tcc-simtable__delta.is-up { color: var(--tcc-good-ink); font-weight: 600; }
+.tcc-simtable__delta.is-down { color: var(--tcc-bad-ink); font-weight: 600; }
+@container tcc-sim (max-width: 560px) { .tcc-simtable__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tcc-simtable__row.is-head { display: none; } }
+
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
 .tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .tcc-decision .tcc-muted { font-size: 0.8125rem; }

@@ -6,6 +6,7 @@ import { renderSituation } from "../../lib/insights/render.js";
 import { Analysis, ConfidenceBadge } from "./Analysis.jsx";
 import { CalcBlock } from "./KpiTile.jsx";
 import { Icon } from "./Icons.jsx";
+import { simulatorHref } from "../../lib/simulator/index.js";
 
 const RESULT_TO_KPI = { ca_ht: "ca_ht", cm2: "cm2_pct", net_result: "net_result" };
 
@@ -64,14 +65,14 @@ export function Situation({ slots = [], titles = {} }) {
 }
 
 // priorities : buildBriefing.priorities ; partials : insights « partial » (ce qui attend des données).
-export function Priorities({ priorities = [], partials = [], titles = {} }) {
+export function Priorities({ priorities = [], partials = [], titles = {}, days = null }) {
   const i18n = useI18n();
   const { t } = i18n;
   return (
     <section className="tcc-block" aria-labelledby="tcc-priorities-title">
       <div className="tcc-block__head"><h3 id="tcc-priorities-title">{t("overview.block.priorities")}</h3></div>
       {priorities.length ? (
-        <div className="tcc-priorities">{priorities.map((p) => <Analysis key={p.fingerprint ?? p.id} insight={p} rank={p.rank} titles={titles} />)}</div>
+        <div className="tcc-priorities">{priorities.map((p) => <Analysis key={p.fingerprint ?? p.id} insight={p} rank={p.rank} titles={titles} days={days} />)}</div>
       ) : (
         <div className="tcc-card tcc-empty">
           <h3>{t("overview.priorities.empty_title")}</h3>
@@ -117,7 +118,7 @@ export function Opportunity({ opportunity, titles = {}, fingerprint = null, days
   return (
     <section className="tcc-block" aria-labelledby="tcc-opportunity-title">
       <div className="tcc-block__head"><h3 id="tcc-opportunity-title">{t("overview.block.opportunity")}</h3><ConfidenceBadge confidence={{ key: "simulation", label: t("confidence.simulation.label"), help: t("confidence.simulation.help") }} /></div>
-      <Analysis insight={insight} titles={titles} />
+      <Analysis insight={insight} titles={titles} days={days} />
       <p className="tcc-muted">
         {t("overview.opportunity.before_after", { node: t.has(`overview.calc.input.${opportunity.node}`) ? t(`overview.calc.input.${opportunity.node}`) : opportunity.node, before: byUnit(opportunity.before, "money"), after: byUnit(opportunity.after, "money") })}
         {" · "}{t("overview.opportunity.assumptions")}{": "}{(opportunity.assumptions ?? []).map((a) => t(`assumption.${a.key}`)).join(", ") || t("common.na")}
@@ -129,6 +130,7 @@ export function Opportunity({ opportunity, titles = {}, fingerprint = null, days
           <input type="hidden" name="fingerprint" value={fingerprint} />
           <input type="hidden" name="days" value={days ?? ""} />
           <s-button type="submit" variant="secondary">{t("decision.keep_scenario")}</s-button>
+          <Link className="tcc-cta tcc-cta--ghost" to={simulatorHref(opportunity, { days })}>{t("decision.open_simulator")}</Link>
           <span className="tcc-muted">{t("decision.keep_scenario_help")}</span>
         </Form>
       )}

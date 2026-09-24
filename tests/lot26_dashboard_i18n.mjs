@@ -61,7 +61,7 @@ console.log("\n── 2. createTranslator ──");
 console.log("\n── 3. Catalogues : fr = en, aucune clé orpheline, aucune clé absente ──");
 const F4_FILES = [
   "app/routes/app.jsx", "app/routes/app.overview.jsx", "app/routes/app.metrics.jsx", "app/routes/app.data-health.jsx", "app/root.jsx", "app/lib/i18n/context.jsx", "app/lib/insights/render.js",
-  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx",
+  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx",
   ...readdirSync(new URL("app/components/overview/", ROOT)).map((f) => `app/components/overview/${f}`),
   ...readdirSync(new URL("app/components/settings/", ROOT)).map((f) => `app/components/settings/${f}`),
 ];
@@ -131,7 +131,7 @@ const CSS = read("app/styles/overview.css");
   }
   ok(files.some((f) => f === "app/routes/app.overview.jsx") && files.some((f) => f === "app/routes/app.jsx"), `fichiers F4 scannés (${files.length} fichiers app/ hors exclusions)`);
   ok(offenders.length === 0, `aucune chaîne en dur${offenders.length ? "\n      " + offenders.slice(0, 12).join("\n      ") : ""}`);
-  const ui = F4_FILES.filter((f) => f.startsWith("app/components/overview/") || f.startsWith("app/components/settings/") || f === "app/routes/app.overview.jsx");
+  const ui = F4_FILES.filter((f) => f.startsWith("app/components/overview/") || f.startsWith("app/components/settings/") || f.startsWith("app/components/simulator/") || f === "app/routes/app.overview.jsx");
   const bad = ui.filter((f) => /style=\{\{|#[0-9a-fA-F]{6}\b|rgba?\(/.test(read(f)));
   ok(bad.length === 0, `aucun style inline, aucune couleur (hex/rgb) dans les composants de l'Overview${bad.length ? " — " + bad.join(", ") : ""}`);
   const badImp = [...ui, "app/routes/app.jsx", "app/lib/overview.js", "app/lib/overview.server.js", "app/lib/econ/adapters.js"].filter((f) => /engine\.js|orderHistory\.js|toLocaleDateString|"fr-FR"/.test(read(f)));
@@ -345,7 +345,7 @@ console.log("\n── 12. sections.js ──");
 {
   ok(SECTIONS.length === 13 && SECTIONS.map((s) => s.id).join(",") === "overview,decisions,simulator,ask,metrics,profit,growth,customers,products,marketing,inventory,data_health,settings", "13 sections en 3 groupes dans l'ordre décidé (Piloter / Explorer / Système)");
   ok(SECTIONS.filter((s) => s.group === "steer").length === 4 && SECTIONS.filter((s) => s.group === "explore").length === 7 && SECTIONS.filter((s) => s.group === "system").length === 2, "groupes : 4 / 7 / 2");
-  ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,metrics:/app/metrics,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Indicateurs, Fiabilité des données, Réglages (R1)");
+  ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,simulator:/app/simulator,metrics:/app/metrics,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Simulateur (S1), Indicateurs, Fiabilité des données, Réglages (R1)");
   ok(SECTIONS.filter((s) => s.status === "soon").every((s) => s.path === null), "les sections « Bientôt » n'ont pas de route");
   ok(OVERVIEW_RESERVED.length === 2 && OVERVIEW_RESERVED.every((s) => s.section === "overview"), "2 emplacements réservés (courbe, cascade) rattachés à la Vue d'ensemble");
   ok(/rel="home"/.test(read("app/routes/app.jsx")) && /LIVE_SECTIONS/.test(read("app/routes/app.jsx")), "s-app-nav : rel=\"home\" + sections livrées seulement");

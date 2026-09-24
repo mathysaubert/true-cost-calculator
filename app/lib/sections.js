@@ -8,7 +8,7 @@ export const NAV_GROUPS = [
   { id: "steer", sections: [
     { id: "overview",     path: "/app/overview",    status: "live" },
     { id: "decisions",    path: null, status: "soon" },
-    { id: "simulator",    path: null, status: "soon" },
+    { id: "simulator",    path: "/app/simulator",   status: "live" },
     { id: "ask",          path: null, status: "soon" },
   ] },
   { id: "explore", sections: [

@@ -8,14 +8,17 @@ import { Link } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
 import { renderInsight } from "../../lib/insights/render.js";
 import { Icon } from "./Icons.jsx";
+import { simulatorHref } from "../../lib/simulator/index.js";
 
 const SECTION_OF_TARGET = { costs: "settings", fees: "settings", ads: "settings", profit: "profit", products: "products", marketing: "marketing", inventory: "inventory" };
 
-function Cta({ cta, insightId }) {
+function Cta({ cta, insightId, insight = null, days = null }) {
   if (!cta) return null;
   const target = SECTION_OF_TARGET[cta.target] ?? cta.target;
   const modalId = `why-${insightId}`;
   if (cta.kind === "fix_data" || cta.kind === "connect") return <Link className="tcc-cta" to="/app/data-health">{cta.label}</Link>;
+  // S1 : la simulation ouvre le Simulateur pré-chargé avec les leviers de la règle (ou de l'opportunité).
+  if (cta.kind === "simulate") return <Link className="tcc-cta" to={simulatorHref(insight, { days })}>{cta.label}</Link>;
   if (cta.kind === "open_section" && target === "overview") return <Link className="tcc-cta" to="/app/overview">{cta.label}</Link>;
   // Sections « Bientôt » et simulation : le CTA ouvre la modale complète (hypothèses, preuves).
   return <s-button variant="secondary" commandFor={modalId} command="--show">{cta.label}</s-button>;
@@ -26,7 +29,7 @@ export function ConfidenceBadge({ confidence }) {
   return <span className={`tcc-confidence tcc-confidence--${confidence.key}`} title={confidence.help}>{confidence.label}</span>;
 }
 
-export function Analysis({ insight, rank = null, titles = {} }) {
+export function Analysis({ insight, rank = null, titles = {}, days = null }) {
   const i18n = useI18n();
   const { t, money, pct } = i18n;
   if (!insight) return null;
@@ -49,7 +52,7 @@ export function Analysis({ insight, rank = null, titles = {} }) {
         </p>
       )}
       <div className="tcc-analysis__actions">
-        <Cta cta={r.cta} insightId={insight.id} />
+        <Cta cta={r.cta} insightId={insight.id} insight={insight} days={days} />
         <s-button variant="tertiary" commandFor={modalId} command="--show">{t("analysis.why")}</s-button>
       </div>
       {(r.context || r.cause || r.recommendation) && (

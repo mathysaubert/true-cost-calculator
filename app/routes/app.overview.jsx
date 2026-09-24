@@ -73,7 +73,7 @@ export default function Overview() {
           <>
             <Results results={b?.results} kpis={view.kpis} />
             <Situation slots={b?.situation ?? []} titles={view.titles} />
-            <Priorities priorities={b?.priorities ?? []} partials={partials} titles={view.titles} />
+            <Priorities priorities={b?.priorities ?? []} partials={partials} titles={view.titles} days={view.days} />
             <Opportunity opportunity={b?.opportunity} titles={view.titles} fingerprint={view.opportunityFingerprint} days={view.days} />
             <ReservedSlots only={["chart"]} />
             <WaterfallTable leaves={view.waterfall?.leaves} nodes={view.waterfall?.nodes} />

@@ -217,9 +217,9 @@ check("en-tête sans prénom ni sync → « Bonjour 👋 », « En attente de la
 check("sélecteur segmenté : 3 liens ?days=, aria-current=\"page\" sur 30 seulement, aucun s-button-group",
   wrap("fr", React.createElement(PeriodSelector, { days: 30 })),
   (h) => /<nav class="tcc-seg" aria-label="Période">/.test(h) && (h.match(/href="\/?\?days=/g) ?? []).length === 3 && (h.match(/aria-current="page"/g) ?? []).length === 1 && /aria-current="page"[^>]*>30 jours/.test(h) && !/s-button-group/.test(h));
-check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Indicateurs, Fiabilité et Réglages = liens, 9 sections grisées « Bientôt », ni Trésorerie ni Expériences",
+check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Simulateur, Indicateurs, Fiabilité et Réglages = liens, 8 sections grisées « Bientôt », ni Trésorerie ni Expériences",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 4 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && /href="\/app\/settings"/.test(h) && (h.match(/is-soon/g) ?? []).length === 9 && (h.match(/Bientôt/g) ?? []).length === 9 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
+  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 5 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && /href="\/app\/settings"/.test(h) && /href="\/app\/simulator"/.test(h) && (h.match(/is-soon/g) ?? []).length === 8 && (h.match(/Bientôt/g) ?? []).length === 8 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
 
 console.log("\n=== RENDU RÉEL — Bandeaux, état vide, emplacements réservés, moteur ===");
 check("trous → s-banner warning : 6 commandes lues par l'ancienne version, 1 ligne sans coût, plafond, 2 exclues",
@@ -303,7 +303,7 @@ check("opportunité (saine) : bloc, badge Simulation, « par mois », avant → 
 check("opportunité absente → rien", wrapEur("en", React.createElement(Opportunity, { opportunity: null })), (h) => /<div class="tcc"><\/div>/.test(h));
 check("opportunité + empreinte (I0-C) : formulaire POST « Retenir ce scénario » avec intent=simulate, empreinte, jours ; sans empreinte → aucun formulaire",
   wrapEur("fr", React.createElement("div", null, React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity, fingerprint: "aov_vs_main_price:opportunity:shop:2026-09-01:2026-09-30:120", days: 30 }), React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity }))),
-  (h) => (h.match(/<form method="post"[^>]*class="tcc-decision"/g) ?? []).length === 1 && /name="intent" value="simulate"/.test(h) && /name="fingerprint" value="aov_vs_main_price:opportunity:shop:2026-09-01:2026-09-30:120"/.test(h) && /name="days" value="30"/.test(h) && /<s-button type="submit" variant="secondary">Retenir ce scénario</.test(h) && /à rejouer dans le simulateur/.test(h));
+  (h) => (h.match(/<form method="post"[^>]*class="tcc-decision"/g) ?? []).length === 1 && /name="intent" value="simulate"/.test(h) && /href="\/app\/simulator\?days=30&amp;basket=[\d.]+&amp;rule=aov_vs_main_price"[^>]*>Ouvrir dans le simulateur</.test(h) && /name="fingerprint" value="aov_vs_main_price:opportunity:shop:2026-09-01:2026-09-30:120"/.test(h) && /name="days" value="30"/.test(h) && /<s-button type="submit" variant="secondary">Retenir ce scénario</.test(h) && /à rejouer dans le simulateur/.test(h));
 check("bandeau de décision : succès → s-banner success « Scénario enregistré » ; périmé → warning « rechargez » ; échec → warning ; null / autre intent → rien",
   wrapEur("fr", React.createElement("div", null, React.createElement(DecisionBanner, { result: { intent: "simulate", ok: true, kind: "simulated" } }), React.createElement(DecisionBanner, { result: { intent: "simulate", ok: false, error: "stale" } }), React.createElement(DecisionBanner, { result: { intent: "simulate", ok: false, error: "boom" } }), React.createElement(DecisionBanner, { result: null }), React.createElement(DecisionBanner, { result: { ok: true } }))),
   (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Scénario enregistré dans votre mémoire des décisions/.test(h) && /tone="warning">Ce scénario a changé depuis son affichage : rechargez la page\./.test(h) && /n(?:&#x27;|')a pas pu être enregistrée/.test(h));
@@ -324,9 +324,9 @@ check("fiabilité (saine, en) : anneau 100, « high », « Everything the engine
 check("règles (manquante) : 7 règles, points « x / y », jauge svg, « la fiabilité atteindrait … », aucune couleur en dur",
   wrapEur("fr", React.createElement(HealthRules, { confidence: MIS.confidence })),
   (h) => (h.match(/class="tcc-health-rule( is-na)?" data-rule=/g) ?? []).length === 7 && /15 \/ 30/.test(h) && /0 \/ 20/.test(h) && /<svg class="tcc-health-rule__meter"/.test(h) && /la fiabilité atteindrait/.test(h) && /ROAS de point mort/.test(h) && !/health\.unlock\./.test(h) && !/#[0-9a-fA-F]{6}\b/.test(h) && !/ style="/.test(h));
-check("rail : 3 groupes titrés (Piloter, Explorer, Système), 4 liens (Aujourd'hui actif, Indicateurs, Fiabilité des données, Réglages), 9 « Bientôt »",
+check("rail : 3 groupes titrés (Piloter, Explorer, Système), 5 liens (Aujourd'hui actif, Simulateur, Indicateurs, Fiabilité des données, Réglages), 8 « Bientôt »",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 4 && (h.match(/is-soon/g) ?? []).length === 9 && /Fiabilité des données/.test(h) && /Demander/.test(h) && /Réglages/.test(h));
+  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 5 && (h.match(/is-soon/g) ?? []).length === 8 && /Fiabilité des données/.test(h) && /Demander/.test(h) && /Réglages/.test(h));
 check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit » avec un partiel",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: { legacy: 6 }, partials: [{ id: "cost_coverage", status: "partial", missing: { orders: 1 }, vars: { lines: 2 }, unlocks: ["cm2_pct"] }] })),
   (h) => /6 lues par l(?:&#x27;|')ancienne version/.test(h) && /Ce qui peut déjà être dit/.test(h) && /Coûts produits manquants/.test(h) && /Débloque/.test(h));
@@ -379,6 +379,28 @@ check("état des réglages : 8 lignes en 2 pages (Coûts, Objectifs) avec badges
 check("bandeau : succès → « Enregistré » ; erreurs de champs → warning ; échec → critical ; null → rien",
   wrap("fr", React.createElement("div", null, React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: true } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false, errors: { a: "range" } } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false } }), React.createElement(SettingsBanner, { result: null }))),
   (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Enregistré\./.test(h) && /tone="warning">Certains champs/.test(h) && /tone="critical">La modification/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  S1 — Simulateur : rendu initial depuis l'URL (SSR, useState initial), leviers natifs, table de
+//  résultat, fourchette, hypothèses, « Retenir », mémoire ; levier indisponible ; scénario vide.
+// ════════════════════════════════════════════════════════════════════════════════
+const { Simulator } = await vite.ssrLoadModule("/app/components/simulator/Simulator.jsx");
+const simLeaves = HEA.briefing ? shopOf("healthy").current.agg.shop.leaves : {};
+const simMissing = shopOf("missing").current.agg.shop.leaves;
+
+console.log("\n=== RENDU RÉEL — Simulateur (S1) ===");
+check("scénario pré-chargé (panier +7 %, règle) : 8 leviers (range + number), valeur 7 sur le panier, « Pré-chargé depuis », 5 lignes de résultat avec avant / après / écart positif / fourchette, hypothèse « commandes constantes », formulaire Retenir avec champs cachés, aucun champ Polaris",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { basket: 7 }, rule: "aov_vs_main_price" })),
+  (h) => (h.match(/<input type="range"/g) ?? []).length === 8 && (h.match(/<input type="number"/g) ?? []).length === 8 && /id="lever-basket"[^>]*value="7"/.test(h) && /Pré-chargé depuis : Panier proche du prix du produit principal/.test(h) && (h.match(/data-node="/g) ?? []).length === 5 && /data-node="cm2"[\s\S]*?tcc-simtable__delta is-up">\+/.test(h) && /data-node="be_roas"/.test(h) && /commandes constantes avec un panier plus grand \(× 1\.07\)/.test(h) && /name="intent" value="keep"/.test(h) && /type="hidden" name="basket" value="7"/.test(h) && /Retenir ce scénario/.test(h) && !/<s-text-field|<s-select/.test(h) && !/ style="/.test(h));
+check("scénario vide : « Déplacez un levier », écarts 0 sans signe, bouton Retenir désactivé, mémoire vide",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: {}, memory: [] })),
+  (h) => /Déplacez un levier pour voir l(?:&#x27;|')effet/.test(h) && !/tcc-simtable__delta is-up/.test(h) && !/tcc-simtable__delta is-down/.test(h) && /<s-button type="submit" variant="secondary" disabled="true">Retenir/.test(h) && /Aucun scénario retenu/.test(h));
+check("horizon mois + levier indisponible (pas de pub) : bouton « Par mois » pressé, budget pub et CAC grisés « Indisponible », mémoire avec un scénario rejouable",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simMissing, periodDays: 30, days: 7, initial: { cogs: -10 }, horizon: "month", memory: [{ id: "d1", decided_at: "2026-09-24", rule_id: "aov_vs_main_price", values: { basket: 7 }, days: 30, horizon: "period", expected_low: 80, expected_high: 120 }] })),
+  (h) => /aria-pressed="true">Par mois \(30 jours\)</.test(h) && /aria-pressed="false">Période choisie \(7 jours\)</.test(h) && /data-lever="ad_budget" [^>]*class="tcc-lever is-off"|class="tcc-lever is-off" data-lever="ad_budget"/.test(h) && (h.match(/Indisponible : le moteur/g) ?? []).length === 2 && /Montants projetés sur un mois glissant/.test(h) && /data-decision="d1"/.test(h) && /href="\/app\/simulator\?days=30&amp;basket=7&amp;rule=aov_vs_main_price"[^>]*>Rejouer</.test(h) && /80,00.€ – 120,00.€/.test(h));
+check("en : libellés anglais, colonnes Before / After / Change / Range, note scénario",
+  wrapEur("en", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { price: 5 } })),
+  (h) => /Before<\/span>/.test(h) && /Change<\/span>/.test(h) && /Range<\/span>/.test(h) && /Average basket/.test(h) && /This is a scenario, not a forecast/.test(h) && /id="lever-price"[^>]*value="5"/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
