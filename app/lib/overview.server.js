@@ -144,7 +144,7 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     ordersInPeriod: current.shop.leaves.orders, mixedCurrency: current.currency === "MIXED",
     lastSync: lastJob?.finished_at ?? null, historySince: firstOrder, hasAllOrders,
     confidence, briefing, titles,
-    waterfall: { leaves: current.shop.leaves, nodes: current.shop.nodes },
+    waterfall: { leaves: current.shop.leaves, nodes: current.shop.nodes, gaps: current.dataGaps ?? {}, flags: { fixed_missing: fixedCosts.length === 0, packaging_missing: settings.packaging_cost_per_order == null, return_cost_missing: settings.return_cost_per_return == null, ads: sources.ads === true } },
     chart: buildChartSeries({ current, previous, window: win.current, previousWindow: win.previous }),
   };
 }

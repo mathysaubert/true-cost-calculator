@@ -529,6 +529,10 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-wf__row.is-negative .tcc-wf__bar { background: var(--tcc-bad); }
 .tcc-wf__row.is-total .tcc-wf__label, .tcc-wf__row.is-total .tcc-wf__amount { font-weight: 700; color: var(--tcc-ink); }
 .tcc-wf__row.is-missing .tcc-wf__amount { color: var(--tcc-warn-ink); font-style: italic; }
+.tcc-wf__row.is-unconfirmed .tcc-wf__bar { opacity: 0.55; }
+.tcc-wf__amount .tcc-badge { margin-inline-start: 6px; }
+.tcc-waterfall__amount .tcc-badge { margin-inline-start: 6px; }
+.tcc-waterfall__row[data-status="missing"] .tcc-waterfall__amount, .tcc-waterfall__row[data-status="unavailable"] .tcc-waterfall__amount { color: var(--tcc-warn-ink); font-style: italic; }
 .tcc-wf__amount { text-align: end; white-space: nowrap; min-inline-size: 6rem; }
 .tcc-wf-host { container-type: inline-size; container-name: tcc-wf; }
 @container tcc-wf (max-width: 480px) { .tcc-wf__row { grid-template-columns: minmax(0, 1fr) auto; } .tcc-wf__track { grid-column: 1 / -1; } }

@@ -78,7 +78,7 @@ export default function Overview() {
             <Priorities priorities={b?.priorities ?? []} partials={partials} titles={view.titles} days={view.days} />
             <Opportunity opportunity={b?.opportunity} titles={view.titles} fingerprint={view.opportunityFingerprint} days={view.days} />
             <ContributionChart chart={view.chart} days={view.days} />
-            <WaterfallChart leaves={view.waterfall?.leaves} nodes={view.waterfall?.nodes} />
+            <WaterfallChart leaves={view.waterfall?.leaves} nodes={view.waterfall?.nodes} gaps={view.waterfall?.gaps} flags={view.waterfall?.flags} />
           </>
         )}
         <DataHealth confidence={view.confidence} compact />

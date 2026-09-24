@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot31_charts.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { niceStep, niceDomain, linearScale, indexScale, labelIndices, seriesExtent, linePath, seriesCounts, buildLineChart, waterfallGeometry, WATERFALL_SPEC, CHART_COLORS, CHART_W, CHART_H } from "../app/lib/charts/index.js";
+import { niceStep, niceDomain, linearScale, indexScale, labelIndices, seriesExtent, linePath, seriesCounts, buildLineChart, waterfallGeometry, waterfallRows, WATERFALL_SPEC, CHART_COLORS, CHART_W, CHART_H } from "../app/lib/charts/index.js";
 import { buildChartSeries } from "../app/lib/overview.js";
 import { makeShop, WINDOWS } from "./fixtures/i0_shops.mjs";
 
@@ -47,11 +47,23 @@ console.log("\n── 2. Tracés avec trous, cascade ──");
   const by = Object.fromEntries(w.bars.map((b) => [b.id, b]));
   ok(by.ca_ht.kind === "start" && by.cogs.from === 600 && by.cogs.to === 1000 && by.cogs.value === -400 && by.shipping_cost.missing && by.cm2.kind === "total" && by.cm2.value === 600 && by.cm3.value === -100 && by.cm3.negative === true, "cascade : départ, coût flottant, coût manquant, totaux ancrés, total négatif marqué");
   ok(w.lo === -100 && w.hi === 1000 && close(w.zeroPct, (100 / 1100) * 100) && by.ca_ht.widthPct > by.cogs.widthPct && close(by.cm2.leftPct, w.zeroPct), "cascade : bornes, zéro en %, largeurs proportionnelles");
-  ok(WATERFALL_SPEC.length === 12 && WATERFALL_SPEC.filter(([op]) => op === "=").map(([, id]) => id).join(",") === "cm2,cm3,net_result" && WATERFALL_SPEC[0][1] === "ca_ht" && WATERFALL_SPEC.filter(([op]) => op === "−").length === 8, "spécification : 12 lignes, départ CA HT, 8 coûts, totaux CM2 / CM3 / résultat (B2)");
+  ok(WATERFALL_SPEC.length === 13 && WATERFALL_SPEC.filter(([op]) => op === "=").map(([, id]) => id).join(",") === "cm2,cm3,net_result" && WATERFALL_SPEC[0][1] === "ca_ht" && WATERFALL_SPEC[1][1] === "unknown_ca_ht" && WATERFALL_SPEC[1][2]?.optional === true && WATERFALL_SPEC.filter(([op]) => op === "−").length === 9, "spécification : 13 lignes, départ CA HT, « CA sans coût connu » optionnelle, 8 coûts, totaux CM2 / CM3 / résultat");
   const healthy0 = makeShop("healthy"), lv = healthy0.current.agg.shop.leaves, nd = healthy0.current.agg.shop.nodes;
-  const real = waterfallGeometry(WATERFALL_SPEC.map(([op, id]) => ({ id, op, value: id in nd ? nd[id] : lv[id] })));
+  const hRows = waterfallRows({ leaves: lv, nodes: nd, gaps: healthy0.current.agg.dataGaps, flags: { fixed_missing: false, packaging_missing: false, return_cost_missing: false, ads: true } });
+  ok(hRows.length === 12 && !hRows.some((r) => r.id === "unknown_ca_ht") && hRows.every((r) => r.status === "ok"), "boutique saine : ligne « sans coût connu » masquée (0), toutes les lignes ok");
+  const real = waterfallGeometry(hRows);
   const cm2Bar = real.bars.find((b) => b.id === "cm2"), costs = real.bars.filter((b) => b.kind === "cost" && !b.missing);
   ok(close(cm2Bar.value, nd.cm2, 1e-6) && close(real.bars[0].value - costs.slice(0, 5).reduce((s, b) => s + Math.abs(b.value), 0), nd.cm2, 0.02), "boutique saine : CA HT − 5 coûts = CM2 du moteur au centime ; totaux = nœuds");
+  // Retour du 2026-09-24 : lignes SANS coût connu → la cascade doit s'additionner au centime quand même.
+  const miss = makeShop("missing"), ml = miss.current.agg.shop.leaves, mn = miss.current.agg.shop.nodes;
+  const mRows = waterfallRows({ leaves: ml, nodes: mn, gaps: miss.current.agg.dataGaps, flags: { fixed_missing: true, packaging_missing: true, return_cost_missing: true, ads: false } });
+  const mBy = Object.fromEntries(mRows.map((r) => [r.id, r]));
+  ok(mBy.unknown_ca_ht && close(mBy.unknown_ca_ht.value, ml.unknown_ca_ht, 1e-6) && ml.unknown_ca_ht > 0, `manquante : ligne « CA sans coût connu, hors marge » = ${ml.unknown_ca_ht}`);
+  const sumCosts = ["unknown_ca_ht", "cogs", "shipping_cost", "packaging_cost", "payment_fees", "returns_cost"].reduce((s, id) => s + (mBy[id]?.value ?? 0), 0);
+  ok(close(mn.ca_ht - sumCosts, mn.cm2, 0.005), `invariant au centime avec lignes sans coût : ${mn.ca_ht} − ${sumCosts.toFixed(2)} = ${mn.cm2} (CM2 du moteur)`);
+  ok(mBy.packaging_cost.status === "missing" && mBy.packaging_cost.value === null && mBy.fixed_costs.status === "missing" && mBy.fixed_costs.value === null && mBy.shipping_cost.status === "missing" && mBy.payment_fees.status === "unconfirmed" && mBy.payment_fees.value > 0 && mBy.ad_spend.status === "unavailable" && mBy.returns_cost.status === "ok", "statuts : emballage et coûts fixes « non renseigné » (feuille à 0 mais réglage absent), port sans règle → non renseigné, frais estimés → à confirmer, pub non connectée, retours ok sans remboursement");
+  const gm = waterfallGeometry(mRows);
+  ok(gm.bars.find((b) => b.id === "fixed_costs").missing && gm.bars.find((b) => b.id === "net_result").value === gm.bars.find((b) => b.id === "cm3").value, "géométrie : un coût non renseigné ne descend pas le total (résultat = CM3)");
 }
 
 console.log("\n── 3. Séries de la courbe de contribution (V2, V8) ──");

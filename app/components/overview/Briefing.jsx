@@ -7,7 +7,7 @@ import { Analysis, ConfidenceBadge } from "./Analysis.jsx";
 import { CalcBlock } from "./KpiTile.jsx";
 import { Icon } from "./Icons.jsx";
 import { simulatorHref } from "../../lib/simulator/index.js";
-import { WATERFALL_SPEC } from "../../lib/charts/waterfall.js";
+import { waterfallRows } from "../../lib/charts/waterfall.js";
 
 const RESULT_TO_KPI = { ca_ht: "ca_ht", cm2: "cm2_pct", net_result: "net_result" };
 
@@ -149,16 +149,16 @@ export function DecisionBanner({ result }) {
 
 // Cascade « Où est passé votre argent ? » en tableau : vue accessible sous le graphique (B2) ;
 // `bare` = grille seule (dans le dépliage du graphique), sinon bloc complet avec titre.
-export function WaterfallTable({ leaves = {}, nodes = {}, bare = false }) {
+export function WaterfallTable({ leaves = {}, nodes = {}, gaps = {}, flags = {}, rows = null, bare = false }) {
   const { t, money } = useI18n();
-  const value = (id) => (id in nodes ? nodes[id] : leaves[id]);
+  const list = rows ?? waterfallRows({ leaves, nodes, gaps, flags });
   const grid = (
     <div className="tcc-waterfall">
-        {WATERFALL_SPEC.map(([op, id]) => (
-          <div key={id} className={`tcc-waterfall__row${op === "=" ? " is-total" : ""}`}>
-            <span className="tcc-waterfall__op" aria-hidden="true">{op}</span>
-            <span>{t(`overview.calc.input.${id}`)}</span>
-            <span className="tcc-waterfall__amount">{value(id) == null ? t("common.na") : money(value(id))}</span>
+        {list.map((r) => (
+          <div key={r.id} className={`tcc-waterfall__row${r.op === "=" ? " is-total" : ""}`} data-status={r.status}>
+            <span className="tcc-waterfall__op" aria-hidden="true">{r.op}</span>
+            <span>{t(`overview.calc.input.${r.id}`)}</span>
+            <span className="tcc-waterfall__amount">{r.value == null ? (r.status === "unavailable" ? t("overview.waterfall.unavailable") : r.status === "missing" ? t("overview.waterfall.missing") : t("common.na")) : money(r.value)}{r.status === "unconfirmed" && <span className="tcc-badge tcc-badge--warn">{t("overview.waterfall.unconfirmed")}</span>}</span>
           </div>
         ))}
     </div>

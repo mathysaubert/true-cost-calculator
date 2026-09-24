@@ -273,6 +273,8 @@ export default {
   "overview.waterfall.note": "Chaque barre part là où la précédente s'arrête ; les totaux sont ancrés à zéro. Un coût sans valeur est marqué non renseigné.",
   "overview.waterfall.table": "Voir le tableau",
   "overview.waterfall.missing": "non renseigné",
+  "overview.waterfall.unconfirmed": "à confirmer",
+  "overview.waterfall.unavailable": "non connecté",
   "overview.waterfall.aria": "Cascade du CA net {{start}} au résultat net {{end}}",
 
   "results.ca_ht.label": "CA net",
@@ -485,6 +487,7 @@ export default {
   "overview.calc.input.orders": "Commandes",
   "overview.calc.input.aov": "Panier moyen",
   "overview.calc.input.known_ca_ht": "CA net des lignes à coût connu",
+  "overview.calc.input.unknown_ca_ht": "CA sans coût connu, hors marge",
   "overview.calc.input.cogs": "Coût produit rendu",
   "overview.calc.input.shipping_cost": "Port payé par vous",
   "overview.calc.input.packaging_cost": "Emballage",

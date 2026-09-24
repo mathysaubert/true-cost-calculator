@@ -276,6 +276,8 @@ export default {
   "overview.waterfall.note": "Each bar starts where the previous one ends; totals are anchored at zero. Costs with no value are marked as not set.",
   "overview.waterfall.table": "See the table",
   "overview.waterfall.missing": "not set",
+  "overview.waterfall.unconfirmed": "to confirm",
+  "overview.waterfall.unavailable": "not connected",
   "overview.waterfall.aria": "Waterfall from net revenue {{start}} to net result {{end}}",
 
   "results.ca_ht.label": "Net revenue",
@@ -488,6 +490,7 @@ export default {
   "overview.calc.input.orders": "Orders",
   "overview.calc.input.aov": "Average order value",
   "overview.calc.input.known_ca_ht": "Net revenue of lines with a known cost",
+  "overview.calc.input.unknown_ca_ht": "Revenue without a known cost, outside margin",
   "overview.calc.input.cogs": "Landed product cost",
   "overview.calc.input.shipping_cost": "Shipping paid by you",
   "overview.calc.input.packaging_cost": "Packaging",

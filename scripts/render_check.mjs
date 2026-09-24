@@ -461,16 +461,19 @@ check("en : Series, Previous period, aria-label anglais, hint",
 //  F4-B (B2) — Cascade horizontale : barres flottantes, totaux, coût manquant, tableau sous dépliage.
 // ════════════════════════════════════════════════════════════════════════════════
 const { WaterfallChart } = await vite.ssrLoadModule("/app/components/charts/WaterfallChart.jsx");
-const wfShop = shopOf("declining").current.agg.shop;
+const wfShop = shopOf("declining").current.agg.shop, wfAgg = shopOf("missing").current.agg;
 
 console.log("\n=== RENDU RÉEL — Cascade (F4-B, B2) ===");
 check("en baisse (fr) : 12 barres (départ revenus, 8 coûts, 3 totaux dont résultat), zéro marqué, montants directs (coûts négatifs), image nommée « Cascade du CA net … au résultat net … », tableau sous « Voir le tableau », aucune couleur inline",
-  wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfShop.leaves, nodes: wfShop.nodes })),
+  wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfShop.leaves, nodes: wfShop.nodes, gaps: shopOf("declining").current.agg.dataGaps, flags: { fixed_missing: false, packaging_missing: false, return_cost_missing: false, ads: true } })),
   (h) => (h.match(/data-bar="/g) ?? []).length === 12 && /data-bar="ca_ht"[^>]*class="tcc-wf__row is-start"|class="tcc-wf__row is-start" data-bar="ca_ht"/.test(h) && (h.match(/is-total/g) ?? []).length >= 3 && /is-total is-result/.test(h) && /style="--zero:/.test(h) && /style="--left:[^"]*--width:/.test(h) && /data-bar="cogs"[\s\S]*?tcc-wf__amount">-/.test(h) && /aria-label="Cascade du CA net [^"]+ au résultat net [^"]+"/.test(h) && /<details class="tcc-fold"><summary>Voir le tableau/.test(h) && (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && !/#[0-9a-fA-F]{6}/.test(h) && !/<svg class="tcc-chart/.test(h));
 const wfGap = { leaves: { ca_ht: 1000, cogs: 400, shipping_cost: null, packaging_cost: 50, payment_fees: 30, returns_cost: 0, ad_spend: 700, commissions: 0, fixed_costs: null }, nodes: { ca_ht: 1000, cm2: 520, cm3: -180, net_result: -180 } };
 check("coûts manquants et résultat négatif : port et coûts fixes « non renseigné » sans barre (is-missing), retours à 0 affichés « 0,00 € » (jamais « -0,00 »), CM3 et résultat négatifs marqués is-negative",
   wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfGap.leaves, nodes: wfGap.nodes })),
   (h) => { const row = (id) => h.split(`data-bar="${id}"`)[1]?.split("</div>")[0] ?? ""; return /is-missing/.test(h) && /non renseigné/.test(row("shipping_cost")) && !/tcc-wf__bar/.test(row("shipping_cost")) && /non renseigné/.test(row("fixed_costs")) && /tcc-wf__amount">0,00/.test(row("returns_cost")) && !/-0,00/.test(h) && /is-total is-result is-negative|is-total is-negative/.test(h) && (h.match(/is-negative/g) ?? []).length === 2; });
+check("boutique manquante RÉELLE (fixture) : ligne « CA sans coût connu, hors marge » 372,00 €, emballage et coûts fixes « non renseigné », frais « à confirmer » avec badge, pub « non connecté », 13 lignes dans le tableau",
+  wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfAgg.shop.leaves, nodes: wfAgg.shop.nodes, gaps: wfAgg.dataGaps, flags: { fixed_missing: true, packaging_missing: true, return_cost_missing: true, ads: false } })),
+  (h) => /data-bar="unknown_ca_ht"[\s\S]*?CA sans coût connu, hors marge[\s\S]*?tcc-wf__amount">-372,00/.test(h) && /data-bar="fixed_costs" data-status="missing"/.test(h) && /data-bar="packaging_cost" data-status="missing"/.test(h) && /data-bar="payment_fees" data-status="unconfirmed"[\s\S]*?tcc-badge tcc-badge--warn">à confirmer</.test(h) && /data-bar="ad_spend" data-status="unavailable"[\s\S]*?non connecté/.test(h) && (h.match(/class="tcc-waterfall__row/g) ?? []).length === 13 && /tcc-waterfall__row is-total" data-status="ok"/.test(h));
 check("en : « See the table », « not set » quand un coût manque",
   wrapEur("en", React.createElement(WaterfallChart, { leaves: wfGap.leaves, nodes: wfGap.nodes })),
   (h) => /See the table/.test(h) && /not set/.test(h) && /aria-label="Waterfall from net revenue/.test(h));
