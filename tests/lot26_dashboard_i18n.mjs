@@ -61,7 +61,7 @@ console.log("\n── 2. createTranslator ──");
 console.log("\n── 3. Catalogues : fr = en, aucune clé orpheline, aucune clé absente ──");
 const F4_FILES = [
   "app/routes/app.jsx", "app/routes/app.overview.jsx", "app/routes/app.metrics.jsx", "app/routes/app.data-health.jsx", "app/root.jsx", "app/lib/i18n/context.jsx", "app/lib/insights/render.js",
-  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx",
+  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.settings.shop.jsx", "app/routes/app.settings.marketing.jsx", "app/routes/app.settings.connections.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx",
   ...readdirSync(new URL("app/components/overview/", ROOT)).map((f) => `app/components/overview/${f}`),
   ...readdirSync(new URL("app/components/settings/", ROOT)).map((f) => `app/components/settings/${f}`),
 ];

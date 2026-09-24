@@ -68,3 +68,48 @@ export async function recordSettingsFix({ supabase, shop, rule, field, day }) {
     return { recorded: true };
   } catch (e) { console.warn(`[Settings] decision_log : ${e?.message}`); return { recorded: false }; }
 }
+
+// ── R2 : Marketing (partenaires, codes, commissions manuelles) et Connexions ──────────────────
+import { codesFromOrders, connectionsStatus } from "./settings.js";
+
+export async function loadMarketing({ supabase, shop, withCodes = true, codeDays = 90 }) {
+  const [{ data: partners }, { data: rules }, { data: commissions }, { data: st }, orders] = await Promise.all([
+    supabase.from("partners").select("id, name, mode").eq("shop_domain", shop).order("name"),
+    supabase.from("promo_code_rules").select("code, partner_id, commission_pct, commission_base, active_from, active_to").eq("shop_domain", shop).order("code"),
+    supabase.from("manual_commissions").select("id, partner_id, period_month, amount, currency_code, note").eq("shop_domain", shop).order("period_month", { ascending: false }),
+    supabase.from("shop_settings").select("shop_currency").eq("shop_domain", shop).maybeSingle(),
+    withCodes ? supabase.from("orders").select("discount_codes").eq("shop_domain", shop).gte("day_local", new Date(Date.now() - codeDays * DAY_MS).toISOString().slice(0, 10)).limit(2000) : Promise.resolve({ data: [] }),
+  ]);
+  return { partners: partners ?? [], rules: rules ?? [], commissions: commissions ?? [], codes: codesFromOrders(orders?.data ?? []), currency: st?.shop_currency ?? null };
+}
+export async function addPartner({ supabase, shop, row }) {
+  const { error } = await supabase.from("partners").insert({ shop_domain: shop, ...row });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function deletePartner({ supabase, shop, id }) {
+  const { error } = await supabase.from("partners").delete().eq("shop_domain", shop).eq("id", id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function savePromoRule({ supabase, shop, row }) {
+  const { error } = await supabase.from("promo_code_rules").upsert({ shop_domain: shop, ...row, updated_at: now() }, { onConflict: "shop_domain,code" });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function deletePromoRule({ supabase, shop, code }) {
+  const { error } = await supabase.from("promo_code_rules").delete().eq("shop_domain", shop).eq("code", code);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function addManualCommission({ supabase, shop, row, currency = null }) {
+  const { error } = await supabase.from("manual_commissions").upsert({ shop_domain: shop, currency_code: currency, ...row }, { onConflict: "shop_domain,partner_id,period_month" });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function deleteManualCommission({ supabase, shop, id }) {
+  const { error } = await supabase.from("manual_commissions").delete().eq("shop_domain", shop).eq("id", id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+export async function loadConnections({ supabase, shop }) {
+  const [{ data: rows }, { data: job }] = await Promise.all([
+    supabase.from("integration_connections").select("provider, status, external_account_name, last_sync_at, last_error").eq("shop_domain", shop),
+    supabase.from("sync_jobs").select("finished_at").eq("shop_domain", shop).eq("status", "completed").order("finished_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  return { items: connectionsStatus({ rows: rows ?? [], lastSync: job?.finished_at ?? null, now: new Date().toISOString() }) };
+}

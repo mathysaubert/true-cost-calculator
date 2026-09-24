@@ -352,9 +352,9 @@ const gws = [{ gateway: "shopify_payments", orders: 12 }, { gateway: "paypal", o
 const fixedRows = [{ id: "a1", label: "Loyer", amount_monthly: 1200, active_from: "2026-01-01", active_to: null }, { id: "b2", label: "Ancien outil", amount_monthly: 49, active_from: null, active_to: "2026-06-30" }];
 
 console.log("\n=== RENDU RÉEL — Réglages (R1) ===");
-check("sous-nav : 3 liens (Vue d'ensemble active, Coûts, Objectifs), 3 « Bientôt » (Boutique, Marketing, Connexions)",
+check("sous-nav : 6 liens (Vue d'ensemble active, Coûts, Objectifs, Boutique, Marketing, Connexions), aucun « Bientôt »",
   wrap("fr", React.createElement(SettingsNav, { current: "index" })),
-  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 3 && /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && /href="\/app\/settings\/costs"/.test(h) && (h.match(/is-soon/g) ?? []).length === 3 && /Connexions/.test(h));
+  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 6 && /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && /href="\/app\/settings\/costs"/.test(h) && /href="\/app\/settings\/connections"/.test(h) && !/is-soon/.test(h));
 check("coûts de commande VIDES : 4 champs s-text-field name=…, value vide, aide, suffixe jours, aucun placeholder chiffré, bouton Enregistrer, intent",
   wrap("fr", React.createElement(OrderCostsForm, { settings: {} })),
   (h) => (h.match(/<s-text-field/g) ?? []).length === 4 && /name="packaging_cost_per_order"[^>]*value=""/.test(h) && /details="Cartons, calage/.test(h) && /suffix="jours"/.test(h) && !/placeholder="\d/.test(h) && /name="intent" value="save_order_costs"/.test(h) && /<s-button type="submit"[^>]*>Enregistrer</.test(h) && !/ style="/.test(h));
@@ -373,9 +373,9 @@ check("coûts fixes : 2 lignes (Loyer actif avec Terminer + Supprimer ; ancien o
 check("objectifs : 3 champs avec suffixe % sur les taux, seuil 0 → vide, bande 40 % – 60 %, seuil d'alerte classique rappelé",
   wrap("fr", React.createElement(GoalsForm, { settings: { profitability_threshold_pct: 0, main_product_price: 60 }, alertThreshold: 25 })),
   (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value=""[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && /alertes de calcul\) : 25.%/.test(h));
-check("état des réglages : 8 lignes en 2 pages (Coûts, Objectifs) avec badges Renseigné / À confirmer / Manquant et lien Ouvrir",
+check("état des réglages : 13 lignes en 5 pages (Boutique, Marketing, Connexions, Coûts, Objectifs) avec badges Renseigné / À confirmer / Manquant et lien Ouvrir",
   wrap("fr", React.createElement(SettingsIndex, { items: settingsStatus({ settings: setFull, fixedCosts: fixedRows, gateways: gws, day: "2026-09-24" }) })),
-  (h) => (h.match(/data-setting="/g) ?? []).length === 8 && (h.match(/<section class="tcc-block"/g) ?? []).length === 2 && /data-setting="gateway_fees" data-state="unconfirmed"/.test(h) && /data-setting="fixed_costs" data-state="set"/.test(h) && /href="\/app\/settings\/costs"[^>]*>Ouvrir</.test(h) && /tcc-badge--warn">À confirmer</.test(h));
+  (h) => (h.match(/data-setting="/g) ?? []).length === 13 && (h.match(/<section class="tcc-block"/g) ?? []).length === 5 && /href="\/app\/settings\/shop"/.test(h) && /data-setting="gateway_fees" data-state="unconfirmed"/.test(h) && /data-setting="fixed_costs" data-state="set"/.test(h) && /href="\/app\/settings\/costs"[^>]*>Ouvrir</.test(h) && /tcc-badge--warn">À confirmer</.test(h));
 check("bandeau : succès → « Enregistré » ; erreurs de champs → warning ; échec → critical ; null → rien",
   wrap("fr", React.createElement("div", null, React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: true } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false, errors: { a: "range" } } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false } }), React.createElement(SettingsBanner, { result: null }))),
   (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Enregistré\./.test(h) && /tone="warning">Certains champs/.test(h) && /tone="critical">La modification/.test(h));
@@ -401,6 +401,32 @@ check("horizon mois + levier indisponible (pas de pub) : bouton « Par mois » p
 check("en : libellés anglais, colonnes Before / After / Change / Range, note scénario",
   wrapEur("en", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { price: 5 } })),
   (h) => /Before<\/span>/.test(h) && /Change<\/span>/.test(h) && /Range<\/span>/.test(h) && /Average basket/.test(h) && /This is a scenario, not a forecast/.test(h) && /id="lever-price"[^>]*value="5"/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  R2 — Réglages > Boutique, Marketing, Connexions (formulaires natifs, s-select non contrôlé).
+// ════════════════════════════════════════════════════════════════════════════════
+const { ShopForm } = await vite.ssrLoadModule("/app/components/settings/ShopForm.jsx");
+const { Partners, PromoRules, ManualCommissions } = await vite.ssrLoadModule("/app/components/settings/MarketingForms.jsx");
+const { ConnectionsList } = await vite.ssrLoadModule("/app/components/settings/ConnectionsList.jsx");
+const { connectionsStatus } = await vite.ssrLoadModule("/app/lib/settings.js");
+const partnersFx = [{ id: "p1", name: "Agence A", mode: "codes" }, { id: "p2", name: "Influ B", mode: "manual" }];
+
+console.log("\n=== RENDU RÉEL — Réglages R2 (Boutique, Marketing, Connexions) ===");
+check("Boutique VIDE : pays vide, devise n/a en lecture seule, TVA « Assujetti » sélectionnée, 2 listes de langues avec « Automatique », 3 listes de pays, aucune valeur inventée",
+  wrap("fr", React.createElement(ShopForm, { settings: {} })),
+  (h) => /name="shop_country_code"[^>]*value=""/.test(h) && /data-readonly="shop_currency"/.test(h) && !/name="shop_currency"/.test(h) && /<s-select name="vat_regime"[^>]*value="assujetti"/.test(h) && (h.match(/<s-select name="(locale_override|report_locale)"[^>]*value=""/g) ?? []).length === 2 && /Automatique \(langue de l(?:&#x27;|')admin Shopify\)/.test(h) && /français \(fr\)/.test(h) && (h.match(/name="(sales|shipping|supply)_countries"/g) ?? []).length === 3 && /name="history_months"[^>]*value=""[^>]*placeholder="24"/.test(h) && !/ style="/.test(h));
+check("Boutique RENSEIGNÉE : FR, USD, franchise, étiquette, 12 mois, langues fr / en, pays « FR, DE » ; erreur sur un champ",
+  wrap("fr", React.createElement(ShopForm, { settings: { shop_country_code: "FR", shop_currency: "USD", vat_regime: "franchise", b2b_tag: "pro", history_months: 12, locale_override: "fr", report_locale: "en", sales_countries: ["FR", "DE"] }, result: { intent: "save_shop", ok: false, errors: { supply_countries: "invalid" } } })),
+  (h) => /name="shop_country_code"[^>]*value="FR"/.test(h) && />USD</.test(h) && /<s-select name="vat_regime"[^>]*value="franchise"/.test(h) && /name="b2b_tag"[^>]*value="pro"/.test(h) && /name="history_months"[^>]*value="12"/.test(h) && /<s-select name="report_locale"[^>]*value="en"/.test(h) && /name="sales_countries"[^>]*value="FR, DE"/.test(h) && /name="supply_countries"[^>]*error="Saisissez un nombre\."/.test(h));
+check("Marketing : 2 partenaires (Supprimer), formulaire d'ajout avec mode ; règles : « Codes vus sans règle : WELCOME (3 commandes) », 1 règle TEST20 12,5 % HT après remise, formulaire (partenaire, base, dates) ; commissions manuelles : 1 ligne, formulaire limité au partenaire manuel",
+  wrap("fr", React.createElement("div", null, React.createElement(Partners, { partners: partnersFx }), React.createElement(PromoRules, { rules: [{ code: "TEST20", partner_id: "p1", commission_pct: 12.5, commission_base: "ht_after_discount", active_from: null, active_to: null }], partners: partnersFx, codes: [{ code: "TEST20", orders: 2 }, { code: "WELCOME", orders: 3 }] }), React.createElement(ManualCommissions, { commissions: [{ id: "c1", partner_id: "p2", period_month: "2026-09", amount: 250, note: "post" }], partners: partnersFx }))),
+  (h) => (h.match(/data-partner="/g) ?? []).length === 2 && /name="intent" value="add_partner"/.test(h) && /<s-select name="mode"/.test(h) && /Codes vus dans vos commandes sans règle : WELCOME \(3 commandes\)\./.test(h) && /data-code="TEST20"[\s\S]*?Agence A[\s\S]*?12,5.%[\s\S]*?HT, après remise/.test(h) && /<s-select name="partner_id"[^>]*value=""/.test(h) && /<s-option value="p1">Agence A</.test(h) && /data-commission="c1"[\s\S]*?Influ B[\s\S]*?2026-09 · post/.test(h) && /name="intent" value="add_manual_commission"[\s\S]*?<s-option value="p2">Influ B</.test(h) && !/<s-option value="p1">Agence A<\/s-option>[\s\S]*?name="period_month"/.test(h.split('value="add_manual_commission"')[1] ?? ""));
+check("Marketing VIDE : trois messages, commission manuelle demande d'abord un partenaire manuel",
+  wrap("fr", React.createElement("div", null, React.createElement(Partners, { partners: [] }), React.createElement(PromoRules, { rules: [], partners: [], codes: [] }), React.createElement(ManualCommissions, { commissions: [], partners: [{ id: "p1", name: "A", mode: "codes" }] }))),
+  (h) => /Aucun partenaire pour le moment/.test(h) && /Aucune règle pour le moment/.test(h) && /Aucune commission manuelle/.test(h) && /Ajoutez d(?:&#x27;|')abord un partenaire payé manuellement/.test(h) && !/name="intent" value="add_manual_commission"/.test(h));
+check("Connexions : Shopify synchronisé « il y a N heures » Connecté, Meta en erreur avec message, 3 autres « Non connecté · connecteur à venir »",
+  wrap("fr", React.createElement(ConnectionsList, { items: connectionsStatus({ rows: [{ provider: "meta", status: "error", external_account_name: "Compte X", last_sync_at: "2026-09-23T10:00:00Z", last_error: "token expiré" }], lastSync: "2026-09-24T10:00:00Z", now: "2026-09-24T12:00:00Z" }) })),
+  (h) => (h.match(/data-provider="/g) ?? []).length === 5 && /data-provider="shopify" data-status="connected"/.test(h) && /dernière synchronisation il y a \d+ heures?/.test(h) && /data-provider="meta" data-status="error"[\s\S]*?Compte X · [\s\S]*?erreur : token expiré[\s\S]*?tcc-badge--bad">Erreur</.test(h) && (h.match(/Non connecté · connecteur à venir/g) ?? []).length === 0 && (h.match(/connecteur à venir/g) ?? []).length === 3 && (h.match(/>Non connecté</g) ?? []).length === 3);
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

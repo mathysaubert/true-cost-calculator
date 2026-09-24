@@ -7,9 +7,9 @@ export const SETTINGS_NAV = [
   { id: "index",       path: "/app/settings",       status: "live" },
   { id: "costs",       path: "/app/settings/costs", status: "live" },
   { id: "goals",       path: "/app/settings/goals", status: "live" },
-  { id: "shop",        path: null, status: "soon" },
-  { id: "marketing",   path: null, status: "soon" },
-  { id: "connections", path: null, status: "soon" },
+  { id: "shop",        path: "/app/settings/shop",        status: "live" },
+  { id: "marketing",   path: "/app/settings/marketing",   status: "live" },
+  { id: "connections", path: "/app/settings/connections", status: "live" },
 ];
 
 // Champs scalaires par formulaire : colonne shop_settings, unité, bornes. `mirror` = recopié vers shop_plans.
@@ -134,14 +134,20 @@ export function dataRuleOf(intent) {
 }
 
 // État des réglages pour la page d'accueil : set | unset | unconfirmed, avec la page qui le porte.
-export function settingsStatus({ settings = {}, fixedCosts = [], gateways = [], day = null } = {}) {
+export function settingsStatus({ settings = {}, fixedCosts = [], gateways = [], day = null, partners = [], promoRules = [], connections = [] } = {}) {
   const rules = Array.isArray(settings.gateway_fee_rules) ? settings.gateway_fee_rules : [];
   const confirmedGw = gateways.filter((g) => ruleFor(rules, g.gateway)?.confirmed);
   const gwState = !gateways.length ? (rules.some((r) => r?.confirmed) ? "set" : "unset") : confirmedGw.length === gateways.length ? "set" : confirmedGw.length ? "unconfirmed" : "unset";
   const sr = settings.shipping_cost_rules ?? {};
   const active = day ? fixedCosts.filter((r) => isActiveFixedCost(r, day)) : fixedCosts;
   const st = (id, page, state) => ({ id, page, state });
+  const conn = Array.isArray(connections) ? connections : [];
   return [
+    st("shop_country", "shop", settings.shop_country_code ? "set" : "unset"),
+    st("sales_countries", "shop", Array.isArray(settings.sales_countries) && settings.sales_countries.length ? "set" : "unset"),
+    st("partners", "marketing", partners.length ? "set" : "unset"),
+    st("promo_rules", "marketing", promoRules.length ? "set" : "unset"),
+    st("ads_connection", "connections", conn.some((c) => c.status === "connected") ? "set" : conn.some((c) => c.status === "error" || c.status === "revoked") ? "unconfirmed" : "unset"),
     st("gateway_fees", "costs", gwState),
     st("shipping", "costs", sr.confirmed ? "set" : "unset"),
     st("packaging", "costs", settings.packaging_cost_per_order != null ? "set" : "unset"),
@@ -151,4 +157,113 @@ export function settingsStatus({ settings = {}, fixedCosts = [], gateways = [], 
     st("roas_target", "goals", settings.target_margin_after_ads_pct != null ? "set" : "unset"),
     st("main_product_price", "goals", settings.main_product_price != null ? "set" : "unset"),
   ];
+}
+
+// ── R2 : Boutique (S8), Marketing (décision H), Connexions ────────────────────────────────────
+import { VAT_REGIMES } from "./variantCosts.js";
+import { SUPPORTED_LOCALES } from "./i18n/resolveLocale.js";
+
+export const LOCALE_CHOICES = SUPPORTED_LOCALES;
+export const COUNTRY_LIST_FIELDS = ["sales_countries", "shipping_countries", "supply_countries"];
+export const SHOP_FIELDS = [
+  { key: "shop_country_code", kind: "country" },
+  { key: "vat_regime", kind: "enum", values: VAT_REGIMES, mirror: true },
+  { key: "b2b_tag", kind: "text", max: 60 },
+  { key: "history_months", kind: "int", min: 1, max: 60, placeholder: 24 },
+  { key: "locale_override", kind: "locale" },
+  { key: "report_locale", kind: "locale" },
+];
+export const PARTNER_MODES = ["codes", "manual"];
+export const COMMISSION_BASES = ["ht_after_discount", "ht_before_discount"];
+export const PROVIDERS = ["meta", "google_ads", "tiktok", "search_console"];
+const ISO2 = /^[A-Z]{2}$/;
+const str = (v) => String(v ?? "").trim();
+
+// Liste de pays « FR, DE, us » → ["FR","DE","US"] ; vide → null ; code invalide → undefined.
+export function parseCountryList(raw) {
+  const s = str(raw);
+  if (!s) return null;
+  const codes = [...new Set(s.split(/[\s,;]+/).filter(Boolean).map((c) => c.toUpperCase()))];
+  return codes.every((c) => ISO2.test(c)) ? codes : undefined;
+}
+
+export function parseShopForm(form) {
+  const values = {}, errors = {};
+  for (const f of SHOP_FIELDS) {
+    const raw = form.get(f.key);
+    if (raw == null) continue;
+    const s = str(raw);
+    if (f.kind === "country") { if (!s) values[f.key] = null; else if (ISO2.test(s.toUpperCase())) values[f.key] = s.toUpperCase(); else errors[f.key] = "invalid"; }
+    else if (f.kind === "enum") { if (f.values.includes(s)) values[f.key] = s; else errors[f.key] = "invalid"; }
+    else if (f.kind === "text") { values[f.key] = s ? s.slice(0, f.max).toLowerCase() : null; }
+    else if (f.kind === "int") { const n = parseNumber(s); if (n === undefined || (n != null && !Number.isInteger(n))) errors[f.key] = "invalid"; else if (n != null && (n < f.min || n > f.max)) errors[f.key] = "range"; else values[f.key] = n; }
+    else if (f.kind === "locale") { if (!s) values[f.key] = null; else if (LOCALE_CHOICES.includes(s)) values[f.key] = s; else errors[f.key] = "invalid"; }
+  }
+  for (const k of COUNTRY_LIST_FIELDS) {
+    const raw = form.get(k);
+    if (raw == null) continue;
+    const v = parseCountryList(raw);
+    if (v === undefined) errors[k] = "invalid"; else values[k] = v;
+  }
+  if (values.history_months === null) delete values.history_months; // colonne NOT NULL : vide = inchangé
+  return { values, errors };
+}
+
+export function partnerFromForm(form) {
+  const errors = {};
+  const name = str(form.get("name")).slice(0, 80);
+  if (!name) errors.name = "invalid";
+  const mode = str(form.get("mode")) || "codes";
+  if (!PARTNER_MODES.includes(mode)) errors.mode = "invalid";
+  return { row: { name, mode }, errors };
+}
+
+const isoDay = (v) => { const s = str(v); if (!s) return null; return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined; };
+
+export function promoRuleFromForm(form, partners = []) {
+  const errors = {};
+  const code = str(form.get("code")).toUpperCase().slice(0, 60);
+  if (!code) errors.code = "invalid";
+  const partnerId = str(form.get("partner_id")) || null;
+  if (partnerId && !partners.some((p) => p.id === partnerId)) errors.partner_id = "invalid";
+  const pct = parseNumber(form.get("commission_pct"));
+  if (pct === undefined || pct == null) errors.commission_pct = "invalid"; else if (pct < 0 || pct > 100) errors.commission_pct = "range";
+  const base = str(form.get("commission_base")) || "ht_after_discount";
+  if (!COMMISSION_BASES.includes(base)) errors.commission_base = "invalid";
+  const from = isoDay(form.get("active_from")), to = isoDay(form.get("active_to"));
+  if (from === undefined) errors.active_from = "invalid";
+  if (to === undefined) errors.active_to = "invalid";
+  if (from && to && to < from) errors.active_to = "range";
+  return { row: { code, partner_id: partnerId, commission_pct: pct == null ? null : Math.round(pct * 10000) / 10000, commission_base: base, active_from: from ?? null, active_to: to ?? null }, errors };
+}
+
+export function manualCommissionFromForm(form, partners = []) {
+  const errors = {};
+  const partnerId = str(form.get("partner_id"));
+  if (!partnerId || !partners.some((p) => p.id === partnerId && p.mode === "manual")) errors.partner_id = "invalid";
+  const period = str(form.get("period_month"));
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) errors.period_month = "invalid";
+  const amount = parseNumber(form.get("amount"));
+  if (amount === undefined || amount == null) errors.amount = "invalid"; else if (amount < 0 || amount > 10000000) errors.amount = "range";
+  const note = str(form.get("note")).slice(0, 200) || null;
+  return { row: { partner_id: partnerId, period_month: period, amount: amount == null ? null : Math.round(amount * 100) / 100, note }, errors };
+}
+
+// Codes promo vus dans les commandes (orders.discount_codes), comptés et triés.
+export function codesFromOrders(rows = []) {
+  const counts = new Map();
+  for (const r of rows) for (const c of r?.discount_codes ?? []) { const k = str(c).toUpperCase(); if (k) counts.set(k, (counts.get(k) ?? 0) + 1); }
+  return [...counts.entries()].map(([code, orders]) => ({ code, orders })).sort((a, b) => b.orders - a.orders || a.code.localeCompare(b.code));
+}
+
+// État des connexions : Shopify (la synchronisation) + un fournisseur par ligne, connecté ou non.
+export function connectionsStatus({ rows = [], lastSync = null, now = null } = {}) {
+  const staleMs = 3 * 86_400_000;
+  const shopifyStatus = !lastSync ? "none" : now && Date.parse(now) - Date.parse(lastSync) > staleMs ? "stale" : "connected";
+  const out = [{ id: "shopify", status: shopifyStatus, account: null, last_sync_at: lastSync, last_error: null }];
+  for (const p of PROVIDERS) {
+    const r = rows.find((x) => x?.provider === p);
+    out.push({ id: p, status: r?.status ?? "none", account: r?.external_account_name ?? null, last_sync_at: r?.last_sync_at ?? null, last_error: r?.last_error ?? null });
+  }
+  return out;
 }

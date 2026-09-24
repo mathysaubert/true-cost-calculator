@@ -50,3 +50,13 @@ export function SettingsBanner({ result, intent = null }) {
   if (result.errors && Object.keys(result.errors).length) return <s-banner tone="warning">{t("settings.error.fields")}</s-banner>;
   return <s-banner tone="critical">{t("settings.error.failed")}</s-banner>;
 }
+
+// Liste déroulante Polaris non contrôlée : `value` initial, options { value, label } déjà traduites.
+export function SelectField({ name, label, value = "", options = [], help = null, error = null }) {
+  const { t } = useI18n();
+  return (
+    <s-select name={name} label={label} value={value ?? ""} details={help ?? undefined} error={error ? t(`settings.error.${error}`) : undefined}>
+      {options.map((o) => <s-option key={String(o.value)} value={String(o.value)}>{o.label}</s-option>)}
+    </s-select>
+  );
+}

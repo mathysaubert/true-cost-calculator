@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot29_settings.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { FIELDS, MIRROR_COLUMNS, SETTINGS_NAV, parseNumber, parseFields, shippingRulesFromForm, gatewayRuleFromForm, mergeGatewayRule, ruleFor, gatewaysFromOrders, fixedCostFromForm, isActiveFixedCost, mirrorFor, dataRuleOf, settingsStatus, presetFor } from "../app/lib/settings.js";
+import { parseShopForm, parseCountryList, partnerFromForm, promoRuleFromForm, manualCommissionFromForm, codesFromOrders, connectionsStatus, SHOP_FIELDS, PROVIDERS, FIELDS, MIRROR_COLUMNS, SETTINGS_NAV, parseNumber, parseFields, shippingRulesFromForm, gatewayRuleFromForm, mergeGatewayRule, ruleFor, gatewaysFromOrders, fixedCostFromForm, isActiveFixedCost, mirrorFor, dataRuleOf, settingsStatus, presetFor } from "../app/lib/settings.js";
 import { CATALOGS } from "../app/locales/index.js";
 
 let failures = 0;
@@ -51,9 +51,40 @@ console.log("\n── 3. Recopie, fiabilité, état des réglages ──");
   ok(dataRuleOf("save_gateway") === "payment_fees" && dataRuleOf("save_shipping") === "shipping_costs" && dataRuleOf("save_order_costs") === "shipping_costs" && dataRuleOf("add_fixed_cost") === "fixed_costs" && dataRuleOf("save_goals") === null, "règle de fiabilité par intent (S10) ; objectifs = aucune");
   const st = settingsStatus({ settings: { gateway_fee_rules: [{ gateway: "paypal", pct: 3.4, fixed: 0.35, confirmed: true }], shipping_cost_rules: {}, packaging_cost_per_order: 0.3, profitability_threshold_pct: 0, main_product_price: 60 }, fixedCosts: [{ active_from: null, active_to: "2026-01-01" }], gateways: [{ gateway: "shopify_payments", orders: 5 }, { gateway: "paypal", orders: 2 }], day: "2026-09-24" });
   const by = Object.fromEntries(st.map((i) => [i.id, i.state]));
-  ok(st.length === 8 && by.gateway_fees === "unconfirmed" && by.shipping === "unset" && by.packaging === "set" && by.return_cost === "unset" && by.fixed_costs === "unset" && by.cm2_target === "unset" && by.roas_target === "unset" && by.main_product_price === "set", `8 états : ${st.map((i) => `${i.id}=${i.state}`).join(" ")}`);
+  ok(st.length === 13 && by.shop_country === "unset" && by.partners === "unset" && by.ads_connection === "unset" && by.gateway_fees === "unconfirmed" && by.shipping === "unset" && by.packaging === "set" && by.return_cost === "unset" && by.fixed_costs === "unset" && by.cm2_target === "unset" && by.roas_target === "unset" && by.main_product_price === "set", `13 états : ${st.map((i) => `${i.id}=${i.state}`).join(" ")}`);
   ok(settingsStatus({ settings: {}, gateways: [] }).find((i) => i.id === "gateway_fees").state === "unset" && settingsStatus({ settings: { gateway_fee_rules: [{ gateway: "x", confirmed: true }] }, gateways: [{ gateway: "x", orders: 1 }] }).find((i) => i.id === "gateway_fees").state === "set", "passerelles : aucune vue → manquant ; toutes confirmées → renseigné");
-  ok(st.every((i) => ["costs", "goals"].includes(i.page)) && SETTINGS_NAV.filter((n) => n.status === "live").map((n) => n.id).join(",") === "index,costs,goals", "chaque état pointe une page livrée ; 3 pages livrées (S2)");
+  ok(st.every((i) => ["costs", "goals", "shop", "marketing", "connections"].includes(i.page)) && SETTINGS_NAV.filter((n) => n.status === "live").map((n) => n.id).join(",") === "index,costs,goals,shop,marketing,connections", "chaque état pointe une page livrée ; 6 pages livrées (S2, R2)");
+  const st2 = settingsStatus({ settings: { shop_country_code: "FR", sales_countries: ["FR", "DE"] }, partners: [{ id: "p" }], promoRules: [{ code: "X" }], connections: [{ id: "meta", status: "error" }] });
+  const by2 = Object.fromEntries(st2.map((i) => [i.id, i.state]));
+  ok(by2.shop_country === "set" && by2.sales_countries === "set" && by2.partners === "set" && by2.promo_rules === "set" && by2.ads_connection === "unconfirmed", "R2 : états Boutique / Marketing / Connexions (erreur de connexion = à confirmer)");
+}
+
+console.log("\n── 3b. R2 : Boutique, Marketing, Connexions ──");
+{
+  ok(parseCountryList("fr, de ; US") .join(",") === "FR,DE,US" && parseCountryList("") === null && parseCountryList("FRA") === undefined && parseCountryList("FR FR").length === 1, "liste de pays : séparateurs, majuscules, vide → NULL, code à 3 lettres → invalide, dédoublonnée");
+  const s = parseShopForm(fd({ shop_country_code: "fr", vat_regime: "franchise", b2b_tag: " Pro ", history_months: "12", locale_override: "fr", report_locale: "", sales_countries: "FR, BE", shipping_countries: "", supply_countries: "CN" }));
+  ok(s.values.shop_country_code === "FR" && s.values.vat_regime === "franchise" && s.values.b2b_tag === "pro" && s.values.history_months === 12 && s.values.locale_override === "fr" && s.values.report_locale === null && s.values.sales_countries.join(",") === "FR,BE" && s.values.shipping_countries === null && s.values.supply_countries.join(",") === "CN" && !Object.keys(s.errors).length, "Boutique : pays en majuscules, TVA, étiquette normalisée, historique entier, langues, listes de pays");
+  const bad = parseShopForm(fd({ shop_country_code: "FRA", vat_regime: "autre", history_months: "0", locale_override: "xx", sales_countries: "F1" }));
+  ok(bad.errors.shop_country_code === "invalid" && bad.errors.vat_regime === "invalid" && bad.errors.history_months === "range" && bad.errors.locale_override === "invalid" && bad.errors.sales_countries === "invalid", "Boutique : chaque champ invalide est signalé");
+  ok(!("history_months" in parseShopForm(fd({ history_months: "" })).values), "historique vide → inchangé (colonne NOT NULL)");
+  ok(SHOP_FIELDS.find((f) => f.key === "vat_regime").mirror === true && MIRROR_COLUMNS.includes("vat_regime"), "régime de TVA recopié vers shop_plans (S1a)");
+  const p = partnerFromForm(fd({ name: "  Influ ", mode: "manual" }));
+  ok(p.row.name === "Influ" && p.row.mode === "manual" && partnerFromForm(fd({ name: "", mode: "x" })).errors.name === "invalid" && partnerFromForm(fd({ name: "a", mode: "x" })).errors.mode === "invalid", "partenaire : nom nettoyé, mode validé");
+  const partners = [{ id: "p1", name: "A", mode: "codes" }, { id: "p2", name: "B", mode: "manual" }];
+  const r = promoRuleFromForm(fd({ code: "test20", partner_id: "p1", commission_pct: "12,5", commission_base: "ht_before_discount", active_from: "2026-09-01", active_to: "" }), partners);
+  ok(r.row.code === "TEST20" && r.row.partner_id === "p1" && r.row.commission_pct === 12.5 && r.row.commission_base === "ht_before_discount" && r.row.active_from === "2026-09-01" && r.row.active_to === null && !Object.keys(r.errors).length, "règle de code : code en majuscules, partenaire, taux, base, dates");
+  const rb = promoRuleFromForm(fd({ code: "", partner_id: "zz", commission_pct: "150", commission_base: "x", active_from: "2026-09-10", active_to: "2026-09-01" }), partners);
+  ok(rb.errors.code === "invalid" && rb.errors.partner_id === "invalid" && rb.errors.commission_pct === "range" && rb.errors.commission_base === "invalid" && rb.errors.active_to === "range", "règle de code : erreurs signalées");
+  const m = manualCommissionFromForm(fd({ partner_id: "p2", period_month: "2026-09", amount: "250,5", note: "" }), partners);
+  ok(m.row.partner_id === "p2" && m.row.period_month === "2026-09" && m.row.amount === 250.5 && m.row.note === null && !Object.keys(m.errors).length, "commission manuelle : partenaire manuel, mois, montant");
+  ok(manualCommissionFromForm(fd({ partner_id: "p1", period_month: "2026-13", amount: "" }), partners).errors.partner_id === "invalid" && manualCommissionFromForm(fd({ partner_id: "p2", period_month: "2026-13", amount: "x" }), partners).errors.period_month === "invalid", "commission manuelle : partenaire à codes refusé, mois invalide");
+  ok(codesFromOrders([{ discount_codes: ["test20"] }, { discount_codes: ["TEST20", "welcome"] }, {}]).map((c) => `${c.code}:${c.orders}`).join(",") === "TEST20:2,WELCOME:1", "codes vus : normalisés en majuscules, comptés, triés");
+  const c = connectionsStatus({ rows: [{ provider: "meta", status: "error", last_error: "token" }], lastSync: "2026-09-24T08:00:00Z", now: "2026-09-24T10:00:00Z" });
+  ok(c.length === 1 + PROVIDERS.length && c[0].id === "shopify" && c[0].status === "connected" && c.find((x) => x.id === "meta").status === "error" && c.find((x) => x.id === "google_ads").status === "none", "connexions : Shopify + 4 fournisseurs, erreur et absence distinguées");
+  ok(connectionsStatus({ rows: [], lastSync: "2026-09-20T08:00:00Z", now: "2026-09-24T10:00:00Z" })[0].status === "stale" && connectionsStatus({ rows: [], lastSync: null })[0].status === "none", "Shopify : synchronisation en retard après 3 jours ; jamais synchronisé");
+  const ui = ["app/components/settings/ShopForm.jsx", "app/components/settings/MarketingForms.jsx", "app/components/settings/ConnectionsList.jsx"].map(read).join("\n");
+  ok(!/useState|onChange=/.test(ui) && /<s-select/.test(read("app/components/settings/Fields.jsx")) && /<Form method="post"/.test(ui), "R2 : formulaires natifs, s-select non contrôlé, aucun état React");
+  ok(!/shop_currency"[^>]*value=/.test(ui) && /data-readonly="shop_currency"/.test(ui), "devise : lue depuis Shopify, jamais saisie");
 }
 
 console.log("\n── 4. Catalogues et scans ──");
@@ -63,6 +94,7 @@ console.log("\n── 4. Catalogues et scans ──");
   ok(fieldKeys.every((k) => en[`settings.field.${k}.label`] && en[`settings.field.${k}.help`] && fr[`settings.field.${k}.label`]), "chaque champ scalaire a libellé + aide en/fr");
   ok(["gateway_fees", "shipping", "packaging", "return_cost", "fixed_costs", "cm2_target", "roas_target", "main_product_price"].every((i) => en[`settings.item.${i}`] && fr[`settings.item.${i}`]), "chaque état de réglage a son libellé");
   ok(SETTINGS_NAV.every((n) => en[`settings.nav.${n.id}`] && fr[`settings.nav.${n.id}`]) && ["set", "unset", "unconfirmed"].every((s) => en[`settings.status.${s}`]) && ["invalid", "range", "failed", "fields"].every((e) => en[`settings.error.${e}`]), "sous-nav, états, erreurs traduits");
+  ok(SHOP_FIELDS.every((f) => en[`settings.field.${f.key}.label`] && fr[`settings.field.${f.key}.help`]) && ["shopify", ...PROVIDERS].every((p) => en[`settings.provider.${p}`]) && ["connected", "error", "revoked", "none", "stale"].every((s) => fr[`settings.conn_status.${s}`]), "R2 : champs Boutique, fournisseurs, états de connexion traduits");
   const pure = read("app/lib/settings.js");
   ok(!/supabase|fetch\(|import\s+.*react|Date\.now\(|new Date\(/i.test(pure), "settings.js : aucune I/O, aucun React, aucune date courante");
   const server = read("app/lib/settings.server.js");
