@@ -15,7 +15,7 @@ migration, rien d'irréversible avant ton GO explicite.
 | 1 | Port client dans le CA brut, port marchand en coût (option B) ; le remboursement du port suit la même règle | Aligné sur la définition Shopify de « Total sales » : le marchand retrouve les mêmes chiffres que dans son admin. |
 | 2 | Base de commission réglable par code, défaut = CA HT après remise (option C) | Le défaut colle à l'usage dominant des contrats d'influence ; le réglage couvre les contrats atypiques sans sur-payer par défaut. |
 | 3 | Délai de retour par défaut : 30 jours (option B) | Usage D2C courant ; plus prudent que 14 j pour marquer les ventes provisoires. |
-| 4 | Gains des leviers : horizon mois calendaire, volume constant | Lisible pour le marchand (« ce mois-ci ») et prudent (aucune élasticité inventée en V1). |
+| 4 | Gains des leviers : horizon **mois glissant de 30 jours** (amendé le 2026-09-24, arbitrage T4b ; « mois calendaire » à l'origine), volume constant ; la période choisie (7 / 30 / 90) reste proposée en bascule dans le Simulateur | Cohérent avec `impactRange` (× 30 / jours de la période) et la formulation « environ … par mois » ; prudent (aucune élasticité inventée en V1). |
 | 5 | Seuil de rentabilité : les deux versions, étiquetées (option C) — sur CM3, et sur CM2 avec marketing en coûts fixes | Couvre l'acquisition qui suit le volume ET le budget pub figé, sans imposer un modèle au marchand. |
 | 6 | Historique : 24 mois, seuils `minData` affichés | Douze cohortes M+12 complètes au lieu d'une ; même approbation `read_all_orders`. |
 | 7 | Import hors UE : formule générique (valeur × taux de droits saisi + port), TARIC automatique pour l'UE, saisie directe du coût rendu possible (option C élargie) | Garde la chaîne chiffre → détail sans réglementation visible ; le repli « coût rendu » évite le mur pour qui ignore son taux. |
@@ -478,3 +478,34 @@ Réponses courtes « Data protection details » (niveau 1) :
 > is contacted or profiled outside the merchant's own store metrics.
 > Encryption: TLS in transit; encrypted at rest on Supabase (Postgres) and Vercel; third-party
 > tokens are encrypted with AES-256-GCM before storage.
+
+## I. Réglages et Simulateur (2026-09-24) : arbitrages S1-S10 et T1-T7
+
+Phase 0 : `2026-09-24_reglages-simulateur_phase0.md`. Toutes les recommandations retenues.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| S1 | `shop_settings` est la source de vérité ; l'app écrit `shop_settings` et recopie les colonnes historiques dans `shop_plans` (a) ; un trigger SQL recopie `shop_plans` → `shop_settings` pour couvrir l'écran classique jusqu'à F4-D (b) | migration S-02 (trigger idempotent, retiré par le rollback) ; R1 écrit les deux tables |
+| S2 | Une route par sujet : `/app/settings` (index), `/costs`, `/goals`, `/shop`, `/connections`, `/marketing` | routes plates `app.settings.*.jsx`, formulaire POST natif par page, un `intent` par sauvegarde |
+| S3 | Champs Polaris WC non contrôlés dans un formulaire natif (a) ; repli champs HTML stylés `.tcc` (b) décidé au premier rendu réel | doc Shopify : `name` « used to identify the field's value when the form is submitted » sur `s-text-field` et `s-select` (lu le 2026-09-24) ; preuve finale au premier clic sur la boutique de dev |
+| S4 | Une règle de frais par passerelle, passerelles listées depuis `orders.gateway_names`, valeurs courantes pré-remplies, « à confirmer » tant que non cliqué | `gateway_fee_rules` `[{gateway, pct, fixed, confirmed}]` |
+| S5 | Coûts fixes : lignes `fixed_costs` (libellé libre, montant mensuel, actif du / au) | `thresholds()` reçoit `fixed_costs_monthly` / `marketing_monthly` : point mort allumé |
+| S6 | Coûts de commande : port par pays, emballage, coût par retour, fenêtre de retour, promesse de livraison ; jamais un chiffre non confirmé pré-rempli (placeholders seulement) | `shipping_cost_rules`, `packaging_cost_per_order`, `return_cost_per_return`, `return_window_days`, `delivery_promise_days` |
+| S7 | Objectifs : CM2 cible (bande 40-60 en rappel), marge après pub (ROAS cible), `main_product_price` (nouvelle colonne S-01) ; seuil d'alerte repris tel quel sous son nom exact (a) ; CPA courant non repris | migration S-01 |
+| S8 | Pas d'assistant bloquant : liste de contrôle sur Fiabilité + champs manquants dans Réglages > Boutique (pays de vente, pays d'expédition, sources d'approvisionnement, langue des rapports : colonnes nullables S-01) | lot R3 |
+| S9 | Alertes (`alert_rules`, canaux) hors périmètre Réglages : seuils seulement | section Décisions / Alertes |
+| S10 | À chaque sauvegarde qui touche une règle de données, `decision_log` `data_fixed` explicite (champ, score avant / après), sans doublon avec la déduction I0-C | R1 |
+| T1 | Simulateur V1 au niveau boutique (feuilles agrégées, `econ/simulate.js`) | lot S1 |
+| T2 | Simulateur produit conservé dans l'écran classique au lot S1 (b) ; porté comme mode « Produit » au lot S3 (a), sans le « + 4,5 % » codé en dur ; `calculations` tombe avec F4-D | lots S1, S3 |
+| T3 | Calcul côté client avec `econ/simulate.js` sur des champs HTML natifs tenus par React (pas des champs Polaris), scénario initial dans l'URL, feuilles agrégées chargées une fois | fait vérifié : 38 feuilles + 67 nœuds + compteurs ≈ 2,6 Ko en JSON par période |
+| T4 | Horizon : mois glissant de 30 jours pour l'opportunité et le Simulateur ; décision 4 amendée ; période choisie en bascule | `impactRange` inchangé |
+| T5 | Fourchette D2(c) : scénarios bas / haut (volume −10 % / +10 % via `cvr_factor`, sessions constantes) sur CA, CM2, résultat ; niveau « Simulation » + score de fiabilité | lot S1 |
+| T6 | Aucune restriction d'offre au lot S1 ; scénarios = `decision_log` `simulated` ; restrictions au lot S2 quand la tarification sera décidée ; facturation intouchée | lots S1, S2 |
+| T7 | Mode objectif (`findThreshold`, un levier à la fois) au lot S2 | lot S2 |
+
+Ordre : R0 → R1 → S1 → R2 → R3 → S2 → S3 ; F4-B en parallèle dès que C1 (React 19) est tranché.
+
+Faits vérifiés le 2026-09-24 (§5 de la Phase 0) : (1) formulaires Polaris : voir S3 ;
+(2) `orders.gateway_names TEXT[]` est stocké par la sync v2 (`paymentGatewayNames`, F1-02) ;
+(3) taille des feuilles pour le client : voir T3 ; (4) horizon : voir T4.
+

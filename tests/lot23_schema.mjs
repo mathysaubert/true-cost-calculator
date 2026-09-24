@@ -236,6 +236,35 @@ console.log("\n── 10. I0-01 mémoire des décisions ──");
   ok(!/insight_log|decision_log/.test(f1rb), "le rollback F1 ignore les tables I0 (rollback I0 à exécuter avant)");
 }
 
+// ── 11. R0 : colonnes Réglages (S-01) et trigger de recopie shop_plans → shop_settings (S-02) ──
+console.log("\n── 11. R0 (Réglages : colonnes S-01, trigger de recopie S-02) ──");
+{
+  const r0Files = files.filter((f) => f.startsWith("20260924_r0_"));
+  ok(r0Files.join(",") === "20260924_r0_01_settings_columns.sql,20260924_r0_02_shop_plans_sync_trigger.sql", `2 migrations R0 (${r0Files.join(", ")})`);
+  const s01 = read("20260924_r0_01_settings_columns.sql"), s02 = read("20260924_r0_02_shop_plans_sync_trigger.sql");
+  const added = [...s01.matchAll(/ADD COLUMN IF NOT EXISTS (\w+)\s+([^,;]+)/g)].map((m) => ({ col: m[1], def: m[2] }));
+  const R0_COLUMNS = ["main_product_price", "sales_countries", "shipping_countries", "supply_countries", "report_locale"];
+  ok(added.map((c) => c.col).join(",") === R0_COLUMNS.join(","), `S-01 : 5 colonnes (${added.map((c) => c.col).join(", ")})`);
+  ok(added.every((c) => !/DEFAULT/i.test(c.def) && !/NOT NULL/i.test(c.def)), "S-01 : toutes nullables sans défaut (S6 : rien de pré-rempli)");
+  ok(!/CREATE TABLE/i.test(s01) && /ALTER TABLE public\.shop_settings/.test(s01) && !/UPDATE |DELETE FROM|DROP /i.test(s01), "S-01 : uniquement des colonnes sur shop_settings, aucune donnée touchée");
+  ok(/CREATE OR REPLACE FUNCTION public\.sync_shop_plans_to_settings\(\)/.test(s02) && /RETURNS trigger/.test(s02) && /DROP TRIGGER IF EXISTS trg_shop_plans_sync_settings ON public\.shop_plans/.test(s02) && /CREATE TRIGGER trg_shop_plans_sync_settings/.test(s02), "S-02 : fonction OR REPLACE + DROP TRIGGER IF EXISTS + CREATE TRIGGER");
+  const cols = s02.match(/AFTER INSERT OR UPDATE OF([\s\S]*?)ON public\.shop_plans/)?.[1] ?? "";
+  ok(!/\bplan\b/.test(cols) && /vat_regime/.test(cols) && /profitability_threshold_pct/.test(cols) && /current_cpa_updated_at/.test(cols), "S-02 : le trigger écoute les colonnes de réglage, jamais la colonne plan (facturation)");
+  ok(/ON CONFLICT \(shop_domain\) DO UPDATE/.test(s02) && /IS DISTINCT FROM/.test(s02) && !/DELETE FROM/i.test(s02), "S-02 : upsert sans écriture inutile (IS DISTINCT FROM), aucune suppression");
+  const f1Copy = read("20260922_f1_01_shop_settings.sql");
+  const f1Cols = f1Copy.match(/INSERT INTO public\.shop_settings \(([\s\S]*?)\)/)?.[1].replace(/\s/g, "").split(",") ?? [];
+  const s02Cols = s02.match(/INSERT INTO public\.shop_settings \(([\s\S]*?)\)/)?.[1].replace(/\s/g, "").split(",") ?? [];
+  ok(f1Cols.length > 0 && f1Cols.join(",") === s02Cols.join(","), "S-02 recopie exactement les colonnes que F1-01 a copiées");
+  const spAdded = [...s02.matchAll(/ADD COLUMN IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+  ok(/ALTER TABLE public\.shop_plans/.test(s02) && spAdded.join(",") === "shopify_fee_pct,processor_fee_pct,processor_fixed_fee,default_import_country" && !/ALTER TABLE public\.shop_settings/.test(s02), "S-02 documente les 4 colonnes manuelles de shop_plans (idempotent), ne touche pas shop_settings");
+  const rb = readFileSync(new URL("../supabase/rollback/20260924_r0_rollback.sql", import.meta.url), "utf8");
+  const dropped = [...rb.matchAll(/DROP COLUMN IF EXISTS (\w+)/g)].map((m) => m[1]);
+  ok(dropped.join(",") === R0_COLUMNS.join(","), "rollback R0 : retire exactement les 5 colonnes S-01");
+  ok(/DROP TRIGGER IF EXISTS trg_shop_plans_sync_settings ON public\.shop_plans/.test(rb) && /DROP FUNCTION IF EXISTS public\.sync_shop_plans_to_settings\(\)/.test(rb), "rollback R0 : retire le trigger et la fonction");
+  ok(!/ALTER TABLE (IF EXISTS )?public\.shop_plans/.test(rb) && /ne sont PAS retirées/.test(rb), "rollback R0 : ne retire aucune colonne de shop_plans (pré-existantes en prod) et le documente");
+  ok((rb.match(/DROP (TABLE|FUNCTION|COLUMN|INDEX|TRIGGER)(?! IF EXISTS)/g) ?? []).length === 0 && !/DELETE FROM|TRUNCATE|UPDATE /.test(rb), "rollback R0 idempotent, aucune donnée touchée");
+}
+
 console.log("\n" + "═".repeat(66));
 console.log(failures === 0
   ? " BILAN LOT 23 (schéma F1) : ✓ Tous les tests passent"
