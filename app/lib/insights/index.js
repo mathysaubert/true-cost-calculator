@@ -36,7 +36,7 @@ export function buildResults({ current, settings = {}, sources } = {}) {
   const fixedMissing = !(num(l.fixed_costs) > 0);
   const noAds = !sources?.ads;
   return {
-    ca_ht: one("ca_ht", n.ca_ht, "money", { refunds: num(l.rembours) > 0 ? { refunded: l.rembours, gross: l.ca_brut } : null }),
+    ca_ht: one("ca_ht", n.ca_ht, "money", { refunds: num(l.rembours) > 0 ? { refunded: l.rembours, gross: Math.round(((num(l.ca_brut) ?? 0) - (num(l.remises) ?? 0)) * 100) / 100, discounts: num(l.remises) ?? 0 } : null }),
     cm2: one("cm2", n.cm2, "money", { pct: n.cm2_pct, known_share: l.known_ca_ht != null && n.ca_ht > 0 ? (l.known_ca_ht / n.ca_ht) * 100 : null }),
     net_result: one("net_result", n.net_result, "money", { estimated: fixedMissing || noAds, gap: fixedMissing ? "fixed_costs" : null, notes: [fixedMissing ? "no_fixed_costs" : null, noAds ? "no_ad_source" : null].filter(Boolean) }),
   };

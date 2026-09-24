@@ -161,9 +161,12 @@ const REFUND_NOTE_IDS = new Set(["ca_ht", "aov", "cm2_pct", "cm3", "net_result"]
 export function kpiRefunds(agg, def) {
   if (!REFUND_NOTE_IDS.has(def.id)) return null;
   const lv = agg?.shop?.leaves ?? {};
-  const refunded = num(lv.rembours), gross = num(lv.ca_brut);
+  // Retour du 2026-09-24 : « vendus » = CA brut APRÈS remises (sinon vendus − remboursés ≠ CA net) ;
+  // les remises sont portées à part pour la sous-ligne.
+  const refunded = num(lv.rembours), brut = num(lv.ca_brut), discounts = num(lv.remises) ?? 0;
   if (!(refunded > 0)) return null;
-  return { refunded, gross: gross ?? 0, full: gross != null && refunded >= gross };
+  const gross = brut == null ? null : Math.round((brut - discounts) * 100) / 100;
+  return { refunded, gross: gross ?? 0, discounts, full: gross != null && refunded >= gross };
 }
 
 // Vue complète des 12 KPI pour la page (valeurs brutes ; le formatage est fait par l'écran).

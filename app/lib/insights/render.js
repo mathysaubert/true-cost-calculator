@@ -37,7 +37,11 @@ const FIELDS = ["observation", "context", "cause", "impact", "recommendation", "
 export function renderInsight(insight, i18n, { titles = {}, reference = null } = {}) {
   const { t } = i18n;
   const vars = { ...(insight.vars ?? {}) };
-  if (insight.impact?.range) { vars.low = insight.impact.range.low; vars.high = insight.impact.range.high; }
+  // Fourchette : une perte s'écrit en valeurs absolues croissantes (« entre 320 et 960 perdus »),
+  // jamais « −960 à −320 » (retour du 2026-09-24) ; les gabarits des règles de perte sont rédigés ainsi.
+  const range = insight.impact?.range ?? null;
+  const loss = !!range && range.high <= 0 && range.low < 0;
+  if (range) { vars.low = loss ? Math.abs(range.high) : range.low; vars.high = loss ? Math.abs(range.low) : range.high; }
   if (insight.missing) vars.missing = insight.missing;
   vars.reference = insight.reference ?? reference ?? null;
   const fv = Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, formatVar(k, v, i18n, { titles })]));
@@ -57,6 +61,10 @@ export function renderInsight(insight, i18n, { titles = {}, reference = null } =
   const cta = insight.cta ?? null;
   out.cta = cta ? { kind: cta.kind, target: cta.target, label: cta.kind === "open_section" ? t("cta.open_section", { section: t(`nav.${cta.target}`) }) : t(`cta.${cta.kind}`) } : null;
   out.horizon = insight.impact?.range?.horizon === "month" ? t("impact.per_month") : t("impact.over_period");
+  out.loss = loss;
+  out.headline = range ? t(loss ? "impact.everything_equal_loss" : "impact.everything_equal", { low: fv.low, high: fv.high }) : null;
+  const parts = range?.parts ?? null;
+  out.range_why = parts ? t("analysis.range_why", { pct: i18n.pct(parts.total * 100, { digits: 0 }), score_pct: i18n.pct(parts.by_score * 100, { digits: 0 }), score: i18n.int(Math.round(parts.score)), status_pct: i18n.pct(parts.by_status * 100, { digits: 0 }), status: out.confidence.label }) : null;
   out.evidence = (insight.evidence ?? []).map((e) => ({ ...e, label: evidenceLabel(e.node, t), text: e.value == null ? t("common.na") : i18n.byUnit(e.value, e.unit) }));
   return out;
 }

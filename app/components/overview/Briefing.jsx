@@ -27,7 +27,7 @@ export function Results({ results, kpis = [] }) {
               <>
                 <span className="tcc-result__value">{money(r.value)}</span>
                 {id === "cm2" && r.pct != null && <span className="tcc-result__sub">{t("results.cm2_pct", { pct: pct(r.pct) })}{r.known_share != null && r.known_share < 99.5 ? ` · ${t("results.known_share", { pct: pct(r.known_share, { digits: 0 }) })}` : ""}</span>}
-                {id === "ca_ht" && r.refunds && <span className="tcc-result__sub">{t("overview.tile.refunds", { refunded: money(r.refunds.refunded), gross: money(r.refunds.gross) })}</span>}
+                {id === "ca_ht" && r.refunds && <span className="tcc-result__sub">{r.refunds.discounts > 0 ? t("overview.tile.refunds_discounts", { refunded: money(r.refunds.refunded), gross: money(r.refunds.gross), discounts: money(r.refunds.discounts) }) : t("overview.tile.refunds", { refunded: money(r.refunds.refunded), gross: money(r.refunds.gross) })}</span>}
                 {id === "net_result" && r.estimated && <span className="tcc-result__status">{t("results.estimated")}{r.gap ? ` · ${t(`results.gap.${r.gap}`)}` : ""}</span>}
               </>
             ) : r?.status === "insufficient" ? (

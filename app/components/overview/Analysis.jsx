@@ -9,18 +9,24 @@ import { useI18n } from "../../lib/i18n/context.jsx";
 import { renderInsight } from "../../lib/insights/render.js";
 import { Icon } from "./Icons.jsx";
 import { simulatorHref } from "../../lib/simulator/index.js";
+import { sectionById } from "../../lib/sections.js";
 
 const SECTION_OF_TARGET = { costs: "settings", fees: "settings", ads: "settings", profit: "profit", products: "products", marketing: "marketing", inventory: "inventory" };
 
 function Cta({ cta, insightId, insight = null, days = null }) {
+  const { t } = useI18n();
   if (!cta) return null;
   const target = SECTION_OF_TARGET[cta.target] ?? cta.target;
   const modalId = `why-${insightId}`;
   if (cta.kind === "fix_data" || cta.kind === "connect") return <Link className="tcc-cta" to="/app/data-health">{cta.label}</Link>;
   // S1 : la simulation ouvre le Simulateur pré-chargé avec les leviers de la règle (ou de l'opportunité).
   if (cta.kind === "simulate") return <Link className="tcc-cta" to={simulatorHref(insight, { days })}>{cta.label}</Link>;
-  if (cta.kind === "open_section" && target === "overview") return <Link className="tcc-cta" to="/app/overview">{cta.label}</Link>;
-  // Sections « Bientôt » et simulation : le CTA ouvre la modale complète (hypothèses, preuves).
+  if (cta.kind === "open_section") {
+    const section = sectionById(target);
+    if (section?.status === "live" && section.path) return <Link className="tcc-cta" to={section.path}>{cta.label}</Link>;
+    // Retour du 2026-09-24 : tant que la section n'est pas livrée, repli vers les Indicateurs (jamais un lien « Bientôt »).
+    return <Link className="tcc-cta" to={`/app/metrics${days ? `?days=${days}` : ""}`} data-fallback="metrics">{t("cta.fallback_metrics")}</Link>;
+  }
   return <s-button variant="secondary" commandFor={modalId} command="--show">{cta.label}</s-button>;
 }
 
@@ -33,6 +39,7 @@ export function Analysis({ insight, rank = null, titles = {}, days = null }) {
   const i18n = useI18n();
   const { t, money, pct } = i18n;
   if (!insight) return null;
+  void money;
   const r = renderInsight(insight, i18n, { titles });
   const modalId = `why-${insight.id}`;
   const range = insight.impact?.range ?? null;
@@ -48,7 +55,7 @@ export function Analysis({ insight, rank = null, titles = {}, days = null }) {
       <p className="tcc-analysis__obs">{r.observation}</p>
       {range && (
         <p className="tcc-analysis__impact">
-          {t("impact.everything_equal", { low: money(range.low), high: money(range.high) })} <small>{r.horizon}</small>
+          {r.headline} <small>{r.horizon}</small>
         </p>
       )}
       <div className="tcc-analysis__actions">
@@ -93,6 +100,7 @@ export function Analysis({ insight, rank = null, titles = {}, days = null }) {
               <div key={`${e.node}-${i}`} className="tcc-evidence__row"><span>{e.label}</span><span>{e.text}</span></div>
             ))}
           </div>
+          {r.range_why && <p className="tcc-calc__note">{r.range_why}</p>}
           {insight.explained != null && <p className="tcc-calc__note">{t("analysis.explained", { pct: pct(insight.explained * 100, { digits: 0 }) })}</p>}
           {insight.gaps_share > 0 && <p className="tcc-calc__note">{t("analysis.gaps_share", { pct: pct(insight.gaps_share, { digits: 0 }) })}</p>}
           {r.simulation && <p className="tcc-calc__note"><strong>{t("analysis.simulation")}</strong>{": "}{r.simulation}</p>}

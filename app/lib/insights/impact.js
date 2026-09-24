@@ -5,10 +5,14 @@
 // environ … » (clé de catalogue, pas ici).
 import { UNCERTAINTY_BY_SCORE, UNCERTAINTY_BY_STATUS } from "./config.js";
 
-export function halfWidth(score, status = "likely") {
+export function halfWidthParts(score, status = "likely") {
   const s = Number.isFinite(score) ? score : 0;
-  const base = UNCERTAINTY_BY_SCORE.find((b) => s >= b.min)?.halfWidth ?? 0.35;
-  return Math.min(0.6, base + (UNCERTAINTY_BY_STATUS[status] ?? 0.15));
+  const byScore = UNCERTAINTY_BY_SCORE.find((b) => s >= b.min)?.halfWidth ?? 0.35;
+  const byStatus = UNCERTAINTY_BY_STATUS[status] ?? 0.15;
+  return { score: s, by_score: byScore, by_status: byStatus, total: Math.min(0.6, byScore + byStatus) };
+}
+export function halfWidth(score, status = "likely") {
+  return halfWidthParts(score, status).total;
 }
 
 // point : montant sur la période (signé). Renvoie null si point est null.
@@ -16,7 +20,8 @@ export function impactRange({ point, score, status = "likely", currency = null, 
   if (point == null || !Number.isFinite(point)) return null;
   const factor = horizon === "month" ? 30 / Math.max(1, periodDays) : 1;
   const p = point * factor;
-  const u = halfWidth(score, status);
+  const parts = halfWidthParts(score, status);
+  const u = parts.total;
   const a = p * (1 - u), b = p * (1 + u);
-  return { point: p, low: Math.min(a, b), high: Math.max(a, b), half_width: u, horizon, currency, status };
+  return { point: p, low: Math.min(a, b), high: Math.max(a, b), half_width: u, parts, horizon, currency, status };
 }

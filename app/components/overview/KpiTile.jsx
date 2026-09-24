@@ -62,7 +62,7 @@ export function KpiTile({ kpi, index = 0 }) {
         ? <div className="tcc-tile__value">{value}</div>
         : <p className="tcc-tile__status"><strong>{status ?? t("common.na")}</strong></p>}
       {value != null && kpi.refunds && (
-        <p className={`tcc-tile__sub${kpi.refunds.full ? " is-full" : ""}`}>{t("overview.tile.refunds", { refunded: byUnit(kpi.refunds.refunded, "money"), gross: byUnit(kpi.refunds.gross, "money") })}</p>
+        <p className={`tcc-tile__sub${kpi.refunds.full ? " is-full" : ""}`}>{kpi.refunds.discounts > 0 ? t("overview.tile.refunds_discounts", { refunded: byUnit(kpi.refunds.refunded, "money"), gross: byUnit(kpi.refunds.gross, "money"), discounts: byUnit(kpi.refunds.discounts, "money") }) : t("overview.tile.refunds", { refunded: byUnit(kpi.refunds.refunded, "money"), gross: byUnit(kpi.refunds.gross, "money") })}</p>
       )}
       <div className="tcc-tile__meta">
         {d && (
