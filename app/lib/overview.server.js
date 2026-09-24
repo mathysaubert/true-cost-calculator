@@ -5,7 +5,7 @@
 // shop { name shopOwnerName } (salutation) et les titres des produits cités par les insights.
 import { aggregate } from "./econ/aggregate.js";
 import { linesFromOrderMarginsRows, ordersForEngine, applyOrderDiscounts } from "./econ/adapters.js";
-import { overviewWindows, buildKpis, buildNotes, buildGaps, OVERVIEW_LINES_CAP } from "./overview.js";
+import { overviewWindows, buildKpis, buildNotes, buildGaps, buildChartSeries, OVERVIEW_LINES_CAP } from "./overview.js";
 import { dataConfidence } from "./confidence.js";
 import { buildBriefing } from "./insights/index.js";
 import { REFERENCE_PERIODS } from "./insights/config.js";
@@ -145,5 +145,6 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     lastSync: lastJob?.finished_at ?? null, historySince: firstOrder, hasAllOrders,
     confidence, briefing, titles,
     waterfall: { leaves: current.shop.leaves, nodes: current.shop.nodes },
+    chart: buildChartSeries({ current, previous, window: win.current, previousWindow: win.previous }),
   };
 }

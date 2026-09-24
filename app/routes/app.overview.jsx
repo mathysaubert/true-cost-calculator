@@ -18,7 +18,8 @@ import { SectionRail } from "../components/overview/SectionRail.jsx";
 import { DevShopBanner } from "../components/overview/Banners.jsx";
 import { Results, Situation, Priorities, Opportunity, WaterfallTable, AllIndicators, DecisionBanner } from "../components/overview/Briefing.jsx";
 import { DataHealth } from "../components/overview/DataHealth.jsx";
-import { OverviewEmptyState, ReservedSlots } from "../components/overview/Blocks.jsx";
+import { OverviewEmptyState } from "../components/overview/Blocks.jsx";
+import { ContributionChart } from "../components/charts/ContributionChart.jsx";
 import "../styles/overview.css";
 
 export const loader = async ({ request }) => {
@@ -75,7 +76,7 @@ export default function Overview() {
             <Situation slots={b?.situation ?? []} titles={view.titles} />
             <Priorities priorities={b?.priorities ?? []} partials={partials} titles={view.titles} days={view.days} />
             <Opportunity opportunity={b?.opportunity} titles={view.titles} fingerprint={view.opportunityFingerprint} days={view.days} />
-            <ReservedSlots only={["chart"]} />
+            <ContributionChart chart={view.chart} days={view.days} />
             <WaterfallTable leaves={view.waterfall?.leaves} nodes={view.waterfall?.nodes} />
           </>
         )}

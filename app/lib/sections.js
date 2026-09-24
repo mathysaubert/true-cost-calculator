@@ -31,6 +31,5 @@ export const sectionById = (id) => SECTIONS.find((s) => s.id === id) ?? null;
 
 // Emplacements réservés de la Vue d'ensemble (blocs 6 et 7 du PDF) : jamais un chiffre.
 export const OVERVIEW_RESERVED = [
-  { id: "chart",     section: "overview", size: "wide" },   // évolution de la contribution (F4-B)
-  { id: "waterfall", section: "overview", size: "wide" },   // cascade « Où est passé votre argent ? » (rendu F4-B ; tableau dès I0-B)
+  { id: "waterfall", section: "overview", size: "wide" },   // cascade « Où est passé votre argent ? » (graphique en B2 ; tableau dès I0-B)
 ];

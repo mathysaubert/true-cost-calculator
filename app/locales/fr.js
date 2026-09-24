@@ -35,6 +35,15 @@ export default {
   "overview.block.waterfall": "Où est passé votre argent ?",
   "overview.block.health": "Fiabilité des données",
   "overview.block.all": "Tous les indicateurs",
+  "overview.chart.legend": "Séries",
+  "overview.chart.previous": "Période précédente",
+  "overview.chart.empty_title": "Pas encore assez de jours",
+  "overview.chart.empty_body": "La courbe demande au moins deux jours avec des ventes sur les {{count}} derniers jours.",
+  "overview.chart.aria": "CA net et contribution sur {{count}} jours, du {{first}} au {{last}}",
+  "overview.chart.tooltip_previous": "période précédente : {{value}}",
+  "overview.chart.hint": "Survolez la courbe ou déplacez le curseur de jour avec les flèches du clavier pour lire chaque jour.",
+  "overview.chart.reader": "Curseur de jour",
+  "overview.chart.partial": "La contribution ne compte que les lignes à coût connu.",
   "overview.all.more": "Ouvrir tous les indicateurs",
   "overview.priorities.empty_title": "Aucune priorité à afficher",
   "overview.priorities.empty_body": "Les données ne portent aucun signal au-dessus de vos seuils sur cette période. C'est une bonne nouvelle, ou trop peu de commandes.",
@@ -532,7 +541,6 @@ export default {
   "overview.dev.toggle_on": "Inclure les commandes brouillon et de test",
   "overview.dev.toggle_off": "Exclure les commandes brouillon et de test",
 
-  "overview.reserved.chart": "Évolution de la contribution",
   "overview.reserved.with": "Disponible avec {{section}}",
   "overview.reserved.next_release": "Disponible à la prochaine version",
 

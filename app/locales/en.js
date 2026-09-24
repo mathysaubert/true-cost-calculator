@@ -38,6 +38,15 @@ export default {
   "overview.block.waterfall": "Where did your money go?",
   "overview.block.health": "Data reliability",
   "overview.block.all": "All indicators",
+  "overview.chart.legend": "Series",
+  "overview.chart.previous": "Previous period",
+  "overview.chart.empty_title": "Not enough days yet",
+  "overview.chart.empty_body": "The curve needs at least two days with sales over the last {{count}} days.",
+  "overview.chart.aria": "Net revenue and contribution over {{count}} days, from {{first}} to {{last}}",
+  "overview.chart.tooltip_previous": "previous period: {{value}}",
+  "overview.chart.hint": "Hover the curve or move the day cursor with the arrow keys to read each day.",
+  "overview.chart.reader": "Day cursor",
+  "overview.chart.partial": "Contribution counts only the lines with a known cost.",
   "overview.all.more": "Open all indicators",
   "overview.priorities.empty_title": "No priority to show",
   "overview.priorities.empty_body": "The data supports no signal above your thresholds for this period. That is good news, or too few orders.",
@@ -535,7 +544,6 @@ export default {
   "overview.dev.toggle_on": "Include draft and test orders",
   "overview.dev.toggle_off": "Exclude draft and test orders",
 
-  "overview.reserved.chart": "Contribution over time",
   "overview.reserved.with": "Available with {{section}}",
   "overview.reserved.next_release": "Available in the next release",
 

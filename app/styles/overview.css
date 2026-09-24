@@ -42,6 +42,10 @@
   --tcc-bad-soft: #fdecec;
   --tcc-neutral: #8a8f9a;
   --tcc-neutral-ink: #5a5e68;
+  /* F4-B : couleurs de séries (validateur dataviz, clair sur #ffffff) */
+  --tcc-chart-revenue: #2a78d6;
+  --tcc-chart-cm2: #4a3aa7;
+  --tcc-chart-previous: #8a8f9a;
   --tcc-neutral-soft: #f0f1f4;
   /* Formes, ombres, typographie */
   --tcc-radius: 14px;
@@ -94,6 +98,9 @@
   --tcc-bad-soft: #3d1a19;
   --tcc-neutral: #8a8f9a;
   --tcc-neutral-ink: #b7bbc4;
+  --tcc-chart-revenue: #3987e5;
+  --tcc-chart-cm2: #c05ac8;
+  --tcc-chart-previous: #8a8f9a;
   --tcc-neutral-soft: #262a32;
   --tcc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
   --tcc-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 14px 32px rgba(0, 0, 0, 0.5);
@@ -132,6 +139,9 @@
     --tcc-bad-soft: #3d1a19;
     --tcc-neutral: #8a8f9a;
     --tcc-neutral-ink: #b7bbc4;
+  --tcc-chart-revenue: #3987e5;
+  --tcc-chart-cm2: #c05ac8;
+  --tcc-chart-previous: #8a8f9a;
     --tcc-neutral-soft: #262a32;
     --tcc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
     --tcc-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 14px 32px rgba(0, 0, 0, 0.5);
@@ -462,6 +472,47 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-simtable__delta.is-good { color: var(--tcc-good-ink); font-weight: 600; }
 .tcc-simtable__delta.is-bad { color: var(--tcc-bad-ink); font-weight: 600; }
 @container tcc-sim (max-width: 560px) { .tcc-simtable__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tcc-simtable__row.is-head { display: none; } }
+
+/* ── F4-B (B1) : courbe de contribution — SVG maison, axes en HTML, hauteur réservée (CLS) ── */
+.tcc-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8125rem; color: var(--tcc-ink-2); }
+.tcc-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.tcc-legend__swatch { inline-size: 14px; block-size: 3px; border-radius: 2px; background: var(--tcc-neutral); }
+.tcc-legend__item.is-revenue .tcc-legend__swatch { background: var(--tcc-chart-revenue); }
+.tcc-legend__item.is-cm2 .tcc-legend__swatch { background: var(--tcc-chart-cm2); }
+.tcc-legend__swatch.is-dashed { background: none; block-size: 0; border-block-start: 2px dashed var(--tcc-chart-previous); }
+.tcc-chart { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; gap: 4px 8px; block-size: 16rem; padding: 12px 14px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-chart--empty { display: grid; grid-template-columns: none; grid-template-rows: none; align-content: center; justify-items: center; gap: 8px; text-align: center; block-size: 16rem; }
+.tcc-chart__y { position: relative; grid-row: 1; grid-column: 1; inline-size: 4.5rem; font-size: 0.6875rem; color: var(--tcc-ink-3); font-variant-numeric: tabular-nums; }
+.tcc-chart__ytick { position: absolute; inset-inline-end: 0; inset-block-start: calc(var(--pct) * 1%); transform: translateY(-50%); white-space: nowrap; }
+.tcc-chart__plot { position: relative; grid-row: 1; grid-column: 2; min-inline-size: 0; outline: none; }
+.tcc-chart__plot:focus-visible { outline: 2px solid var(--tcc-accent-ink); outline-offset: 2px; border-radius: 4px; }
+.tcc-chart__svg { display: block; inline-size: 100%; block-size: 100%; overflow: visible; }
+[dir="rtl"] .tcc-chart__svg { transform: scaleX(-1); }
+.tcc-chart__grid { stroke: var(--tcc-line); stroke-width: 1px; }
+.tcc-chart__baseline { stroke: var(--tcc-ink-3); stroke-width: 1px; }
+.tcc-chart__ghost { stroke: var(--tcc-chart-previous); stroke-width: 1.5px; stroke-dasharray: 4 4; stroke-linejoin: round; stroke-linecap: round; }
+.tcc-chart__line { stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round; }
+.tcc-chart__series.is-revenue .tcc-chart__line { stroke: var(--tcc-chart-revenue); }
+.tcc-chart__series.is-cm2 .tcc-chart__line { stroke: var(--tcc-chart-cm2); }
+.tcc-chart__series.is-revenue .tcc-chart__area { fill: var(--tcc-chart-revenue); opacity: 0.10; }
+.tcc-chart__series.is-cm2 .tcc-chart__area { fill: var(--tcc-chart-cm2); opacity: 0.12; }
+.tcc-chart__cursor { stroke: var(--tcc-ink-2); stroke-width: 1px; stroke-dasharray: 2 3; }
+.tcc-chart__marker { position: absolute; inset-inline-start: calc(var(--x) * 1%); inset-block-start: calc(var(--y) * 1%); transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 4px; pointer-events: none; }
+.tcc-chart__marker::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px var(--tcc-surface); }
+.tcc-chart__marker.is-revenue { color: var(--tcc-chart-revenue); }
+.tcc-chart__marker.is-cm2 { color: var(--tcc-chart-cm2); }
+.tcc-chart__marker b { font-size: 0.6875rem; font-weight: 600; color: var(--tcc-ink); background: var(--tcc-surface); padding: 0 4px; border-radius: 4px; white-space: nowrap; }
+.tcc-chart__tip { position: absolute; inset-block-start: 0; inset-inline-start: clamp(0%, calc(var(--x) * 1%), 100%); transform: translateX(-50%); display: grid; gap: 2px; padding: 6px 8px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); font-size: 0.75rem; color: var(--tcc-ink); white-space: nowrap; pointer-events: none; z-index: 1; }
+.tcc-chart__tip strong { font-size: 0.6875rem; color: var(--tcc-ink-2); }
+.tcc-chart__tip span::before { content: ""; display: inline-block; inline-size: 8px; block-size: 8px; border-radius: 50%; margin-inline-end: 6px; background: var(--tcc-neutral); }
+.tcc-chart__tip span.is-revenue::before { background: var(--tcc-chart-revenue); }
+.tcc-chart__tip span.is-cm2::before { background: var(--tcc-chart-cm2); }
+.tcc-chart__reader { grid-row: 2; grid-column: 2; inline-size: 100%; block-size: 0.9rem; margin: 0; accent-color: var(--tcc-ink-3); }
+.tcc-chart__x { grid-row: 3; grid-column: 2; position: relative; block-size: 1.1rem; font-size: 0.6875rem; color: var(--tcc-ink-3); }
+.tcc-chart__xtick { position: absolute; inset-inline-start: calc(var(--pct) * 1%); transform: translateX(-50%); white-space: nowrap; }
+.tcc-chart__xtick:first-child { transform: none; }
+.tcc-chart__xtick:last-child { transform: translateX(-100%); }
+.tcc-chart__hint { font-size: 0.75rem; }
 
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
 .tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

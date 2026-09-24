@@ -233,9 +233,9 @@ check("état vide avec 6 legacy → titre, « 6 commandes … (6 lues par l'anci
 check("boutique de dev OFF → bandeau info + « Include draft and test orders » (form POST) ; ON (fr) → « Exclure… » ; marchande → null",
   wrap("en", React.createElement("div", null, React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: false }), React.createElement(DevShopBanner, { isDevShop: false, includeTestOrders: true }))),
   (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && (h.match(/<s-banner/g) ?? []).length === 1);
-check("emplacements réservés : 2 cartes .tcc-slot (courbe, cascade), jamais un chiffre, « Disponible à la prochaine version », badge Bientôt ; only=[chart] → 1",
+check("emplacements réservés : 1 carte .tcc-slot (cascade), jamais un chiffre, « Disponible à la prochaine version », badge Bientôt ; only=[chart] → 0 (courbe livrée)",
   wrap("fr", React.createElement("div", null, React.createElement(ReservedSlots), React.createElement(ReservedSlots, { only: ["chart"] }))),
-  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 3 && /Évolution de la contribution/.test(h) && /Cascade de profit/.test(h) && (h.match(/Disponible à la prochaine version/g) ?? []).length === 3 && !/Disponible avec/.test(h) && (h.match(/Bientôt/g) ?? []).length === 3 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && !/Évolution de la contribution/.test(h) && /Cascade de profit/.test(h) && (h.match(/Disponible à la prochaine version/g) ?? []).length === 1 && !/Disponible avec/.test(h) && (h.match(/Bientôt/g) ?? []).length === 1 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
 check("bandeau du moteur : 5 étapes numérotées, 15 puces, titre et pied traduits (en)",
   wrap("en", React.createElement(EngineBanner)),
   (h) => /The economics engine behind every section/.test(h) && (h.match(/tcc-engine__step"/g) ?? []).length === 5 && (h.match(/<li>/g) ?? []).length === 15 && /One source of truth/.test(h));
@@ -333,9 +333,9 @@ check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit �
 check("pédagogie : 12 dépliages, 4 champs chacun (Ce que c'est, Pourquoi, Comment, Surveiller)",
   wrap("fr", React.createElement(MetricsLearn)),
   (h) => (h.match(/<details class="tcc-fold" data-learn=/g) ?? []).length === 12 && (h.match(/Ce que c(?:&#x27;|')est/g) ?? []).length === 12 && /Comment c(?:&#x27;|')est calculé/.test(h));
-check("réservé : seule la courbe est un emplacement (la cascade a son tableau)",
-  wrap("fr", React.createElement(ReservedSlots, { only: ["chart"] })),
-  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && /Évolution de la contribution/.test(h));
+check("réservé : seule la cascade reste un emplacement (la courbe est livrée en B1)",
+  wrap("fr", React.createElement(ReservedSlots)),
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && /Cascade de profit/.test(h));
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  R1 — Réglages : sous-nav, formulaires (vides et renseignés), passerelles, coûts fixes, objectifs,
@@ -427,6 +427,29 @@ check("Marketing VIDE : trois messages, commission manuelle demande d'abord un p
 check("Connexions : Shopify synchronisé « il y a N heures » Connecté, Meta en erreur avec message, 3 autres « Non connecté · connecteur à venir »",
   wrap("fr", React.createElement(ConnectionsList, { items: connectionsStatus({ rows: [{ provider: "meta", status: "error", external_account_name: "Compte X", last_sync_at: "2026-09-23T10:00:00Z", last_error: "token expiré" }], lastSync: "2026-09-24T10:00:00Z", now: "2026-09-24T12:00:00Z" }) })),
   (h) => (h.match(/data-provider="/g) ?? []).length === 5 && /data-provider="shopify" data-status="connected"/.test(h) && /dernière synchronisation il y a \d+ heures?/.test(h) && /data-provider="meta" data-status="error"[\s\S]*?Compte X · [\s\S]*?erreur : token expiré[\s\S]*?tcc-badge--bad">Erreur</.test(h) && (h.match(/Non connecté · connecteur à venir/g) ?? []).length === 0 && (h.match(/connecteur à venir/g) ?? []).length === 3 && (h.match(/>Non connecté</g) ?? []).length === 3);
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  F4-B (B1) — Courbe de contribution : rendu serveur (survol nul), séries courante + précédente,
+//  légende, marqueurs de fin, axes HTML, état vide V8, anglais.
+// ════════════════════════════════════════════════════════════════════════════════
+const { ContributionChart } = await vite.ssrLoadModule("/app/components/charts/ContributionChart.jsx");
+const { buildChartSeries } = await vite.ssrLoadModule("/app/lib/overview.js");
+const chartHealthy = buildChartSeries({ current: shopOf("healthy").current.agg, previous: shopOf("healthy").previous[0].agg, window: WINDOWS[0], previousWindow: WINDOWS[1] });
+const chartMissing = buildChartSeries({ current: shopOf("missing").current.agg, previous: shopOf("missing").previous[0].agg, window: WINDOWS[0], previousWindow: WINDOWS[1] });
+
+console.log("\n=== RENDU RÉEL — Courbe de contribution (F4-B, B1) ===");
+check("saine (fr) : titre, légende 3 entrées (CA net, CM2, Période précédente pointillée), 2 fantômes + 2 séries avec aire, base 0, graduations en euros, marqueurs de fin avec valeur, 7 étiquettes de jours au plus, aucune infobulle au rendu serveur, image nommée + curseur de jour natif, aucun texte dans le SVG",
+  wrapEur("fr", React.createElement(ContributionChart, { chart: chartHealthy, days: 30 })),
+  (h) => /Évolution de la contribution/.test(h) && (h.match(/tcc-legend__item/g) ?? []).length === 3 && /is-previous"><span class="tcc-legend__swatch is-dashed"/.test(h) && (h.match(/class="tcc-chart__ghost/g) ?? []).length === 2 && (h.match(/data-series="/g) ?? []).length === 2 && (h.match(/class="tcc-chart__area"/g) ?? []).length === 2 && /tcc-chart__baseline/.test(h) && /tcc-chart__ytick[^>]*>0.€</.test(h) && (h.match(/class="tcc-chart__marker/g) ?? []).length === 2 && (h.match(/tcc-chart__xtick/g) ?? []).length <= 7 && !/tcc-chart__tip/.test(h) && !/tcc-chart__cursor/.test(h) && /class="tcc-chart__plot" role="img" aria-label="CA net et contribution sur 30 jours, du/.test(h) && /<input type="range" class="tcc-chart__reader" min="0" max="29" step="1" aria-label="Curseur de jour" aria-valuetext="[^"]+" value="0"/.test(h) && /data-chart="line"/.test(h) && !/<text/.test(h) && !/#[0-9a-fA-F]{6}/.test(h.replace(/<path[^>]*>/g, "")));
+check("manquante (fr) : la note « lignes à coût connu » s'ajoute ; les jours sans ligne connue coupent la CM2 (plusieurs segments M)",
+  wrapEur("fr", React.createElement(ContributionChart, { chart: chartMissing, days: 30 })),
+  (h) => /La contribution ne compte que les lignes à coût connu/.test(h) && ((h.match(/data-series="cm2"[\s\S]*?class="tcc-chart__line" d="([^"]*)"/)?.[1] ?? "").match(/M/g) ?? []).length >= 1);
+check("pas assez de jours (V8) : carte « Pas encore assez de jours » de même hauteur, aucune courbe ; chart null → rien",
+  wrapEur("fr", React.createElement("div", null, React.createElement(ContributionChart, { chart: { enough: false, days: [], series: {} }, days: 7 }), React.createElement(ContributionChart, { chart: null }))),
+  (h) => /data-chart="empty"/.test(h) && /class="tcc-chart tcc-chart--empty tcc-card tcc-empty"/.test(h) && /Pas encore assez de jours/.test(h) && /sur les 7 derniers jours/.test(h) && !/tcc-chart__svg/.test(h) && (h.match(/<section/g) ?? []).length === 1);
+check("en : Series, Previous period, aria-label anglais, hint",
+  wrapEur("en", React.createElement(ContributionChart, { chart: chartHealthy, days: 30 })),
+  (h) => /aria-label="Series"/.test(h) && /Previous period/.test(h) && /aria-label="Net revenue and contribution over 30 days, from/.test(h) && /Hover the curve or move the day cursor/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

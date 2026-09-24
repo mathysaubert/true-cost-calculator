@@ -19,7 +19,7 @@ migration, rien d'irréversible avant ton GO explicite.
 | 5 | Seuil de rentabilité : les deux versions, étiquetées (option C) — sur CM3, et sur CM2 avec marketing en coûts fixes | Couvre l'acquisition qui suit le volume ET le budget pub figé, sans imposer un modèle au marchand. |
 | 6 | Historique : 24 mois, seuils `minData` affichés | Douze cohortes M+12 complètes au lieu d'une ; même approbation `read_all_orders`. |
 | 7 | Import hors UE : formule générique (valeur × taux de droits saisi + port), TARIC automatique pour l'UE, saisie directe du coût rendu possible (option C élargie) | Garde la chaîne chiffre → détail sans réglementation visible ; le repli « coût rendu » évite le mur pour qui ignore son taux. |
-| 8 | Graphiques : Polaris Viz pour les écrans, visx pour le simulateur (hybride) | Cohérence Polaris/Built for Shopify sur les écrans, contrôle total là où la qualité visuelle est le produit. |
+| 8 | Graphiques : **SVG maison (module pur `app/lib/charts/`) pour les écrans sous React 18 ; visx candidat pour le Simulateur avancé après le passage à React 19 (F4-D) ; Polaris Viz abandonnée** (amendé le 2026-09-24, arbitrage V1d : Polaris Viz 16.16 figée depuis mai 2025, pairs React ≤ 18 seulement, rendu client seul) | Zéro dépendance, rendu serveur prouvable par `render_check`, CLS nul, jetons CSS clair / sombre ; React 19 + visx au bon moment. |
 | 9 | B2B : `purchasingEntity` de type Company + surcharge par étiquette dans Réglages (option C) | Le champ officiel couvre Shopify Plus ; l'étiquette couvre les marchands qui gèrent le B2B autrement. |
 | 10 | Taux de change : BCE d'abord, fournisseur commercial seulement si une devise manque ; prévu dans l'architecture (`fx_rates.source`), non branché maintenant | Gratuit et quotidien ; le besoin réel (dépenses pub) ne justifie pas un fournisseur payant tant qu'une devise n'est pas absente. |
 | 11 | Langue de départ : **anglais** (tranché le 2026-09-22, second message) ; traduction automatique, relecture humaine des 5 langues principales, lexique financier validé par toi en FR et EN, terminologie de l'admin Shopify réutilisée dans chaque langue | L'anglais est la référence naturelle des relecteurs et de la documentation Shopify ; le lexique FR/EN validé par toi garde la main sur les termes financiers, et le français est traité comme une langue cible relue au même titre que les quatre autres principales. |
@@ -508,4 +508,30 @@ Ordre : R0 → R1 → S1 → R2 → R3 → S2 → S3 ; F4-B en parallèle dès q
 Faits vérifiés le 2026-09-24 (§5 de la Phase 0) : (1) formulaires Polaris : voir S3 ;
 (2) `orders.gateway_names TEXT[]` est stocké par la sync v2 (`paymentGatewayNames`, F1-02) ;
 (3) taille des feuilles pour le client : voir T3 ; (4) horizon : voir T4.
+
+## J. F4-B Graphiques (2026-09-24) : arbitrages V1-V8
+
+Phase 0 : `2026-09-24_f4-b_graphiques_phase0.md`. Toutes les recommandations retenues.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| V1 | (d) React 18 + SVG maison maintenant ; React 19 + visx à F4-D ; Polaris Viz abandonnée ; décision 8 amendée | module pur `app/lib/charts/`, composants `app/components/charts/`, aucune dépendance npm ; migration React 19 groupée avec la suppression de l'écran classique |
+| V2 | Courbe de contribution : CA HT et CM2 par jour, période précédente en trait fin pointillé neutre ; jours sans donnée = trait interrompu (jamais un zéro inventé) | lot B1 |
+| V3 | Réticule + infobulle au survol et au clavier (flèches), valeurs formatées côté serveur par jour ; `<title>` natif par point en repli | lot B1 |
+| V4 | Cascade horizontale (barres flottantes, totaux ancrés à zéro, étiquettes longues à gauche), tableau conservé sous un dépliage | lot B2 |
+| V5 | Mini-courbes : trait fantôme de la période précédente et point final marqué (8 px), sans interaction | lot B3 |
+| V6 | Couleurs de données seulement : CA HT bleu revenus, CM2 violet marges, période précédente neutre ; cascade : coûts en encre neutre, totaux en violet, résultat en bon / mauvais ; paires validées par le validateur du guide dataviz en clair et en sombre | lot B0 |
+| V7 | (b) Courbe sur « Aujourd'hui » seulement (blocs 6 et 7) ; Indicateurs plus tard si demandé | lot B1 |
+| V8 | Courbe dès 2 jours définis avec au moins 2 valeurs non nulles, sinon carte « pas encore assez de jours » (état vide actionnable, jamais un graphique vide) ; hauteur réservée identique entre carte vide et graphique (CLS) | lot B1 |
+
+Ordre : B0 → B1 → B2 → B3 ; B4 (Simulateur) avec S2.
+
+Faits vérifiés le 2026-09-24 (§5 de la Phase 0) : (1) `finalize()` met `known_ca_ht`, `cogs`
+et les coûts à `null` pour un jour sans commande à coût connu → `cm2` nul ce jour-là (trou) ;
+un jour mixte donne la CM2 des lignes connues, comme au niveau boutique ; (2) la barre de
+sauvegarde App Bridge s'attache à un `<form>` natif par l'attribut `data-save-bar`
+(« displays automatically when there are unsaved changes », `submit` = Save, `reset` = Discard,
+`data-discard-confirmation` optionnel, ne pas combiner avec `shopify.saveBar`) : utilisable sans
+état React → R3 ; (3) l'emplacement réservé fait 140 px (`min-block-size`) : la courbe fixe une
+hauteur en `rem` commune à la carte vide et au graphique.
 

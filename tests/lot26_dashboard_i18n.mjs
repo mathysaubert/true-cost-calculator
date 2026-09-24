@@ -64,6 +64,7 @@ const F4_FILES = [
   "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.settings.shop.jsx", "app/routes/app.settings.marketing.jsx", "app/routes/app.settings.connections.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx",
   ...readdirSync(new URL("app/components/overview/", ROOT)).map((f) => `app/components/overview/${f}`),
   ...readdirSync(new URL("app/components/settings/", ROOT)).map((f) => `app/components/settings/${f}`),
+  ...readdirSync(new URL("app/components/charts/", ROOT)).map((f) => `app/components/charts/${f}`),
 ];
 {
   const enKeys = baseKeys(CATALOGS.en), frKeys = baseKeys(CATALOGS.fr);
@@ -347,7 +348,7 @@ console.log("\n── 12. sections.js ──");
   ok(SECTIONS.filter((s) => s.group === "steer").length === 4 && SECTIONS.filter((s) => s.group === "explore").length === 7 && SECTIONS.filter((s) => s.group === "system").length === 2, "groupes : 4 / 7 / 2");
   ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,simulator:/app/simulator,metrics:/app/metrics,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Simulateur (S1), Indicateurs, Fiabilité des données, Réglages (R1)");
   ok(SECTIONS.filter((s) => s.status === "soon").every((s) => s.path === null), "les sections « Bientôt » n'ont pas de route");
-  ok(OVERVIEW_RESERVED.length === 2 && OVERVIEW_RESERVED.every((s) => s.section === "overview"), "2 emplacements réservés (courbe, cascade) rattachés à la Vue d'ensemble");
+  ok(OVERVIEW_RESERVED.length === 1 && OVERVIEW_RESERVED[0].id === "waterfall", "1 emplacement réservé (cascade graphique, B2) ; la courbe est livrée (B1)");
   ok(/rel="home"/.test(read("app/routes/app.jsx")) && /LIVE_SECTIONS/.test(read("app/routes/app.jsx")), "s-app-nav : rel=\"home\" + sections livrées seulement");
 }
 

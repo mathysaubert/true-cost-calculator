@@ -209,3 +209,25 @@ export function buildGaps({ agg, capped = false, excluded = {} } = {}) {
   if (exclTotal > 0) gaps.push({ id: "excluded", count: exclTotal, reasons: exclEntries.map(([r, n]) => ({ reason: r, count: n })) });
   return gaps;
 }
+
+// ── F4-B (B1) : séries de la courbe de contribution, courante et précédente alignées par index ──
+// CA HT : un jour sans commande vaut 0 (rien vendu) ; CM2 : un jour avec des commandes mais sans
+// ligne à coût connu vaut null (trait interrompu, V2) ; règle V8 sur le CA HT : au moins 2 jours
+// définis et 2 valeurs non nulles, sinon `enough = false` (carte « pas encore assez de jours »).
+import { seriesCounts } from "./charts/line.js";
+export function buildChartSeries({ current, previous = null, window = {}, previousWindow = null } = {}) {
+  const days = window?.start && window?.end ? daysBetween(window.start, window.end) : [];
+  const previousDays = previous && previousWindow?.start && previousWindow?.end ? daysBetween(previousWindow.start, previousWindow.end) : [];
+  const serie = (agg, list, id) => list.map((day) => {
+    const e = agg?.byDay?.[day];
+    if (!e) return { day, value: 0 };
+    const v = num(e.nodes?.[id] ?? e.leaves?.[id]);
+    return { day, value: v };
+  });
+  const series = {
+    ca_ht: { current: serie(current, days, "ca_ht"), previous: serie(previous, previousDays, "ca_ht") },
+    cm2: { current: serie(current, days, "cm2"), previous: serie(previous, previousDays, "cm2") },
+  };
+  const c = seriesCounts(series.ca_ht.current);
+  return { days, previousDays, series, enough: c.defined >= 2 && c.nonZero >= 2, partialCm2: num(current?.shop?.leaves?.unknown_cost_lines) > 0 };
+}
