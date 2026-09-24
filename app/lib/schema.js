@@ -50,7 +50,13 @@ export const F1_TABLES = [
   "ai_explanations",
 ];
 
-export const ALL_TABLES = [...LEGACY_TABLES, ...F1_TABLES];
+// Tables créées par I0 (migrations 20260924_i0_*) : mémoire des décisions (D7a). Non nominatives.
+export const I0_TABLES = ["insight_log", "decision_log"];
+
+// Natures d'une décision (CHECK SQL de decision_log.kind = cette liste, vérifié par les lots 23 et 28).
+export const DECISION_KINDS = ["simulated", "accepted", "dismissed", "data_fixed", "action_started", "action_done"];
+
+export const ALL_TABLES = [...LEGACY_TABLES, ...F1_TABLES, ...I0_TABLES];
 
 // Référentiels partagés SANS shop_domain : hors purge boutique (décision g : tout le reste est purgé).
 export const SHARED_REFERENCE_TABLES = ["fx_rates"];

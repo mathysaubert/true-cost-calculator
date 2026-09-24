@@ -1,6 +1,6 @@
 // ── Blocs du briefing (I0-B) : 3 résultats, situation, priorités, opportunité, cascade, replié ──
 // Tous purs et rendables seuls. Aucune couleur ni chaîne en dur.
-import { Link } from "react-router";
+import { Link, Form } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
 import { renderSituation } from "../../lib/insights/render.js";
 import { Analysis, ConfidenceBadge } from "./Analysis.jsx";
@@ -107,7 +107,9 @@ export function PartialConclusions({ partials = [], titles = {}, title = null })
   );
 }
 
-export function Opportunity({ opportunity, titles = {} }) {
+// fingerprint + days : quand ils sont fournis, un formulaire POST « Retenir ce scénario » enregistre
+// la décision (decision_log kind simulated, I0-C) ; l'action recalcule l'opportunité côté serveur.
+export function Opportunity({ opportunity, titles = {}, fingerprint = null, days = null }) {
   const i18n = useI18n();
   const { t, money, byUnit } = i18n;
   if (!opportunity) return null;
@@ -121,8 +123,25 @@ export function Opportunity({ opportunity, titles = {} }) {
         {" · "}{t("overview.opportunity.assumptions")}{": "}{(opportunity.assumptions ?? []).map((a) => t(`assumption.${a.key}`)).join(", ") || t("common.na")}
         {opportunity.impact ? ` · ${money(opportunity.impact.low)} – ${money(opportunity.impact.high)} ${t("impact.per_month")}` : ""}
       </p>
+      {fingerprint && (
+        <Form method="post" className="tcc-decision">
+          <input type="hidden" name="intent" value="simulate" />
+          <input type="hidden" name="fingerprint" value={fingerprint} />
+          <input type="hidden" name="days" value={days ?? ""} />
+          <s-button type="submit" variant="secondary">{t("decision.keep_scenario")}</s-button>
+          <span className="tcc-muted">{t("decision.keep_scenario_help")}</span>
+        </Form>
+      )}
     </section>
   );
+}
+
+// Retour d'une action de décision : succès (kind) ou scénario périmé. Rien si pas d'action.
+export function DecisionBanner({ result }) {
+  const { t } = useI18n();
+  if (!result || !("ok" in result) || !result.intent) return null;
+  if (result.ok) return <s-banner tone="success">{t(`decision.recorded.${result.kind ?? "simulated"}`)}</s-banner>;
+  return <s-banner tone="warning">{result.error === "stale" ? t("decision.stale") : t("decision.failed")}</s-banner>;
 }
 
 // Cascade « Où est passé votre argent ? » en tableau (rendu graphique en F4-B).

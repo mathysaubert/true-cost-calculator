@@ -43,6 +43,11 @@ export default {
   "overview.empty.unlock": "Débloque : {{list}}.",
   "overview.opportunity.before_after": "{{node}} : {{before}} → {{after}}",
   "overview.opportunity.assumptions": "Hypothèses",
+  "decision.keep_scenario": "Retenir ce scénario",
+  "decision.keep_scenario_help": "Enregistré dans votre mémoire des décisions, à rejouer dans le simulateur.",
+  "decision.recorded.simulated": "Scénario enregistré dans votre mémoire des décisions. Le simulateur arrive à la prochaine version.",
+  "decision.stale": "Ce scénario a changé depuis son affichage : rechargez la page.",
+  "decision.failed": "La décision n'a pas pu être enregistrée. Rien d'autre n'a été modifié.",
   "overview.waterfall.note": "Chaque ligne vient du moteur pour la période choisie ; la version graphique arrive à la prochaine version.",
   "overview.reserved.waterfall": "Cascade de profit",
 

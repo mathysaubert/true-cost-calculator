@@ -46,6 +46,11 @@ export default {
   "overview.empty.unlock": "Unlocks: {{list}}.",
   "overview.opportunity.before_after": "{{node}}: {{before}} → {{after}}",
   "overview.opportunity.assumptions": "Assumptions",
+  "decision.keep_scenario": "Keep this scenario",
+  "decision.keep_scenario_help": "Saved to your decision memory, to replay in the simulator.",
+  "decision.recorded.simulated": "Scenario saved to your decision memory. The simulator arrives with the next release.",
+  "decision.stale": "This scenario changed since it was displayed: reload the page.",
+  "decision.failed": "The decision could not be saved. Nothing else was changed.",
   "overview.waterfall.note": "Each line comes from the engine for the selected period; the chart version arrives with the next release.",
   "overview.reserved.waterfall": "Profit waterfall",
 

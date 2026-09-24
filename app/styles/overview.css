@@ -414,6 +414,10 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-block__head h3 { font-size: 1rem; font-weight: 700; }
 .tcc-block__head a { font-size: 0.8125rem; font-weight: 600; }
 
+/* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
+.tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.tcc-decision .tcc-muted { font-size: 0.8125rem; }
+
 /* ── I0-B : fiabilité des données ─────────────────────────────────────────────────────────── */
 .tcc-health-wrap { container-type: inline-size; container-name: tcc-health; }
 .tcc-health { display: grid; gap: 14px; grid-template-columns: auto minmax(0, 1fr); align-items: center; padding: 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }

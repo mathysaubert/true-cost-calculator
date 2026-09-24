@@ -246,7 +246,7 @@ check("bandeau du moteur : 5 étapes numérotées, 15 puces, titre et pied tradu
 //  rail en 3 groupes, état vide actionnable, contenu pédagogique. Fixtures du lot 27.
 // ════════════════════════════════════════════════════════════════════════════════
 const { Analysis } = await vite.ssrLoadModule("/app/components/overview/Analysis.jsx");
-const { Results, Situation, Priorities, Opportunity, WaterfallTable, AllIndicators, PartialConclusions } = await vite.ssrLoadModule("/app/components/overview/Briefing.jsx");
+const { Results, Situation, Priorities, Opportunity, WaterfallTable, AllIndicators, PartialConclusions, DecisionBanner } = await vite.ssrLoadModule("/app/components/overview/Briefing.jsx");
 const { DataHealth, HealthRules } = await vite.ssrLoadModule("/app/components/overview/DataHealth.jsx");
 const { MetricsLearn } = await vite.ssrLoadModule("/app/components/overview/MetricsLearn.jsx");
 const { makeShop, WINDOWS } = await vite.ssrLoadModule("/tests/fixtures/i0_shops.mjs");
@@ -301,6 +301,12 @@ check("opportunité (saine) : bloc, badge Simulation, « par mois », avant → 
   wrapEur("fr", React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity })),
   (h) => /Opportunité principale/.test(h) && /tcc-confidence--simulation/.test(h) && /par mois/.test(h) && /→/.test(h) && /commandes constantes avec un panier plus grand/.test(h));
 check("opportunité absente → rien", wrapEur("en", React.createElement(Opportunity, { opportunity: null })), (h) => /<div class="tcc"><\/div>/.test(h));
+check("opportunité + empreinte (I0-C) : formulaire POST « Retenir ce scénario » avec intent=simulate, empreinte, jours ; sans empreinte → aucun formulaire",
+  wrapEur("fr", React.createElement("div", null, React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity, fingerprint: "aov_vs_main_price:opportunity:shop:2026-09-01:2026-09-30:120", days: 30 }), React.createElement(Opportunity, { opportunity: HEA.briefing.opportunity }))),
+  (h) => (h.match(/<form method="post"[^>]*class="tcc-decision"/g) ?? []).length === 1 && /name="intent" value="simulate"/.test(h) && /name="fingerprint" value="aov_vs_main_price:opportunity:shop:2026-09-01:2026-09-30:120"/.test(h) && /name="days" value="30"/.test(h) && /<s-button type="submit" variant="secondary">Retenir ce scénario</.test(h) && /à rejouer dans le simulateur/.test(h));
+check("bandeau de décision : succès → s-banner success « Scénario enregistré » ; périmé → warning « rechargez » ; échec → warning ; null / autre intent → rien",
+  wrapEur("fr", React.createElement("div", null, React.createElement(DecisionBanner, { result: { intent: "simulate", ok: true, kind: "simulated" } }), React.createElement(DecisionBanner, { result: { intent: "simulate", ok: false, error: "stale" } }), React.createElement(DecisionBanner, { result: { intent: "simulate", ok: false, error: "boom" } }), React.createElement(DecisionBanner, { result: null }), React.createElement(DecisionBanner, { result: { ok: true } }))),
+  (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Scénario enregistré dans votre mémoire des décisions/.test(h) && /tone="warning">Ce scénario a changé depuis son affichage : rechargez la page\./.test(h) && /n(?:&#x27;|')a pas pu être enregistrée/.test(h));
 check("cascade en tableau : 12 lignes, 3 totaux (=), CA net → … → Résultat net, note",
   wrapEur("fr", React.createElement(WaterfallTable, { leaves: DEC.briefing ? shopOf("declining").current.agg.shop.leaves : {}, nodes: shopOf("declining").current.agg.shop.nodes })),
   (h) => (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && (h.match(/is-total/g) ?? []).length === 3 && /Où est passé votre argent/.test(h) && /Résultat net/.test(h) && /version graphique/.test(h));

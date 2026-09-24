@@ -16,8 +16,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import {
-  ALL_TABLES, LEGACY_TABLES, F1_TABLES, PURGE_TABLES, SHARED_REFERENCE_TABLES,
-  ORDER_MARGINS_KEY, ORDER_MARGINS_SNAPSHOT_COLUMNS, ORDER_EXCLUSION_REASONS,
+  ALL_TABLES, LEGACY_TABLES, F1_TABLES, I0_TABLES, PURGE_TABLES, SHARED_REFERENCE_TABLES,
+  ORDER_MARGINS_KEY, ORDER_MARGINS_SNAPSHOT_COLUMNS, ORDER_EXCLUSION_REASONS, DECISION_KINDS,
 } from "../app/lib/schema.js";
 import { encryptSecret, decryptSecret } from "../app/lib/crypto.server.js";
 
@@ -29,6 +29,13 @@ const files = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort();
 const f1Files = files.filter((f) => f.startsWith("20260922_f1_"));
 const read = (f) => readFileSync(new URL(f, MIG_DIR), "utf8");
 const createdTables = (sql) => [...sql.matchAll(/CREATE TABLE(?: IF NOT EXISTS)?\s+(?:public\.)?(\w+)/gi)].map((m) => m[1]);
+const i0Files = files.filter((f) => f.startsWith("20260924_i0_"));
+// purge_shop est redéfinie (CREATE OR REPLACE) par les migrations qui ajoutent des tables : la
+// définition EFFECTIVE est la dernière dans l'ordre alphabétique des fichiers.
+const purgeDeletes = (sql) => { const b = sql.slice(sql.indexOf("FUNCTION public.purge_shop")); const end = b.indexOf("$$;"); return [...b.slice(0, end).matchAll(/DELETE FROM public\.(\w+)\s+WHERE shop_domain = p_shop/g)].map((m) => m[1]); };
+const purgeFiles = files.filter((f) => read(f).includes("FUNCTION public.purge_shop"));
+const latestPurgeFile = purgeFiles[purgeFiles.length - 1];
+const f1Deleted = purgeDeletes(read("20260922_f1_23_rgpd_functions.sql"));
 
 // ── 1. RLS + deny_public_access sur chaque table F1 ──
 console.log("\n── 1. RLS deny-all sur chaque table créée par F1 ──");
@@ -71,7 +78,7 @@ console.log("\n── 3. schema.js = ensemble des tables créées par les migrat
   const missingInSql = [...fromJs].filter((t) => !fromSql.has(t));
   ok(missingInJs.length === 0, `aucune table SQL absente de schema.js${missingInJs.length ? " : " + missingInJs.join(", ") : ""}`);
   ok(missingInSql.length === 0, `aucune table de schema.js absente des migrations${missingInSql.length ? " : " + missingInSql.join(", ") : ""}`);
-  ok(LEGACY_TABLES.length === 12 && F1_TABLES.length === 26, `12 tables historiques + 26 tables F1 (${LEGACY_TABLES.length} + ${F1_TABLES.length})`);
+  ok(LEGACY_TABLES.length === 12 && F1_TABLES.length === 26 && I0_TABLES.length === 2, `12 tables historiques + 26 tables F1 + 2 tables I0 (${LEGACY_TABLES.length} + ${F1_TABLES.length} + ${I0_TABLES.length})`);
   ok(new Set(ALL_TABLES).size === ALL_TABLES.length, "aucun doublon dans ALL_TABLES");
   const f1Created = new Set(f1Files.flatMap((f) => createdTables(read(f))));
   ok(F1_TABLES.every((t) => f1Created.has(t)) && [...f1Created].every((t) => F1_TABLES.includes(t)), "F1_TABLES = exactement les tables des fichiers 20260922_f1_*");
@@ -80,9 +87,9 @@ console.log("\n── 3. schema.js = ensemble des tables créées par les migrat
 // ── 4. Purge : purge_shop ↔ PURGE_TABLES ↔ webhooks ──
 console.log("\n── 4. purge_shop = PURGE_TABLES ; webhooks sans liste en dur ──");
 {
-  const rgpd = read("20260922_f1_23_rgpd_functions.sql");
-  const purgeBody = rgpd.slice(rgpd.indexOf("FUNCTION public.purge_shop"), rgpd.indexOf("FUNCTION public.redact_customer"));
-  const deleted = [...purgeBody.matchAll(/DELETE FROM public\.(\w+)\s+WHERE shop_domain = p_shop/g)].map((m) => m[1]);
+  const deleted = purgeDeletes(read(latestPurgeFile));
+  ok(latestPurgeFile === "20260924_i0_01_decision_memory.sql", `définition effective de purge_shop = dernier fichier qui la redéfinit (${latestPurgeFile})`);
+  ok(f1Deleted.every((t, i) => deleted[i] === t), "la liste F1-23 est un préfixe exact de la définition effective (ordre conservé)");
   const notPurged = PURGE_TABLES.filter((t) => !deleted.includes(t));
   const extra = deleted.filter((t) => !PURGE_TABLES.includes(t));
   ok(notPurged.length === 0, `chaque table de PURGE_TABLES est vidée par purge_shop${notPurged.length ? " — manquantes : " + notPurged.join(", ") : ""}`);
@@ -195,6 +202,38 @@ console.log("\n── 9. Addendum F4-01 (réglage boutique de développement) �
   ok(dev && !/DEFAULT/i.test(dev.def) && !/NOT NULL/i.test(dev.def), "is_dev_shop : nullable sans défaut (NULL = pas encore lu)");
   const dropped = [...rb.matchAll(/DROP COLUMN IF EXISTS (\w+)/g)].map((m) => m[1]);
   ok(added.every((c) => dropped.includes(c.col)), "les 2 colonnes de l'addendum F4 sont retirées par le rollback");
+}
+
+// ── 10. I0-01 : mémoire des décisions (2 tables, RLS, fonction, purge étendue, rollback dédié) ──
+console.log("\n── 10. I0-01 mémoire des décisions ──");
+{
+  ok(i0Files.length === 1 && i0Files[0] === "20260924_i0_01_decision_memory.sql", `1 migration I0 (${i0Files.join(", ")})`);
+  const sql = read(i0Files[0]);
+  const created = createdTables(sql);
+  ok(created.join(",") === I0_TABLES.join(","), `I0_TABLES = tables créées par la migration I0 (${created.join(", ")})`);
+  for (const t of created) {
+    const rls = new RegExp(`ALTER TABLE public\\.${t} ENABLE ROW LEVEL SECURITY`).test(sql);
+    const drop = new RegExp(`DROP POLICY IF EXISTS "deny_public_access" ON public\\.${t}`).test(sql);
+    const pol = new RegExp(`CREATE POLICY "deny_public_access" ON public\\.${t}\\s*\\n?\\s*FOR ALL USING \\(false\\) WITH CHECK \\(false\\)`).test(sql);
+    ok(rls && drop && pol, `${t} : RLS activée + DROP POLICY IF EXISTS + politique deny_public_access`);
+  }
+  ok(!/CREATE TABLE\s+(?!IF NOT EXISTS)/i.test(sql) && !/CREATE INDEX\s+(?!IF NOT EXISTS)/i.test(sql) && !/CREATE FUNCTION/i.test(sql) && (sql.match(/CREATE POLICY/g) ?? []).length === (sql.match(/DROP POLICY IF EXISTS/g) ?? []).length, "I0-01 ré-exécutable : IF NOT EXISTS / OR REPLACE / DROP POLICY IF EXISTS partout");
+  ok(!/UPDATE public\.|DELETE FROM public\.(?!\w+\s+WHERE shop_domain = p_shop)|ALTER TABLE public\.(?!insight_log|decision_log)/.test(sql), "I0-01 ne touche à aucune donnée ni table existante (hors purge_shop)");
+  const check = sql.match(/kind\s+TEXT\s+NOT NULL CHECK \(kind IN \(([^)]*)\)\)/);
+  const kinds = check ? [...check[1].matchAll(/'(\w+)'/g)].map((m) => m[1]) : [];
+  ok(kinds.join(",") === DECISION_KINDS.join(","), `decision_log.kind : CHECK SQL = DECISION_KINDS (${kinds.join(", ")})`);
+  ok(/CREATE OR REPLACE FUNCTION public\.record_insights\(p_shop TEXT, p_rows JSONB\)/.test(sql) && /ON CONFLICT \(shop_domain, fingerprint\) DO UPDATE/.test(sql) && /shown_count\s+=\s+public\.insight_log\.shown_count \+ 1/.test(sql) && /resolved_at\s+=\s+NULL/.test(sql), "record_insights : upsert par empreinte, shown_count + 1, resolved_at effacé au réaffichage");
+  ok(/PRIMARY KEY \(shop_domain, fingerprint\)/.test(sql) && /idx_insight_log_shop_rule_window/.test(sql) && /idx_decision_log_shop_decided/.test(sql), "clé (shop_domain, fingerprint) + index règle/fenêtre et décisions récentes");
+  ok(!/customer|email|first_name|address/i.test(sql.slice(0, sql.indexOf("CREATE OR REPLACE FUNCTION"))), "aucune colonne nominative dans les deux tables");
+  const rb = readFileSync(new URL("../supabase/rollback/20260924_i0_rollback.sql", import.meta.url), "utf8");
+  const dropped = [...rb.matchAll(/DROP TABLE IF EXISTS public\.(\w+)\s+CASCADE/g)].map((m) => m[1]);
+  ok(dropped.length === I0_TABLES.length && I0_TABLES.every((t) => dropped.includes(t)), "rollback I0 : supprime exactement les 2 tables I0");
+  ok(/DROP FUNCTION IF EXISTS public\.record_insights\(TEXT, JSONB\)/.test(rb), "rollback I0 : retire record_insights");
+  ok(purgeDeletes(rb).join(",") === f1Deleted.join(","), "rollback I0 : purge_shop rétablie à l'identique de F1-23");
+  ok((rb.match(/DROP (TABLE|FUNCTION|COLUMN|INDEX)(?! IF EXISTS)/g) ?? []).length === 0 && !/DELETE FROM public\.(?!\w+\s+WHERE shop_domain = p_shop)|TRUNCATE|UPDATE /.test(rb), "rollback I0 idempotent, aucune donnée touchée");
+  ok(!files.some((f) => f.includes("rollback")), "aucun rollback dans supabase/migrations");
+  const f1rb = readFileSync(new URL("../supabase/rollback/20260922_f1_rollback.sql", import.meta.url), "utf8");
+  ok(!/insight_log|decision_log/.test(f1rb), "le rollback F1 ignore les tables I0 (rollback I0 à exécuter avant)");
 }
 
 console.log("\n" + "═".repeat(66));
