@@ -7,6 +7,7 @@ import { Analysis, ConfidenceBadge } from "./Analysis.jsx";
 import { CalcBlock } from "./KpiTile.jsx";
 import { Icon } from "./Icons.jsx";
 import { simulatorHref } from "../../lib/simulator/index.js";
+import { WATERFALL_SPEC } from "../../lib/charts/waterfall.js";
 
 const RESULT_TO_KPI = { ca_ht: "ca_ht", cm2: "cm2_pct", net_result: "net_result" };
 
@@ -146,23 +147,27 @@ export function DecisionBanner({ result }) {
   return <s-banner tone="warning">{result.error === "stale" ? t("decision.stale") : t("decision.failed")}</s-banner>;
 }
 
-// Cascade « Où est passé votre argent ? » en tableau (rendu graphique en F4-B).
-const WATERFALL_ROWS = [["", "ca_ht"], ["−", "cogs"], ["−", "shipping_cost"], ["−", "packaging_cost"], ["−", "payment_fees"], ["−", "returns_cost"], ["=", "cm2"], ["−", "ad_spend"], ["−", "commissions"], ["=", "cm3"], ["−", "fixed_costs"], ["=", "net_result"]];
-export function WaterfallTable({ leaves = {}, nodes = {} }) {
+// Cascade « Où est passé votre argent ? » en tableau : vue accessible sous le graphique (B2) ;
+// `bare` = grille seule (dans le dépliage du graphique), sinon bloc complet avec titre.
+export function WaterfallTable({ leaves = {}, nodes = {}, bare = false }) {
   const { t, money } = useI18n();
   const value = (id) => (id in nodes ? nodes[id] : leaves[id]);
-  return (
-    <section className="tcc-block" aria-labelledby="tcc-waterfall-title">
-      <div className="tcc-block__head"><h3 id="tcc-waterfall-title">{t("overview.block.waterfall")}</h3></div>
-      <div className="tcc-waterfall">
-        {WATERFALL_ROWS.map(([op, id]) => (
+  const grid = (
+    <div className="tcc-waterfall">
+        {WATERFALL_SPEC.map(([op, id]) => (
           <div key={id} className={`tcc-waterfall__row${op === "=" ? " is-total" : ""}`}>
             <span className="tcc-waterfall__op" aria-hidden="true">{op}</span>
             <span>{t(`overview.calc.input.${id}`)}</span>
             <span className="tcc-waterfall__amount">{value(id) == null ? t("common.na") : money(value(id))}</span>
           </div>
         ))}
-      </div>
+    </div>
+  );
+  if (bare) return grid;
+  return (
+    <section className="tcc-block" aria-labelledby="tcc-waterfall-title">
+      <div className="tcc-block__head"><h3 id="tcc-waterfall-title">{t("overview.block.waterfall")}</h3></div>
+      {grid}
       <p className="tcc-muted">{t("overview.waterfall.note")}</p>
     </section>
   );

@@ -170,14 +170,16 @@ export function kpiRefunds(agg, def) {
 }
 
 // Vue complète des 12 KPI pour la page (valeurs brutes ; le formatage est fait par l'écran).
-export function buildKpis({ current, previous, window } = {}) {
+export function buildKpis({ current, previous, window, previousWindow = null } = {}) {
   return KPI_DEFS.map((def) => {
     const st = kpiStatus(current, def);
     const prev = kpiStatus(previous, def);
     const delta = st.status === "ok" && prev.status === "ok" ? kpiDelta(def, st.value, prev.value) : null;
     const series = st.status === "ok" ? kpiSeries(current, def, window) : null;
+    // B3 (V5) : série de la période précédente, alignée par index (même nombre de jours), pour le trait fantôme.
+    const previousSeries = series && prev.status === "ok" && previousWindow ? kpiSeries(previous, def, previousWindow) : null;
     const refunds = st.status === "ok" ? kpiRefunds(current, def) : null;
-    return { id: def.id, group: def.group, unit: def.unit, primary: def.primary, ...st, previous: prev.status === "ok" ? prev.value : null, delta, series, refunds, calc: calcRows(current, def) };
+    return { id: def.id, group: def.group, unit: def.unit, primary: def.primary, ...st, previous: prev.status === "ok" ? prev.value : null, delta, series, previousSeries, refunds, calc: calcRows(current, def) };
   });
 }
 

@@ -273,8 +273,10 @@ export default {
   "decision.recorded.simulated": "Scenario saved to your decision memory. Replay it any time from the simulator.",
   "decision.stale": "This scenario changed since it was displayed: reload the page.",
   "decision.failed": "The decision could not be saved. Nothing else was changed.",
-  "overview.waterfall.note": "Each line comes from the engine for the selected period; the chart version arrives with the next release.",
-  "overview.reserved.waterfall": "Profit waterfall",
+  "overview.waterfall.note": "Each bar starts where the previous one ends; totals are anchored at zero. Costs with no value are marked as not set.",
+  "overview.waterfall.table": "See the table",
+  "overview.waterfall.missing": "not set",
+  "overview.waterfall.aria": "Waterfall from net revenue {{start}} to net result {{end}}",
 
   "results.ca_ht.label": "Net revenue",
   "results.cm2.label": "Contribution",

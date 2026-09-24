@@ -339,6 +339,11 @@ console.log("\n── 11. sparklinePaths ──");
   ok(p && p.line.startsWith("M2.0,30.0") && /Z$/.test(p.area) && (p.line.match(/L/g) ?? []).length === 2, "3 points : ligne depuis la base (0 = bas), aplat fermé");
   const gap = sparklinePaths([{ value: 1 }, { value: null }, { value: 2 }, { value: 3 }]);
   ok(gap && (gap.line.match(/M/g) ?? []).length === 2 && (gap.area.match(/Z/g) ?? []).length === 2, "jour non défini : la courbe s'interrompt (2 segments, 2 aplats)");
+  // B3 (V5) : fantôme de la période précédente sur la même échelle, point final.
+  const g = sparklinePaths([{ value: 0 }, { value: 10 }, { value: 5 }], [{ value: 20 }, { value: 2 }, { value: null }]);
+  ok(g && g.ghost.startsWith("M2.0,2.0") && (g.ghost.match(/L/g) ?? []).length === 1 && g.last && g.last.x === 98 && g.last.value === 5, "fantôme : échelle commune (20 précédent = haut), trait sans aire, point final = dernier point défini");
+  ok(sparklinePaths([{ value: 1 }, { value: 2 }], [{ value: 1 }]).ghost === "" && sparklinePaths([{ value: 1 }, { value: 2 }], [{ value: 3 }, { value: null }]).ghost === "" && sparklinePaths([{ value: 1 }, { value: 2 }], null).ghost === "", "précédent absent, désaligné ou à un seul point → aucun fantôme");
+  ok(g.line.startsWith("M2.0,30.0") && !/M2\.0,30\.0/.test(sparklinePaths([{ value: 0 }, { value: 10 }, { value: 5 }]).line) === false, "la courbe courante garde son tracé quand l'échelle s'étend");
 }
 
 // ── 12. Navigation cible et emplacements réservés ──
@@ -348,7 +353,7 @@ console.log("\n── 12. sections.js ──");
   ok(SECTIONS.filter((s) => s.group === "steer").length === 4 && SECTIONS.filter((s) => s.group === "explore").length === 7 && SECTIONS.filter((s) => s.group === "system").length === 2, "groupes : 4 / 7 / 2");
   ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,simulator:/app/simulator,metrics:/app/metrics,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Simulateur (S1), Indicateurs, Fiabilité des données, Réglages (R1)");
   ok(SECTIONS.filter((s) => s.status === "soon").every((s) => s.path === null), "les sections « Bientôt » n'ont pas de route");
-  ok(OVERVIEW_RESERVED.length === 1 && OVERVIEW_RESERVED[0].id === "waterfall", "1 emplacement réservé (cascade graphique, B2) ; la courbe est livrée (B1)");
+  ok(OVERVIEW_RESERVED.length === 0, "plus aucun emplacement réservé : courbe (B1) et cascade (B2) livrées");
   ok(/rel="home"/.test(read("app/routes/app.jsx")) && /LIVE_SECTIONS/.test(read("app/routes/app.jsx")), "s-app-nav : rel=\"home\" + sections livrées seulement");
 }
 

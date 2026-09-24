@@ -4,13 +4,16 @@
 // total ancré à 0. Sortie en % de la largeur (le composant pose les barres en HTML/SVG).
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
 
+// Lignes de la cascade (mêmes que le tableau) : [op, id] ; "" = départ, "−" = coût, "=" = total.
+export const WATERFALL_SPEC = [["", "ca_ht"], ["−", "cogs"], ["−", "shipping_cost"], ["−", "packaging_cost"], ["−", "payment_fees"], ["−", "returns_cost"], ["=", "cm2"], ["−", "ad_spend"], ["−", "commissions"], ["=", "cm3"], ["−", "fixed_costs"], ["=", "net_result"]];
+
 export function waterfallGeometry(rows = []) {
   let running = 0;
   const bars = [];
   for (const r of rows) {
     const v = num(r.value);
     if (r.op === "=") { const total = v ?? running; bars.push({ id: r.id, kind: "total", from: 0, to: total, value: total, missing: v == null }); running = total; continue; }
-    if (r.op === "−") { if (v == null) { bars.push({ id: r.id, kind: "cost", from: running, to: running, value: null, missing: true }); continue; } bars.push({ id: r.id, kind: "cost", from: running - v, to: running, value: -v, missing: false }); running -= v; continue; }
+    if (r.op === "−") { if (v == null) { bars.push({ id: r.id, kind: "cost", from: running, to: running, value: null, missing: true }); continue; } bars.push({ id: r.id, kind: "cost", from: running - v, to: running, value: v === 0 ? 0 : -v, missing: false }); running -= v; continue; }
     const start = v ?? 0; bars.push({ id: r.id, kind: "start", from: 0, to: start, value: start, missing: v == null }); running = start;
   }
   const lo = Math.min(0, ...bars.map((b) => Math.min(b.from, b.to)));

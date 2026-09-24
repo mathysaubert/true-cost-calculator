@@ -293,7 +293,9 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-delta--good { background: var(--tcc-good-soft); color: var(--tcc-good-ink); }
 .tcc-delta--bad { background: var(--tcc-bad-soft); color: var(--tcc-bad-ink); }
 .tcc-delta--neutral { background: var(--tcc-neutral-soft); color: var(--tcc-neutral-ink); }
-.tcc-spark { inline-size: 100%; block-size: 40px; display: block; color: var(--tcc-tone); align-self: end; margin-block-start: auto; }
+.tcc-spark { inline-size: 100%; block-size: 40px; display: block; color: var(--tcc-tone); align-self: end; margin-block-start: auto; overflow: visible; }
+.tcc-spark__ghost { stroke: var(--tcc-chart-previous); stroke-width: 1.2px; stroke-dasharray: 3 3; }
+.tcc-spark__dot { stroke: currentColor; }
 .tcc-spark__area { fill: url(#tcc-spark-gradient); }
 .tcc-tile__foot { display: flex; justify-content: flex-end; }
 
@@ -513,6 +515,23 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-chart__xtick:first-child { transform: none; }
 .tcc-chart__xtick:last-child { transform: translateX(-100%); }
 .tcc-chart__hint { font-size: 0.75rem; }
+
+/* ── F4-B (B2) : cascade horizontale — barres flottantes, zéro marqué, totaux ancrés ─────── */
+.tcc-wf { display: grid; gap: 2px; padding: 12px 14px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.tcc-wf__row { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 3fr) auto; gap: 10px; align-items: center; min-block-size: 22px; }
+.tcc-wf__label { color: var(--tcc-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcc-wf__track { position: relative; block-size: 12px; border-radius: 3px; background: var(--tcc-surface-2); }
+.tcc-wf__track::before { content: ""; position: absolute; inset-block: -3px; inset-inline-start: calc(var(--zero) * 1%); inline-size: 1px; background: var(--tcc-ink-3); }
+.tcc-wf__bar { position: absolute; inset-block: 0; inset-inline-start: calc(var(--left) * 1%); inline-size: calc(var(--width) * 1%); border-radius: 3px; background: var(--tcc-neutral); }
+.tcc-wf__row.is-start .tcc-wf__bar { background: var(--tcc-chart-revenue); }
+.tcc-wf__row.is-total .tcc-wf__bar { background: var(--tcc-chart-cm2); }
+.tcc-wf__row.is-result .tcc-wf__bar { background: var(--tcc-good); }
+.tcc-wf__row.is-negative .tcc-wf__bar { background: var(--tcc-bad); }
+.tcc-wf__row.is-total .tcc-wf__label, .tcc-wf__row.is-total .tcc-wf__amount { font-weight: 700; color: var(--tcc-ink); }
+.tcc-wf__row.is-missing .tcc-wf__amount { color: var(--tcc-warn-ink); font-style: italic; }
+.tcc-wf__amount { text-align: end; white-space: nowrap; min-inline-size: 6rem; }
+.tcc-wf-host { container-type: inline-size; container-name: tcc-wf; }
+@container tcc-wf (max-width: 480px) { .tcc-wf__row { grid-template-columns: minmax(0, 1fr) auto; } .tcc-wf__track { grid-column: 1 / -1; } }
 
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
 .tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

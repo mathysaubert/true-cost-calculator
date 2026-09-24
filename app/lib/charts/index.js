@@ -1,7 +1,7 @@
 // ── Graphiques (F4-B, décision 8 amendée le 2026-09-24) — point d'entrée PUR, zéro dépendance ──
 export { niceStep, niceDomain, linearScale, indexScale, labelIndices } from "./scale.js";
 export { CHART_W, CHART_H, CHART_PAD, seriesExtent, linePath, seriesCounts, buildLineChart } from "./line.js";
-export { waterfallGeometry } from "./waterfall.js";
+export { waterfallGeometry, WATERFALL_SPEC } from "./waterfall.js";
 
 // Couleurs de séries validées par le validateur du guide dataviz (clair sur #ffffff, sombre sur
 // #171a20) le 2026-09-24 ; le lot 31 vérifie que la feuille de style porte exactement ces valeurs.

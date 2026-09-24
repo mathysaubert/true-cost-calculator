@@ -137,7 +137,7 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     currency: settings.shop_currency ?? current.currency ?? null,
     shopName: identity.shopName, firstName: identity.firstName,
     isDevShop, devShopSource, includeTestOrders, reincluded,
-    kpis: buildKpis({ current, previous, window: win.current }),
+    kpis: buildKpis({ current, previous, window: win.current, previousWindow: win.previous }),
     notes: buildNotes(current),
     gaps: buildGaps({ agg: current, capped, excluded: excludedCurrent }),
     excluded, excludedCurrent,

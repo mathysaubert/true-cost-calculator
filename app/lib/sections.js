@@ -29,7 +29,6 @@ export const SECTIONS = NAV_GROUPS.flatMap((g) => g.sections.map((s) => ({ ...s,
 export const LIVE_SECTIONS = SECTIONS.filter((s) => s.status === "live");
 export const sectionById = (id) => SECTIONS.find((s) => s.id === id) ?? null;
 
-// Emplacements réservés de la Vue d'ensemble (blocs 6 et 7 du PDF) : jamais un chiffre.
-export const OVERVIEW_RESERVED = [
-  { id: "waterfall", section: "overview", size: "wide" },   // cascade « Où est passé votre argent ? » (graphique en B2 ; tableau dès I0-B)
-];
+// Emplacements réservés de la Vue d'ensemble : plus aucun depuis F4-B (courbe B1, cascade B2).
+// La liste reste pour un futur bloc ; ReservedSlot rend une carte « Bientôt » sans chiffre.
+export const OVERVIEW_RESERVED = [];

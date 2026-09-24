@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot31_charts.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { niceStep, niceDomain, linearScale, indexScale, labelIndices, seriesExtent, linePath, seriesCounts, buildLineChart, waterfallGeometry, CHART_COLORS, CHART_W, CHART_H } from "../app/lib/charts/index.js";
+import { niceStep, niceDomain, linearScale, indexScale, labelIndices, seriesExtent, linePath, seriesCounts, buildLineChart, waterfallGeometry, WATERFALL_SPEC, CHART_COLORS, CHART_W, CHART_H } from "../app/lib/charts/index.js";
 import { buildChartSeries } from "../app/lib/overview.js";
 import { makeShop, WINDOWS } from "./fixtures/i0_shops.mjs";
 
@@ -47,6 +47,11 @@ console.log("\n── 2. Tracés avec trous, cascade ──");
   const by = Object.fromEntries(w.bars.map((b) => [b.id, b]));
   ok(by.ca_ht.kind === "start" && by.cogs.from === 600 && by.cogs.to === 1000 && by.cogs.value === -400 && by.shipping_cost.missing && by.cm2.kind === "total" && by.cm2.value === 600 && by.cm3.value === -100 && by.cm3.negative === true, "cascade : départ, coût flottant, coût manquant, totaux ancrés, total négatif marqué");
   ok(w.lo === -100 && w.hi === 1000 && close(w.zeroPct, (100 / 1100) * 100) && by.ca_ht.widthPct > by.cogs.widthPct && close(by.cm2.leftPct, w.zeroPct), "cascade : bornes, zéro en %, largeurs proportionnelles");
+  ok(WATERFALL_SPEC.length === 12 && WATERFALL_SPEC.filter(([op]) => op === "=").map(([, id]) => id).join(",") === "cm2,cm3,net_result" && WATERFALL_SPEC[0][1] === "ca_ht" && WATERFALL_SPEC.filter(([op]) => op === "−").length === 8, "spécification : 12 lignes, départ CA HT, 8 coûts, totaux CM2 / CM3 / résultat (B2)");
+  const healthy0 = makeShop("healthy"), lv = healthy0.current.agg.shop.leaves, nd = healthy0.current.agg.shop.nodes;
+  const real = waterfallGeometry(WATERFALL_SPEC.map(([op, id]) => ({ id, op, value: id in nd ? nd[id] : lv[id] })));
+  const cm2Bar = real.bars.find((b) => b.id === "cm2"), costs = real.bars.filter((b) => b.kind === "cost" && !b.missing);
+  ok(close(cm2Bar.value, nd.cm2, 1e-6) && close(real.bars[0].value - costs.slice(0, 5).reduce((s, b) => s + Math.abs(b.value), 0), nd.cm2, 0.02), "boutique saine : CA HT − 5 coûts = CM2 du moteur au centime ; totaux = nœuds");
 }
 
 console.log("\n── 3. Séries de la courbe de contribution (V2, V8) ──");
@@ -81,6 +86,10 @@ console.log("\n── 4. Couleurs validées, scans ──");
   const ui = read("app/components/charts/ContributionChart.jsx");
   ok(/preserveAspectRatio="none"/.test(ui) && /vectorEffect="non-scaling-stroke"/.test(ui) && !/<text/.test(ui) && /<input type="range" className="tcc-chart__reader"/.test(ui) && /aria-valuetext=/.test(ui) && !/onKeyDown|tabIndex/.test(ui) && /role="status"/.test(ui), "composant : SVG étiré sans texte interne (axes en HTML), traits non déformés, clavier par curseur natif (flèches, Home / End, valeur annoncée), infobulle annoncée");
   ok(!/style=\{\{(?!\s*"--)/.test(ui) && !/#[0-9a-fA-F]{6}\b/.test(ui) && /data-x=/.test(ui) && /data-pct=/.test(ui), "aucune couleur ni propriété CSS inline : seules des variables de géométrie (--x, --y, --pct) lues par la feuille");
+  const wf = read("app/components/charts/WaterfallChart.jsx");
+  ok(!/style=\{\{(?!\s*"--)/.test(wf) && !/#[0-9a-fA-F]{6}\b/.test(wf) && /role="img"/.test(wf) && /<WaterfallTable [^>]*bare/.test(wf) && /waterfallGeometry\(/.test(wf) && !/<svg/.test(wf), "cascade : HTML + variables de géométrie, image nommée, tableau accessible sous dépliage, aucune couleur inline");
+  const sp = read("app/components/overview/Sparkline.jsx");
+  ok(/tcc-spark__ghost/.test(sp) && /tcc-spark__dot/.test(sp) && /strokeWidth="8"/.test(sp) && /vectorEffect="non-scaling-stroke"/.test(sp), "mini-courbe : fantôme pointillé et point final de 8 px non déformé (B3)");
   ok(/tcc-chart\b[^{]*\{[^}]*block-size:\s*16rem/.test(css) && /tcc-chart--empty[^{]*\{[^}]*min-block-size:\s*16rem|\.tcc-chart--empty[^{]*\{[^}]*block-size:\s*16rem/.test(css), "hauteur réservée 16 rem partagée entre la courbe et la carte vide (CLS)");
   ok(read("package.json").includes("lot31_charts"), "lot 31 dans la chaîne de tests");
 }

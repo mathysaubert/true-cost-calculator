@@ -172,6 +172,12 @@ check("ok + écart + mini-courbe (en) → $1,200.00, badge favorable ↑ +50.0%,
 check("même tuile en fr → « CA net HT », « 200,00 », « Voir le calcul », « vs période précédente »",
   wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisFull, "ca_ht") })),
   (h) => /CA net HT/.test(h) && /200,00/.test(h) && !/1,200\.00/.test(h) && /Voir le calcul/.test(h) && /vs période précédente/.test(h));
+check("CA net (fr) avec période précédente alignée (B3) : fantôme pointillé + point final de 8 px dans la mini-courbe",
+  wrap("fr", React.createElement(KpiTile, { kpi: byId(buildKpis({ current: aggFull, previous: aggPrev, window: ovWin, previousWindow: ovPrev }), "ca_ht") })),
+  (h) => /class="tcc-spark__ghost" d="M[\d.]+,[\d.]+ L/.test(h) && /class="tcc-spark__dot" d="M[\d.]+,[\d.]+ h0\.01"[^>]*stroke-width="8"[^>]*stroke-linecap="round"[^>]*vector-effect="non-scaling-stroke"/.test(h));
+check("CA net sans période précédente : aucun fantôme, point final présent",
+  wrap("fr", React.createElement(KpiTile, { kpi: byId(kpisFull, "ca_ht") })),
+  (h) => !/tcc-spark__ghost/.test(h) && /tcc-spark__dot/.test(h));
 check("CM2 % : écart en points +10.0 pt, valeur 60.0%, courbe (jours sans commande interrompus)",
   wrap("en", React.createElement(KpiTile, { kpi: byId(kpisFull, "cm2_pct") })),
   (h) => /60\.0%/.test(h) && /\+10\.0 pt/.test(h) && /tcc-spark/.test(h));
@@ -233,9 +239,9 @@ check("état vide avec 6 legacy → titre, « 6 commandes … (6 lues par l'anci
 check("boutique de dev OFF → bandeau info + « Include draft and test orders » (form POST) ; ON (fr) → « Exclure… » ; marchande → null",
   wrap("en", React.createElement("div", null, React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: false }), React.createElement(DevShopBanner, { isDevShop: false, includeTestOrders: true }))),
   (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && (h.match(/<s-banner/g) ?? []).length === 1);
-check("emplacements réservés : 1 carte .tcc-slot (cascade), jamais un chiffre, « Disponible à la prochaine version », badge Bientôt ; only=[chart] → 0 (courbe livrée)",
+check("emplacements réservés : plus aucun (courbe B1, cascade B2) → enveloppe vide ; only=[chart] → 0",
   wrap("fr", React.createElement("div", null, React.createElement(ReservedSlots), React.createElement(ReservedSlots, { only: ["chart"] }))),
-  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && !/Évolution de la contribution/.test(h) && /Cascade de profit/.test(h) && (h.match(/Disponible à la prochaine version/g) ?? []).length === 1 && !/Disponible avec/.test(h) && (h.match(/Bientôt/g) ?? []).length === 1 && !/\d+[,.]\d{2}/.test(h.replace(/<svg[\s\S]*?<\/svg>/g, "")));
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 0 && !/Bientôt/.test(h));
 check("bandeau du moteur : 5 étapes numérotées, 15 puces, titre et pied traduits (en)",
   wrap("en", React.createElement(EngineBanner)),
   (h) => /The economics engine behind every section/.test(h) && (h.match(/tcc-engine__step"/g) ?? []).length === 5 && (h.match(/<li>/g) ?? []).length === 15 && /One source of truth/.test(h));
@@ -309,7 +315,7 @@ check("bandeau de décision : succès → s-banner success « Scénario enregist
   (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Scénario enregistré dans votre mémoire des décisions/.test(h) && /tone="warning">Ce scénario a changé depuis son affichage : rechargez la page\./.test(h) && /n(?:&#x27;|')a pas pu être enregistrée/.test(h));
 check("cascade en tableau : 12 lignes, 3 totaux (=), CA net → … → Résultat net, note",
   wrapEur("fr", React.createElement(WaterfallTable, { leaves: DEC.briefing ? shopOf("declining").current.agg.shop.leaves : {}, nodes: shopOf("declining").current.agg.shop.nodes })),
-  (h) => (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && (h.match(/is-total/g) ?? []).length === 3 && /Où est passé votre argent/.test(h) && /Résultat net/.test(h) && /version graphique/.test(h));
+  (h) => (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && (h.match(/is-total/g) ?? []).length === 3 && /Où est passé votre argent/.test(h) && /Résultat net/.test(h) && /les totaux sont ancrés à zéro/.test(h));
 check("indicateurs repliés : <details>, 3 lignes, lien /app/metrics",
   wrapEur("fr", React.createElement(AllIndicators, { kpis: HEA.kpis })),
   (h) => /<details class="tcc-fold">/.test(h) && (h.match(/tcc-fold__row/g) ?? []).length === 3 && /href="\/app\/metrics"/.test(h) && /Ouvrir tous les indicateurs/.test(h));
@@ -333,9 +339,9 @@ check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit �
 check("pédagogie : 12 dépliages, 4 champs chacun (Ce que c'est, Pourquoi, Comment, Surveiller)",
   wrap("fr", React.createElement(MetricsLearn)),
   (h) => (h.match(/<details class="tcc-fold" data-learn=/g) ?? []).length === 12 && (h.match(/Ce que c(?:&#x27;|')est/g) ?? []).length === 12 && /Comment c(?:&#x27;|')est calculé/.test(h));
-check("réservé : seule la cascade reste un emplacement (la courbe est livrée en B1)",
+check("réservé : aucun emplacement (courbe B1 et cascade B2 livrées)",
   wrap("fr", React.createElement(ReservedSlots)),
-  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && /Cascade de profit/.test(h));
+  (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 0);
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  R1 — Réglages : sous-nav, formulaires (vides et renseignés), passerelles, coûts fixes, objectifs,
@@ -450,6 +456,24 @@ check("pas assez de jours (V8) : carte « Pas encore assez de jours » de même 
 check("en : Series, Previous period, aria-label anglais, hint",
   wrapEur("en", React.createElement(ContributionChart, { chart: chartHealthy, days: 30 })),
   (h) => /aria-label="Series"/.test(h) && /Previous period/.test(h) && /aria-label="Net revenue and contribution over 30 days, from/.test(h) && /Hover the curve or move the day cursor/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  F4-B (B2) — Cascade horizontale : barres flottantes, totaux, coût manquant, tableau sous dépliage.
+// ════════════════════════════════════════════════════════════════════════════════
+const { WaterfallChart } = await vite.ssrLoadModule("/app/components/charts/WaterfallChart.jsx");
+const wfShop = shopOf("declining").current.agg.shop;
+
+console.log("\n=== RENDU RÉEL — Cascade (F4-B, B2) ===");
+check("en baisse (fr) : 12 barres (départ revenus, 8 coûts, 3 totaux dont résultat), zéro marqué, montants directs (coûts négatifs), image nommée « Cascade du CA net … au résultat net … », tableau sous « Voir le tableau », aucune couleur inline",
+  wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfShop.leaves, nodes: wfShop.nodes })),
+  (h) => (h.match(/data-bar="/g) ?? []).length === 12 && /data-bar="ca_ht"[^>]*class="tcc-wf__row is-start"|class="tcc-wf__row is-start" data-bar="ca_ht"/.test(h) && (h.match(/is-total/g) ?? []).length >= 3 && /is-total is-result/.test(h) && /style="--zero:/.test(h) && /style="--left:[^"]*--width:/.test(h) && /data-bar="cogs"[\s\S]*?tcc-wf__amount">-/.test(h) && /aria-label="Cascade du CA net [^"]+ au résultat net [^"]+"/.test(h) && /<details class="tcc-fold"><summary>Voir le tableau/.test(h) && (h.match(/class="tcc-waterfall__row/g) ?? []).length === 12 && !/#[0-9a-fA-F]{6}/.test(h) && !/<svg class="tcc-chart/.test(h));
+const wfGap = { leaves: { ca_ht: 1000, cogs: 400, shipping_cost: null, packaging_cost: 50, payment_fees: 30, returns_cost: 0, ad_spend: 700, commissions: 0, fixed_costs: null }, nodes: { ca_ht: 1000, cm2: 520, cm3: -180, net_result: -180 } };
+check("coûts manquants et résultat négatif : port et coûts fixes « non renseigné » sans barre (is-missing), retours à 0 affichés « 0,00 € » (jamais « -0,00 »), CM3 et résultat négatifs marqués is-negative",
+  wrapEur("fr", React.createElement(WaterfallChart, { leaves: wfGap.leaves, nodes: wfGap.nodes })),
+  (h) => { const row = (id) => h.split(`data-bar="${id}"`)[1]?.split("</div>")[0] ?? ""; return /is-missing/.test(h) && /non renseigné/.test(row("shipping_cost")) && !/tcc-wf__bar/.test(row("shipping_cost")) && /non renseigné/.test(row("fixed_costs")) && /tcc-wf__amount">0,00/.test(row("returns_cost")) && !/-0,00/.test(h) && /is-total is-result is-negative|is-total is-negative/.test(h) && (h.match(/is-negative/g) ?? []).length === 2; });
+check("en : « See the table », « not set » quand un coût manque",
+  wrapEur("en", React.createElement(WaterfallChart, { leaves: wfGap.leaves, nodes: wfGap.nodes })),
+  (h) => /See the table/.test(h) && /not set/.test(h) && /aria-label="Waterfall from net revenue/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

@@ -270,8 +270,10 @@ export default {
   "decision.recorded.simulated": "Scénario enregistré dans votre mémoire des décisions. Rejouez-le quand vous voulez depuis le simulateur.",
   "decision.stale": "Ce scénario a changé depuis son affichage : rechargez la page.",
   "decision.failed": "La décision n'a pas pu être enregistrée. Rien d'autre n'a été modifié.",
-  "overview.waterfall.note": "Chaque ligne vient du moteur pour la période choisie ; la version graphique arrive à la prochaine version.",
-  "overview.reserved.waterfall": "Cascade de profit",
+  "overview.waterfall.note": "Chaque barre part là où la précédente s'arrête ; les totaux sont ancrés à zéro. Un coût sans valeur est marqué non renseigné.",
+  "overview.waterfall.table": "Voir le tableau",
+  "overview.waterfall.missing": "non renseigné",
+  "overview.waterfall.aria": "Cascade du CA net {{start}} au résultat net {{end}}",
 
   "results.ca_ht.label": "CA net",
   "results.cm2.label": "Contribution",

@@ -73,7 +73,7 @@ export function KpiTile({ kpi, index = 0 }) {
         )}
         {value != null && !d && <span>{t("overview.delta.none")}</span>}
       </div>
-      {kpi.series ? <Sparkline points={kpi.series} title={sparkTitle} gradientId={`tcc-spark-${kpi.id}`} /> : <span aria-hidden="true" />}
+      {kpi.series ? <Sparkline points={kpi.series} previous={kpi.previousSeries ?? null} title={sparkTitle} gradientId={`tcc-spark-${kpi.id}`} /> : <span aria-hidden="true" />}
       <footer className="tcc-tile__foot">
         <s-button variant="tertiary" commandFor={modalId} command="--show">{t("overview.calc.open")}</s-button>
       </footer>
