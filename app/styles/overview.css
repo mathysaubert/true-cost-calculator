@@ -414,6 +414,32 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-block__head h3 { font-size: 1rem; font-weight: 700; }
 .tcc-block__head a { font-size: 0.8125rem; font-weight: 600; }
 
+/* ── R1 : Réglages (sous-nav, formulaires, table des coûts fixes, états) ──────────────────── */
+.tcc-subnav { display: flex; flex-wrap: wrap; gap: 6px; }
+.tcc-subnav__item { display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-ink); font-size: 0.8125rem; font-weight: 600; text-decoration: none; }
+.tcc-subnav__item[aria-current="page"] { background: var(--tcc-surface-2); border-color: var(--tcc-ink-3); }
+.tcc-subnav__item.is-soon { color: var(--tcc-ink-3); background: transparent; }
+.tcc-form { display: grid; gap: 12px; }
+.tcc-form-host { container-type: inline-size; container-name: tcc-form; }
+.tcc-form__grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tcc-form__rows { display: grid; gap: 8px; }
+.tcc-form__row { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); align-items: end; }
+.tcc-form__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@container tcc-form (max-width: 560px) { .tcc-form__grid, .tcc-form__row { grid-template-columns: minmax(0, 1fr); } }
+.tcc-gateway h4 { font-size: 0.9375rem; font-weight: 700; }
+.tcc-table { display: grid; gap: 6px; }
+.tcc-table__row { display: grid; grid-template-columns: minmax(0, 2fr) auto auto auto; gap: 12px; align-items: center; padding: 10px 14px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-size: 0.875rem; }
+.tcc-table__row.is-off { opacity: 0.6; }
+.tcc-table__amount { font: var(--tcc-num); }
+.tcc-table__actions { display: flex; gap: 6px; }
+.tcc-table-host { container-type: inline-size; container-name: tcc-table; }
+@container tcc-table (max-width: 600px) { .tcc-table__row { grid-template-columns: minmax(0, 1fr) auto; } .tcc-table__actions { grid-column: 1 / -1; } }
+.tcc-status { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tcc-status li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-size: 0.875rem; }
+.tcc-status li[data-state="set"] svg { color: var(--tcc-good-ink); }
+.tcc-status li[data-state="unset"] svg { color: var(--tcc-bad-ink); }
+.tcc-status li[data-state="unconfirmed"] svg { color: var(--tcc-warn-ink); }
+
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
 .tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .tcc-decision .tcc-muted { font-size: 0.8125rem; }

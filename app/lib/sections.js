@@ -22,7 +22,7 @@ export const NAV_GROUPS = [
   ] },
   { id: "system", sections: [
     { id: "data_health",  path: "/app/data-health", status: "live" },
-    { id: "settings",     path: null, status: "soon" },
+    { id: "settings",     path: "/app/settings",    status: "live" },
   ] },
 ];
 export const SECTIONS = NAV_GROUPS.flatMap((g) => g.sections.map((s) => ({ ...s, group: g.id })));

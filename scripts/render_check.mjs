@@ -217,9 +217,9 @@ check("en-tête sans prénom ni sync → « Bonjour 👋 », « En attente de la
 check("sélecteur segmenté : 3 liens ?days=, aria-current=\"page\" sur 30 seulement, aucun s-button-group",
   wrap("fr", React.createElement(PeriodSelector, { days: 30 })),
   (h) => /<nav class="tcc-seg" aria-label="Période">/.test(h) && (h.match(/href="\/?\?days=/g) ?? []).length === 3 && (h.match(/aria-current="page"/g) ?? []).length === 1 && /aria-current="page"[^>]*>30 jours/.test(h) && !/s-button-group/.test(h));
-check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Indicateurs et Fiabilité = liens, 10 sections grisées « Bientôt », ni Trésorerie ni Expériences",
+check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Indicateurs, Fiabilité et Réglages = liens, 9 sections grisées « Bientôt », ni Trésorerie ni Expériences",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 3 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && (h.match(/is-soon/g) ?? []).length === 10 && (h.match(/Bientôt/g) ?? []).length === 10 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
+  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 4 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && /href="\/app\/settings"/.test(h) && (h.match(/is-soon/g) ?? []).length === 9 && (h.match(/Bientôt/g) ?? []).length === 9 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
 
 console.log("\n=== RENDU RÉEL — Bandeaux, état vide, emplacements réservés, moteur ===");
 check("trous → s-banner warning : 6 commandes lues par l'ancienne version, 1 ligne sans coût, plafond, 2 exclues",
@@ -324,9 +324,9 @@ check("fiabilité (saine, en) : anneau 100, « high », « Everything the engine
 check("règles (manquante) : 7 règles, points « x / y », jauge svg, « la fiabilité atteindrait … », aucune couleur en dur",
   wrapEur("fr", React.createElement(HealthRules, { confidence: MIS.confidence })),
   (h) => (h.match(/class="tcc-health-rule( is-na)?" data-rule=/g) ?? []).length === 7 && /15 \/ 30/.test(h) && /0 \/ 20/.test(h) && /<svg class="tcc-health-rule__meter"/.test(h) && /la fiabilité atteindrait/.test(h) && /ROAS de point mort/.test(h) && !/health\.unlock\./.test(h) && !/#[0-9a-fA-F]{6}\b/.test(h) && !/ style="/.test(h));
-check("rail : 3 groupes titrés (Piloter, Explorer, Système), 3 liens (Aujourd'hui actif, Indicateurs, Fiabilité des données), 10 « Bientôt »",
+check("rail : 3 groupes titrés (Piloter, Explorer, Système), 4 liens (Aujourd'hui actif, Indicateurs, Fiabilité des données, Réglages), 9 « Bientôt »",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 3 && (h.match(/is-soon/g) ?? []).length === 10 && /Fiabilité des données/.test(h) && /Demander/.test(h));
+  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 4 && (h.match(/is-soon/g) ?? []).length === 9 && /Fiabilité des données/.test(h) && /Demander/.test(h) && /Réglages/.test(h));
 check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit » avec un partiel",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: { legacy: 6 }, partials: [{ id: "cost_coverage", status: "partial", missing: { orders: 1 }, vars: { lines: 2 }, unlocks: ["cm2_pct"] }] })),
   (h) => /6 lues par l(?:&#x27;|')ancienne version/.test(h) && /Ce qui peut déjà être dit/.test(h) && /Coûts produits manquants/.test(h) && /Débloque/.test(h));
@@ -336,6 +336,49 @@ check("pédagogie : 12 dépliages, 4 champs chacun (Ce que c'est, Pourquoi, Comm
 check("réservé : seule la courbe est un emplacement (la cascade a son tableau)",
   wrap("fr", React.createElement(ReservedSlots, { only: ["chart"] })),
   (h) => (h.match(/class="tcc-slot tcc-slot--/g) ?? []).length === 1 && /Évolution de la contribution/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  R1 — Réglages : sous-nav, formulaires (vides et renseignés), passerelles, coûts fixes, objectifs,
+//  état des réglages, bandeau. Aucun champ contrôlé ; valeurs courantes = placeholders (S6).
+// ════════════════════════════════════════════════════════════════════════════════
+const { SettingsNav } = await vite.ssrLoadModule("/app/components/settings/SettingsNav.jsx");
+const { SettingsBanner } = await vite.ssrLoadModule("/app/components/settings/Fields.jsx");
+const { OrderCostsForm, ShippingForm, GatewayRules, FixedCosts } = await vite.ssrLoadModule("/app/components/settings/CostsForms.jsx");
+const { GoalsForm } = await vite.ssrLoadModule("/app/components/settings/GoalsForm.jsx");
+const { SettingsIndex } = await vite.ssrLoadModule("/app/components/settings/SettingsIndex.jsx");
+const { settingsStatus } = await vite.ssrLoadModule("/app/lib/settings.js");
+const setFull = { packaging_cost_per_order: 0.35, return_cost_per_return: 4, return_window_days: 30, delivery_promise_days: 5, shipping_cost_rules: { default: 4.9, byCountry: { FR: 3, DE: 6 }, confirmed: true }, gateway_fee_rules: [{ gateway: "paypal", pct: 3.4, fixed: 0.35, confirmed: true }], profitability_threshold_pct: 45, target_margin_after_ads_pct: 15, main_product_price: 60 };
+const gws = [{ gateway: "shopify_payments", orders: 12 }, { gateway: "paypal", orders: 3 }];
+const fixedRows = [{ id: "a1", label: "Loyer", amount_monthly: 1200, active_from: "2026-01-01", active_to: null }, { id: "b2", label: "Ancien outil", amount_monthly: 49, active_from: null, active_to: "2026-06-30" }];
+
+console.log("\n=== RENDU RÉEL — Réglages (R1) ===");
+check("sous-nav : 3 liens (Vue d'ensemble active, Coûts, Objectifs), 3 « Bientôt » (Boutique, Marketing, Connexions)",
+  wrap("fr", React.createElement(SettingsNav, { current: "index" })),
+  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 3 && /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && /href="\/app\/settings\/costs"/.test(h) && (h.match(/is-soon/g) ?? []).length === 3 && /Connexions/.test(h));
+check("coûts de commande VIDES : 4 champs s-text-field name=…, value vide, aide, suffixe jours, aucun placeholder chiffré, bouton Enregistrer, intent",
+  wrap("fr", React.createElement(OrderCostsForm, { settings: {} })),
+  (h) => (h.match(/<s-text-field/g) ?? []).length === 4 && /name="packaging_cost_per_order"[^>]*value=""/.test(h) && /details="Cartons, calage/.test(h) && /suffix="jours"/.test(h) && !/placeholder="\d/.test(h) && /name="intent" value="save_order_costs"/.test(h) && /<s-button type="submit"[^>]*>Enregistrer</.test(h) && !/ style="/.test(h));
+check("coûts de commande RENSEIGNÉS + erreur serveur : value=\"0.35\", erreur « Hors bornes. » sur le champ fautif",
+  wrap("fr", React.createElement(OrderCostsForm, { settings: setFull, result: { intent: "save_order_costs", ok: false, errors: { return_window_days: "range" } } })),
+  (h) => /name="packaging_cost_per_order"[^>]*value="0.35"/.test(h) && /name="return_window_days"[^>]*error="Hors bornes\."/.test(h) && !/name="packaging_cost_per_order"[^>]*error=/.test(h));
+check("port par pays : badge « À confirmer » et défaut vide quand non confirmé ; renseigné → « Renseigné », FR=3, DE=6, 5 lignes, bouton Confirmer",
+  wrap("fr", React.createElement("div", null, React.createElement(ShippingForm, { settings: { shipping_cost_rules: { default: 5, confirmed: false } } }), React.createElement(ShippingForm, { settings: setFull }))),
+  (h) => /tcc-badge--warn">À confirmer</.test(h) && /name="shipping_default"[^>]*value=""/.test(h) && /tcc-badge--good">Renseigné</.test(h) && /name="shipping_default"[^>]*value="4.9"/.test(h) && /name="shipping_country_1"[^>]*value="FR"/.test(h) && /name="shipping_amount_2"[^>]*value="6"/.test(h) && (h.match(/name="shipping_country_\d"/g) ?? []).length === 10 && /Confirmer</.test(h));
+check("passerelles : 2 formulaires (shopify_payments 12 commandes à confirmer avec placeholders 1.5 / 0.25 et phrase des valeurs usuelles ; paypal confirmé avec value 3.4) ; aucune → message",
+  wrap("fr", React.createElement("div", null, React.createElement(GatewayRules, { settings: setFull, gateways: gws }), React.createElement(GatewayRules, { settings: {}, gateways: [] }))),
+  (h) => (h.match(/data-gateway="/g) ?? []).length === 2 && /12 commandes/.test(h) && /name="pct"[^>]*value=""[^>]*placeholder="1.5"/.test(h) && /Valeurs usuelles : 1,5.% \+ 0,25 par transaction/.test(h) && /data-gateway="paypal"[\s\S]*?tcc-badge--good">Confirmé<[\s\S]*?name="pct"[^>]*value="3.4"/.test(h) && /Aucune passerelle vue/.test(h));
+check("coûts fixes : 2 lignes (Loyer actif avec Terminer + Supprimer ; ancien outil terminé, Supprimer seul), total « 1 200,00 $ par mois » sur l'actif, formulaire d'ajout ; vide → message",
+  wrap("fr", React.createElement("div", null, React.createElement(FixedCosts, { rows: fixedRows, today: "2026-09-24" }), React.createElement(FixedCosts, { rows: [], today: "2026-09-24" }))),
+  (h) => (h.match(/data-fixed-cost="/g) ?? []).length === 2 && /data-fixed-cost="a1"[\s\S]*?Terminer aujourd(?:&#x27;|')hui/.test(h) && /class="tcc-table__row is-off" role="row" data-fixed-cost="b2"/.test(h) && /1.200,00.\$ par mois/.test(h) && (h.match(/name="intent" value="add_fixed_cost"/g) ?? []).length === 2 && /Aucun coût fixe pour le moment/.test(h));
+check("objectifs : 3 champs avec suffixe % sur les taux, seuil 0 → vide, bande 40 % – 60 %, seuil d'alerte classique rappelé",
+  wrap("fr", React.createElement(GoalsForm, { settings: { profitability_threshold_pct: 0, main_product_price: 60 }, alertThreshold: 25 })),
+  (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value=""[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && /alertes de calcul\) : 25.%/.test(h));
+check("état des réglages : 8 lignes en 2 pages (Coûts, Objectifs) avec badges Renseigné / À confirmer / Manquant et lien Ouvrir",
+  wrap("fr", React.createElement(SettingsIndex, { items: settingsStatus({ settings: setFull, fixedCosts: fixedRows, gateways: gws, day: "2026-09-24" }) })),
+  (h) => (h.match(/data-setting="/g) ?? []).length === 8 && (h.match(/<section class="tcc-block"/g) ?? []).length === 2 && /data-setting="gateway_fees" data-state="unconfirmed"/.test(h) && /data-setting="fixed_costs" data-state="set"/.test(h) && /href="\/app\/settings\/costs"[^>]*>Ouvrir</.test(h) && /tcc-badge--warn">À confirmer</.test(h));
+check("bandeau : succès → « Enregistré » ; erreurs de champs → warning ; échec → critical ; null → rien",
+  wrap("fr", React.createElement("div", null, React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: true } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false, errors: { a: "range" } } }), React.createElement(SettingsBanner, { result: { intent: "save_goals", ok: false } }), React.createElement(SettingsBanner, { result: null }))),
+  (h) => (h.match(/<s-banner/g) ?? []).length === 3 && /tone="success">Enregistré\./.test(h) && /tone="warning">Certains champs/.test(h) && /tone="critical">La modification/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

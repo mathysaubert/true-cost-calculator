@@ -72,7 +72,13 @@ export function buildOpportunity({ insights = [], current, score, periodDays, cu
 
 // insights : règles évaluées, chacune enrichie de statut, impact en fourchette, sujet, CTA.
 export function buildInsights({ current, reference, bridgeCm2, settings = {}, sources, score, scoreIfFixed, currency, periodDays, variantCosts } = {}) {
-  const th = computeThresholds(current?.shop?.nodes ?? {}, { fixed_costs_monthly: null, marketing_monthly: null });
+  // Point mort (décision 5) : coûts fixes et marketing de la période ramenés au mois glissant (T4b).
+  const lv = current?.shop?.leaves ?? {};
+  const monthly = (v) => (v == null || !(periodDays > 0) ? null : (Number(v) * 30) / periodDays);
+  const th = computeThresholds(current?.shop?.nodes ?? {}, {
+    fixed_costs_monthly: Number(lv.fixed_costs) > 0 ? monthly(lv.fixed_costs) : null,
+    marketing_monthly: sources?.ads ? monthly((Number(lv.ad_spend) || 0) + (Number(lv.commissions) || 0)) : null,
+  });
   const gaps = gapsShare(current);
   const ctx = { current, reference, bridgeCm2, settings, sources, score, scoreIfFixed, thresholds: th, variantCosts };
   const out = [];
