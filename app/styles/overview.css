@@ -554,7 +554,8 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-health__body { display: grid; gap: 8px; }
 .tcc-health__body h3 { font-size: 0.9375rem; font-weight: 700; }
 .tcc-health__gaps { display: grid; gap: 6px; }
-.tcc-health__gap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); font-size: 0.8125rem; }
+.tcc-health__gap { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); font-size: 0.8125rem; }
+.tcc-health__fix { font-size: 0.75rem; }
 .tcc-health__gap strong { display: block; }
 .tcc-health__gap small { color: var(--tcc-ink-2); }
 .tcc-health__points { font-weight: 700; color: var(--tcc-good-ink); white-space: nowrap; }

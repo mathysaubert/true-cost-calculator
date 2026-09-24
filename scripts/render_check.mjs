@@ -478,6 +478,29 @@ check("en : « See the table », « not set » quand un coût manque",
   wrapEur("en", React.createElement(WaterfallChart, { leaves: wfGap.leaves, nodes: wfGap.nodes })),
   (h) => /See the table/.test(h) && /not set/.test(h) && /aria-label="Waterfall from net revenue/.test(h));
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  R3 — barre de sauvegarde (attribut), activation (3 jalons), manques reliés à Réglages, état vide.
+// ════════════════════════════════════════════════════════════════════════════════
+const { ActivationChecklist } = await vite.ssrLoadModule("/app/components/overview/Activation.jsx");
+const { activationChecklist } = await vite.ssrLoadModule("/app/lib/activation.js");
+
+console.log("\n=== RENDU RÉEL — R3 (save bar, activation, liens Réglages) ===");
+check("formulaire Réglages : <form … data-save-bar> (App Bridge) ; formulaire à bouton seul sans l'attribut",
+  wrap("fr", React.createElement(FixedCosts, { rows: fixedRows, today: "2026-09-24" })),
+  (h) => /<form method="post" action="\/" data-save-bar=""[^>]*class="tcc-card tcc-form"/.test(h) && !/<form method="post" action="\/" data-save-bar=""[^>]*>\s*<input type="hidden" name="intent" value="delete_fixed_cost"/.test(h) && /<form method="post" action="\/" data-discover="true"><input type="hidden" name="intent" value="delete_fixed_cost"/.test(h));
+check("activation (fr) : 3 jalons, 1 / 3, sync faite, coûts à 50 % « Y aller » vers l'écran classique, situation « Y aller » vers Aujourd'hui",
+  wrap("fr", React.createElement(ActivationChecklist, { checklist: activationChecklist({ lastSync: "2026-09-24T10:00:00Z", confidence: { rules: [{ id: "cost_coverage", applicable: true, measure: 0.5 }] }, briefing: null, ordersInPeriod: 0 }) })),
+  (h) => /data-activation="pending"/.test(h) && /tcc-badge--warn">1 \/ 3</.test(h) && /data-step="synced" data-state="done"[\s\S]*?tcc-badge--good">Fait</.test(h) && /data-step="costs" data-state="todo"[\s\S]*?Aujourd(?:&#x27;|')hui 50.% du CA a un coût connu[\s\S]*?href="\/app"[^>]*>Y aller</.test(h) && /data-step="situation" data-state="todo"[\s\S]*?href="\/app\/overview"/.test(h));
+check("activation complète (en) : 3 / 3, « Everything is in place »",
+  wrap("en", React.createElement(ActivationChecklist, { checklist: activationChecklist({ lastSync: "2026-09-24T10:00:00Z", confidence: { rules: [{ id: "cost_coverage", applicable: true, measure: 0.9 }] }, briefing: { situation: [{}] }, ordersInPeriod: 3 }) })),
+  (h) => /data-activation="complete"/.test(h) && /3 \/ 3/.test(h) && /Everything is in place/.test(h) && !/>Go</.test(h));
+check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa page (coûts → écran classique, frais → Réglages > Coûts, pub → Connexions)",
+  wrapEur("fr", React.createElement(DataHealth, { confidence: MIS.confidence, compact: true })),
+  (h) => (h.match(/data-fix="/g) ?? []).length === 3 && /data-fix="cost_coverage" href="\/app"/.test(h.replace(/class="[^"]*" to=/g, "").replace(/href="([^"]*)"[^>]*data-fix="([^"]*)"/g, 'data-fix="$2" href="$1"')) && /Compléter</.test(h) && /data-fix="(payment_fees|shipping_costs)"/.test(h));
+check("état vide : « Compléter les réglages » vers /app/settings + écran classique en secondaire",
+  wrap("fr", React.createElement(OverviewEmptyState, { excluded: {} })),
+  (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" href="\/app">Ouvrir l(?:&#x27;|')écran classique</.test(h));
+
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
 process.exit(ko === 0 ? 0 : 1);

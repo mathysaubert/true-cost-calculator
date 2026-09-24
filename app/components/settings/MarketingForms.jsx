@@ -27,7 +27,7 @@ export function Partners({ partners = [], result = null }) {
           ))}
         </div>
       )}
-      <Form method="post" className="tcc-card tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-card tcc-form">
         <input type="hidden" name="intent" value="add_partner" />
         <h4 className="tcc-eyebrow"><Icon id="check" />{t("settings.partners.add")}</h4>
         <div className="tcc-form__grid">
@@ -66,7 +66,7 @@ export function PromoRules({ rules = [], partners = [], codes = [], result = nul
           ))}
         </div>
       )}
-      <Form method="post" className="tcc-card tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-card tcc-form">
         <input type="hidden" name="intent" value="save_promo_rule" />
         <h4 className="tcc-eyebrow"><Icon id="check" />{t("settings.promo.add")}</h4>
         <div className="tcc-form__grid">
@@ -106,7 +106,7 @@ export function ManualCommissions({ commissions = [], partners = [], result = nu
         </div>
       )}
       {!manualPartners.length ? <p className="tcc-muted">{t("settings.manual.need_partner")}</p> : (
-        <Form method="post" className="tcc-card tcc-form">
+        <Form method="post" data-save-bar="" className="tcc-card tcc-form">
           <input type="hidden" name="intent" value="add_manual_commission" />
           <h4 className="tcc-eyebrow"><Icon id="check" />{t("settings.manual.add")}</h4>
           <div className="tcc-form__grid">

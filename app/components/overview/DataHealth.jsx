@@ -1,7 +1,7 @@
 // ── Fiabilité des données (I0-B) : score, manques et déblocages ; bloc compact ou page ─────────
 import { Link } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
-import { Icon } from "./Icons.jsx";
+import { settingsPathForRule } from "../../lib/activation.js";
 
 const R = 40, C = 2 * Math.PI * R;
 
@@ -39,6 +39,7 @@ export function DataHealth({ confidence, compact = true }) {
               <div key={g.id} className="tcc-health__gap">
                 <span><strong>{t(`health.rule.${g.id}`)}</strong><small>{t("health.gap.unlocks", { list: unlockLabels(g, t) })}</small></span>
                 <span className="tcc-health__points">{t("health.gap.points", { points: int(Math.round(g.points_if_fixed)) })}</span>
+                <Link className="tcc-cta tcc-cta--ghost tcc-health__fix" to={settingsPathForRule(g.id).path} data-fix={g.id}>{t("health.gap.fix")}</Link>
               </div>
             ))}
           </div>
@@ -60,7 +61,7 @@ export function HealthRules({ confidence }) {
           <span className="tcc-health__points">{r.applicable ? `${int(Math.round(r.points))} / ${int(r.max)}` : t("health.na")}</span>
           {r.applicable && <svg className="tcc-health-rule__meter" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect x="0" y="0" height="6" width={Math.round(r.measure * 100)} /></svg>}
           {r.applicable && r.points_if_fixed > 0.5 && <small className="tcc-muted">{t("health.gap.unlocks", { list: unlockLabels(r, t) })} · {t("health.if_fixed", { score: int(confidence.if_fixed?.[r.id] ?? confidence.score) })}</small>}
-          {r.applicable && r.points_if_fixed > 0.5 && <span><Icon id={r.cta === "connect" ? "marketing" : "check"} /></span>}
+          {r.applicable && r.points_if_fixed > 0.5 && <Link className="tcc-cta tcc-cta--ghost" to={settingsPathForRule(r.id).path} data-fix={r.id}>{t("health.gap.fix")}</Link>}
         </div>
       ))}
     </div>

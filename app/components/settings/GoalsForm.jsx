@@ -11,7 +11,7 @@ export function GoalsForm({ settings = {}, result = null, alertThreshold = null 
     <section className="tcc-block" aria-labelledby="tcc-goals-title">
       <div className="tcc-block__head"><h3 id="tcc-goals-title">{t("settings.goals.title")}</h3></div>
       <p className="tcc-muted">{t("settings.goals.band", { low: pct(CM2_TARGET_BAND.low, { digits: 0 }), high: pct(CM2_TARGET_BAND.high, { digits: 0 }) })}</p>
-      <Form method="post" className="tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-form">
         <input type="hidden" name="intent" value="save_goals" />
         <div className="tcc-form__grid">
           {FIELDS.goals.map((f) => (

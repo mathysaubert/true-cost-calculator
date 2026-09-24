@@ -3,6 +3,7 @@ import { useI18n } from "../../lib/i18n/context.jsx";
 import { OVERVIEW_RESERVED } from "../../lib/sections.js";
 import { Icon } from "./Icons.jsx";
 import { PartialConclusions } from "./Briefing.jsx";
+import { Link } from "react-router";
 
 // excluded = compteurs par raison (legacy compris) ; partials = ce qui peut déjà être conclu.
 export function OverviewEmptyState({ excluded = {}, partials = [], titles = {} }) {
@@ -16,7 +17,10 @@ export function OverviewEmptyState({ excluded = {}, partials = [], titles = {} }
         <h3>{t("overview.empty.title")}</h3>
         <p>{t("overview.empty.body")}</p>
         {total > 0 && <p className="tcc-empty__reasons">{t("overview.empty.body_excluded", { count: total, reasons })}</p>}
-        <a className="tcc-cta" href="/app">{t("overview.empty.cta_legacy")}</a>
+        <div className="tcc-form__actions">
+          <Link className="tcc-cta" to="/app/settings">{t("overview.empty.cta_settings")}</Link>
+          <a className="tcc-cta tcc-cta--ghost" href="/app">{t("overview.empty.cta_legacy")}</a>
+        </div>
       </div>
       <PartialConclusions partials={partials} titles={titles} title={t("overview.empty.partial_title")} />
     </div>

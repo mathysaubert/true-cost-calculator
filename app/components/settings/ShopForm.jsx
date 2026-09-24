@@ -17,7 +17,7 @@ export function ShopForm({ settings = {}, result = null }) {
     <section className="tcc-block" aria-labelledby="tcc-shop-title">
       <div className="tcc-block__head"><h3 id="tcc-shop-title">{t("settings.shop.title")}</h3></div>
       <p className="tcc-muted">{t("settings.shop.help")}</p>
-      <Form method="post" className="tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-form">
         <input type="hidden" name="intent" value="save_shop" />
         <div className="tcc-form__grid">
           <TextField name="shop_country_code" label={t("settings.field.shop_country_code.label")} help={t("settings.field.shop_country_code.help")} value={settings.shop_country_code} placeholder={t("settings.placeholder.country")} maxLength={2} error={err(result, "shop_country_code")} />

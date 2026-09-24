@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { parseShopForm, parseCountryList, partnerFromForm, promoRuleFromForm, manualCommissionFromForm, codesFromOrders, connectionsStatus, SHOP_FIELDS, PROVIDERS, FIELDS, MIRROR_COLUMNS, SETTINGS_NAV, parseNumber, parseFields, shippingRulesFromForm, gatewayRuleFromForm, mergeGatewayRule, ruleFor, gatewaysFromOrders, fixedCostFromForm, isActiveFixedCost, mirrorFor, dataRuleOf, settingsStatus, presetFor } from "../app/lib/settings.js";
 import { CATALOGS } from "../app/locales/index.js";
+import { settingsPathForRule, activationChecklist, RULE_PAGES, COSTS_DONE_SHARE } from "../app/lib/activation.js";
 
 let failures = 0;
 const ok = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures++; };
@@ -85,6 +86,26 @@ console.log("\n── 3b. R2 : Boutique, Marketing, Connexions ──");
   const ui = ["app/components/settings/ShopForm.jsx", "app/components/settings/MarketingForms.jsx", "app/components/settings/ConnectionsList.jsx"].map(read).join("\n");
   ok(!/useState|onChange=/.test(ui) && /<s-select/.test(read("app/components/settings/Fields.jsx")) && /<Form method="post"/.test(ui), "R2 : formulaires natifs, s-select non contrôlé, aucun état React");
   ok(!/shop_currency"[^>]*value=/.test(ui) && /data-readonly="shop_currency"/.test(ui), "devise : lue depuis Shopify, jamais saisie");
+}
+
+console.log("\n── 3c. R3 : barre de sauvegarde, pages par règle, activation ──");
+{
+  const forms = ["CostsForms", "GoalsForm", "MarketingForms", "ShopForm"].map((f) => read(`app/components/settings/${f}.jsx`)).join("\n");
+  const editForms = [...forms.matchAll(/<Form [^>]*method="post"[^>]*className="[^"]*tcc-form[^"]*"[^>]*>/g)].map((m) => m[0]);
+  const buttonForms = [...forms.matchAll(/<Form method="post">/g)];
+  ok(editForms.length === 9 && editForms.every((f) => /data-save-bar=""/.test(f)), `R3 : ${editForms.length} formulaires d'édition portent data-save-bar (App Bridge)`);
+  ok(buttonForms.length >= 5 && !/<Form method="post"[^>]*data-save-bar[^>]*>\s*<input type="hidden" name="intent" value="(delete|end)_/.test(forms), "les formulaires à bouton seul (supprimer, terminer) n'ont pas de barre de sauvegarde");
+  ok(settingsPathForRule("fixed_costs").path === "/app/settings/costs" && settingsPathForRule("ads_connected").path === "/app/settings/connections" && settingsPathForRule("currency").path === "/app/settings/shop" && settingsPathForRule("cost_coverage").section === "legacy" && settingsPathForRule("zzz").path === "/app/settings", "chaque règle de fiabilité pointe sa page (coûts par variante : écran classique jusqu'à S3)");
+  ok(["cost_coverage", "ads_connected", "shipping_costs", "payment_fees", "fixed_costs", "landed_cost", "currency"].every((r) => RULE_PAGES[r]), "les 7 règles de fiabilité ont une page");
+  const conf = { rules: [{ id: "cost_coverage", applicable: true, measure: 0.85 }] };
+  const a = activationChecklist({ lastSync: "2026-09-24T10:00:00Z", confidence: conf, briefing: { situation: [{ slot: "result" }] }, ordersInPeriod: 15 });
+  ok(a.complete && a.done === 3 && a.items.map((i) => i.id).join(",") === "synced,costs,situation" && a.items[1].detail === 85, "activation : 3 jalons faits (sync, coûts ≥ 80 %, situation)");
+  const b = activationChecklist({ lastSync: null, confidence: { rules: [{ id: "cost_coverage", applicable: true, measure: 0.5 }] }, briefing: null, ordersInPeriod: 0 });
+  ok(!b.complete && b.done === 0 && b.items.every((i) => i.path) && b.items[1].detail === 50 && COSTS_DONE_SHARE === 0.8, "activation : rien de fait → chaque jalon a un lien ; coûts à 50 % non atteints (seuil 80 %)");
+  ok(activationChecklist({}).items[1].detail === null, "coûts non applicables (aucune commande) → pas de pourcentage");
+  const dh = read("app/components/overview/DataHealth.jsx");
+  ok(/settingsPathForRule\(g\.id\)/.test(dh) && /settingsPathForRule\(r\.id\)/.test(dh), "Fiabilité : chaque manque (bloc et page) est relié à sa page");
+  ok(/to="\/app\/settings"/.test(read("app/components/overview/Blocks.jsx")), "état vide : lien vers Réglages");
 }
 
 console.log("\n── 4. Catalogues et scans ──");

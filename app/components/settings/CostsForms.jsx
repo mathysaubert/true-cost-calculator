@@ -14,7 +14,7 @@ export function OrderCostsForm({ settings = {}, result = null }) {
     <section className="tcc-block" aria-labelledby="tcc-order-costs-title">
       <div className="tcc-block__head"><h3 id="tcc-order-costs-title">{t("settings.costs.order.title")}</h3></div>
       <p className="tcc-muted">{t("settings.costs.order.help")}</p>
-      <Form method="post" className="tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-form">
         <input type="hidden" name="intent" value="save_order_costs" />
         <div className="tcc-form__grid">
           {FIELDS.order_costs.map((f) => (
@@ -38,7 +38,7 @@ export function ShippingForm({ settings = {}, result = null }) {
         <span className={`tcc-badge ${rules.confirmed ? "tcc-badge--good" : "tcc-badge--warn"}`}>{rules.confirmed ? t("settings.status.set") : t("settings.status.unconfirmed")}</span>
       </div>
       <p className="tcc-muted">{t("settings.shipping.help")}</p>
-      <Form method="post" className="tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-form">
         <input type="hidden" name="intent" value="save_shipping" />
         <div className="tcc-form__grid">
           <NumberField name="shipping_default" label={t("settings.field.shipping_default.label")} help={t("settings.field.shipping_default.help")} value={rules.confirmed ? rules.default : null} error={err(result, "save_shipping", "shipping_default")} />
@@ -78,7 +78,7 @@ export function GatewayRules({ settings = {}, gateways = [], result = null }) {
             const preset = presetFor(g.gateway);
             const bad = result?.intent === "save_gateway" && result.gateway === g.gateway ? result.errors ?? {} : {};
             return (
-              <Form key={g.gateway} method="post" className="tcc-card tcc-form tcc-gateway" data-gateway={g.gateway}>
+              <Form key={g.gateway} method="post" data-save-bar="" className="tcc-card tcc-form tcc-gateway" data-gateway={g.gateway}>
                 <input type="hidden" name="intent" value="save_gateway" />
                 <input type="hidden" name="gateway" value={g.gateway} />
                 <div className="tcc-block__head">
@@ -127,7 +127,7 @@ export function FixedCosts({ rows = [], today = null, result = null }) {
           })}
         </div>
       )}
-      <Form method="post" className="tcc-card tcc-form">
+      <Form method="post" data-save-bar="" className="tcc-card tcc-form">
         <input type="hidden" name="intent" value="add_fixed_cost" />
         <h4 className="tcc-eyebrow"><Icon id="check" />{t("settings.fixed.add")}</h4>
         <div className="tcc-form__grid">
