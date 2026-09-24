@@ -72,8 +72,12 @@ console.log("\n── 2. contributionBridge ──");
   ok(b.ranked[0]?.factor === "cogs_rate" && b.effects.cogs_rate < 0, `facteur dominant : taux de coût produit (${b.effects.cogs_rate?.toFixed(2)})`);
   ok(b.effects.volume > 0 && b.effects.order_cost_rate != null && b.effects.basket != null, "volume favorable (48 vs 40) ; effets panier et coûts de commande définis");
   ok(b.ranked.every((e) => Math.sign(e.amount) === Math.sign(b.delta)), "le classement ne retient que les effets dans le sens de l'écart");
+  const shareSum = b.ranked.reduce((s, e) => s + e.share, 0);
+  ok(close(shareSum, 1, 1e-9) && b.ranked.every((e) => e.share <= 1 + 1e-9), `parts du classement sur la masse adverse : Σ = ${(shareSum * 100).toFixed(1)} %, aucune > 100 %`);
+  ok(b.offsets.length >= 1 && b.offsets[0].factor === "volume" && Math.sign(b.offsets[0].amount) === -Math.sign(b.delta) && close(b.offsets[0].share, Math.abs(b.effects.volume) / Math.abs(b.delta), 1e-9), `compensation nommée : le volume (${b.effects.volume?.toFixed(2)}), part de |Δ| = ${(b.offsets[0]?.share * 100).toFixed(0)} %`);
+  ok(close(b.ranked.reduce((s, e) => s + e.amount, 0) + b.offsets.reduce((s, e) => s + e.amount, 0) + b.residual, b.delta, 1e-6), "adverses + compensations + résidu = Δ (rien de perdu)");
   const nul = contributionBridge({ ...d.current.agg.shop.leaves, cogs: null }, ref.leaves, "cm2");
-  ok(nul.delta === null && nul.explained === 0 && Object.values(nul.effects).every((v) => v === null) && nul.ranked.length === 0, "feuille absente → Δ null, effets null, rien d'inventé");
+  ok(nul.delta === null && nul.explained === 0 && Object.values(nul.effects).every((v) => v === null) && nul.ranked.length === 0 && nul.offsets.length === 0, "feuille absente → Δ null, effets null, rien d'inventé");
   const b3 = contributionBridge(d.current.agg.shop.leaves, ref.leaves, "cm3");
   ok(b3.effects.ads != null && b3.effects.ads < 0 && close(b3.effects.ads, -(d.current.agg.shop.leaves.ad_spend - ref.leaves.ad_spend)) && Math.abs(b3.residual) < 1e-6, "pont CM3 : effet pub = −Δ dépense, résidu ≈ 0");
   const h = shops.healthy;
@@ -136,6 +140,7 @@ const ids = (b) => b.insights.map((i) => i.id);
   const d = B.declining;
   const drop = d.insights.find((i) => i.id === "cm2_drop");
   ok(drop && drop.cause?.factor === "cogs_rate" && drop.cause.contributions[0].share > 0.5 && drop.status === "confirmed", `en baisse : cm2_drop, cause = taux de coût produit (${(drop?.cause?.contributions[0].share * 100).toFixed(0)} %), confirmé (4 périodes, données complètes)`);
+  ok(drop && drop.vars.share_1 <= 100 && drop.vars.share_2 <= 100 && close(drop.vars.share_1 + drop.vars.share_2, 100, 1e-6) && drop.vars.offset === "volume" && drop.vars.offset_amount > 0 && drop.cause.offsets[0].share >= 0.1, `cm2_drop : parts ${drop?.vars.share_1.toFixed(1)} + ${drop?.vars.share_2.toFixed(1)} = 100, compensation volume +${drop?.vars.offset_amount.toFixed(2)}`);
   ok(drop.vars.delta_pts > 2 && drop.impact.point < 0 && drop.impact.range.low < drop.impact.range.high, `baisse de ${drop.vars.delta_pts.toFixed(1)} pt, impact ${drop.impact.range.low.toFixed(0)} à ${drop.impact.range.high.toFixed(0)}`);
   const rvc = d.insights.find((i) => i.id === "revenue_vs_contribution");
   ok(rvc && rvc.vars.rev_delta > 5 && rvc.vars.cm2_delta < 0 && rvc.cause?.factor === "cogs_rate", `en baisse : CA +${rvc?.vars.rev_delta.toFixed(0)} %, contribution ${rvc?.vars.cm2_delta.toFixed(0)} %`);
@@ -222,7 +227,8 @@ console.log("\n── 9. Catalogues insight.* / learn.* / situation.* / confiden
   const onlyEn = [...enKeys].filter((k) => !frKeys.has(k)), onlyFr = [...frKeys].filter((k) => !enKeys.has(k));
   ok(onlyEn.length === 0 && onlyFr.length === 0, `fr = en (${enKeys.size} clés)`);
   // Variables des gabarits : toute {{var}} d'un gabarit doit être produite par la règle (vars, impact, missing).
-  const known = new Set(["low", "high", "period", "prev", "reference", "missing", "orders", "weeks", "score", "score_after", "count", "section", "factor", "share", "amount", "rule", "impact_low", "impact_high", "top_gap", "points", "net_result", "gap", "estimated", "rev_delta", "cm2_delta"]);
+  const known = new Set(["low", "high", "period", "prev", "reference", "missing", "orders", "weeks", "score", "score_after", "count", "section", "factor", "share", "amount", "rule", "impact_low", "impact_high", "top_gap", "points", "net_result", "gap", "estimated", "rev_delta", "cm2_delta", "offset", "offset_amount"]);
+  ok(/\{\{offset\}\}/.test(en["analysis.offset"]) && /\{\{offset_amount\}\}/.test(en["analysis.offset"]) && !/\{\{offset/.test(Object.keys(en).filter((k) => k.startsWith("insight.")).map((k) => en[k]).join(" ")), "la compensation a sa phrase générique (analysis.offset), hors gabarits insight.*");
   const bad = [];
   for (const b of Object.values(B)) for (const i of b.insights) for (const f of ["observation", "context", "cause", "impact", "recommendation", "simulation", "followup", "partial"]) {
     const tpl = en[`insight.${i.id}.${f}`]; if (!tpl) continue;

@@ -7,6 +7,8 @@
 //   residual      = Δ − Σ effets (affiché, jamais masqué ; ≈ 0 par construction sur des feuilles complètes)
 // CM3 ajoute ads = −(pub − pub_ref) et commissions = −(commissions − ref).
 // Une feuille nulle sur l'une des périodes → l'effet est null, `explained` = 0 (jamais inventé).
+// `ranked` : effets dans le sens de l'écart, part = |effet| / Σ|effets adverses| (les parts totalisent 1) ;
+// `offsets` : effets en sens inverse (compensations), part = |effet| / |Δ|, jamais masqués.
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
 const div = (a, b) => (a == null || b == null || !(b > 0) ? null : a / b);
 export const BRIDGE_FACTORS = ["volume", "basket", "cogs_rate", "order_cost_rate"];
@@ -29,7 +31,7 @@ export function contributionBridge(cur = {}, ref = {}, node = "cm2") {
   const factors = node === "cm3" ? BRIDGE_FACTORS_CM3 : BRIDGE_FACTORS;
   const effects = Object.fromEntries(factors.map((f) => [f, null]));
   if (delta == null || !(r.orders > 0) || !(c.orders > 0) || !(r.ca > 0) || !(c.ca > 0)) {
-    return { node, delta, value: valueC, reference: valueR, effects, residual: null, explained: 0, ranked: [] };
+    return { node, delta, value: valueC, reference: valueR, effects, residual: null, explained: 0, ranked: [], offsets: [] };
   }
   const cm2PerOrderRef = cm2r / r.orders;
   const marginRateRef = cm2r / r.ca;
@@ -42,8 +44,11 @@ export function contributionBridge(cur = {}, ref = {}, node = "cm2") {
   const sum = factors.reduce((s, f) => s + effects[f], 0);
   const residual = delta - sum;
   const explained = Math.abs(delta) > 1e-9 ? Math.max(0, 1 - Math.abs(residual) / Math.abs(delta)) : 1;
-  const ranked = factors.map((f) => ({ factor: f, amount: effects[f], share: Math.abs(delta) > 1e-9 ? Math.abs(effects[f]) / Math.abs(delta) : 0 }))
-    .filter((e) => Math.sign(e.amount) === Math.sign(delta) && Math.abs(e.amount) > 1e-9)
-    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-  return { node, delta, value: valueC, reference: valueR, effects, residual, explained, ranked };
+  const bySize = (a, b) => Math.abs(b.amount) - Math.abs(a.amount);
+  const adverse = factors.map((f) => ({ factor: f, amount: effects[f] })).filter((e) => Math.sign(e.amount) === Math.sign(delta) && Math.abs(e.amount) > 1e-9);
+  const adverseMass = adverse.reduce((s, e) => s + Math.abs(e.amount), 0);
+  const ranked = adverse.map((e) => ({ ...e, share: adverseMass > 1e-9 ? Math.abs(e.amount) / adverseMass : 0 })).sort(bySize);
+  const offsets = factors.map((f) => ({ factor: f, amount: effects[f] })).filter((e) => Math.sign(e.amount) === -Math.sign(delta) && Math.abs(e.amount) > 1e-9)
+    .map((e) => ({ ...e, share: Math.abs(delta) > 1e-9 ? Math.abs(e.amount) / Math.abs(delta) : 0 })).sort(bySize);
+  return { node, delta, value: valueC, reference: valueR, effects, residual, explained, ranked, offsets };
 }

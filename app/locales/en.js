@@ -93,6 +93,7 @@ export default {
   "analysis.gaps_share": "{{pct}} of revenue is affected by data gaps.",
   "analysis.no_cause": "No cause is stated: the data does not support one yet.",
   "analysis.no_impact": "No amount yet: an input is missing.",
+  "analysis.offset": "{{offset}} offset part of it ({{offset_amount}}).",
 
   "assumption.volume_constant_price": "constant volume at the new price",
   "assumption.orders_constant_aov": "constant orders with a larger basket",
@@ -399,7 +400,7 @@ export default {
   "insight.cm2_drop.name": "Contribution margin down",
   "insight.cm2_drop.observation": "Your contribution margin fell by {{delta_pts}} points.",
   "insight.cm2_drop.context": "{{cm2_pct}} over the period, against {{prev_cm2_pct}} {{reference}}.",
-  "insight.cm2_drop.cause": "{{factor_1}} explains {{share_1}} of the change; {{factor_2}} explains {{share_2}}.",
+  "insight.cm2_drop.cause": "{{factor_1}} explains {{share_1}} of the drop; {{factor_2}} explains {{share_2}}.",
   "insight.cm2_drop.impact": "About {{low}} to {{high}} of contribution over the period.",
   "insight.cm2_drop.recommendation": "Act on {{factor_1}} first.",
   "insight.cm2_drop.simulation": "Bring {{factor_1}} back to its previous level, everything else equal.",

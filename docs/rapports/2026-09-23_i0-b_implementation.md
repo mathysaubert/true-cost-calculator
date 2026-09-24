@@ -235,3 +235,27 @@ Clics de Mathys :
 6. C12 : aucun bouton violet ; période active neutre ; thème sombre de l'admin (jetons
    `--tcc-*` sombres) ; iPhone portrait (une colonne partout, aucun débordement horizontal).
 7. Boutique de dev : bandeau « Inclure brouillons et tests » toujours fonctionnel (POST).
+
+## 7. Addendum du 2026-09-24 : part expliquée bornée à 100 % (option 1, GO du 2026-09-24)
+
+Point 3 du §5 tranché : les parts de la cause sont désormais calculées sur la masse des effets
+adverses (somme des effets dans le sens de l'écart), donc elles totalisent 100 % ; les effets en
+sens inverse sont renvoyés à part (`offsets`, part de l'écart net) et nommés dans la phrase de
+cause dès qu'ils atteignent 10 % de l'écart (`CAUSE_OFFSET_MIN_SHARE` dans `config.js`).
+`explained` et le résidu ne changent pas.
+
+Sur la boutique en baisse : « le taux de coût produit explique 79,5 % de la baisse ; le panier
+moyen en explique 20,5 %. le volume de commandes en a compensé une partie (253,58 €). » au lieu
+de 185,8 % et 48,0 %.
+
+Fichiers : `bridge.js` (parts + `offsets`), `config.js` (seuil), `rules.js` (`causeFromBridge`
+porte `offsets` ; variables `offset` et `offset_amount` sur `cm2_drop` et
+`revenue_vs_contribution`), `render.js` (champ `offset` via la clé générique `analysis.offset`),
+`Analysis.jsx` (la compensation suit la cause dans le dépliage et la modale), catalogues en/fr
+(`analysis.offset`, « de la baisse » dans `insight.cm2_drop.cause`).
+
+Preuves : lot 27 = 101 assertions (+5 : parts Σ = 100 % et aucune > 100 %, compensation volume
+nommée avec sa part de l'écart, adverses + compensations + résidu = Δ, `offsets` vide sur feuille
+absente, variables `offset*` produites par la règle, phrase générique hors gabarits `insight.*`),
+render_check : phrase de cause exacte et absence de tout pourcentage à trois chiffres. Gate
+complète verte (lint 0 erreur, 27 lots, 79 rendus, build, fichiers protégés à 0 diff).

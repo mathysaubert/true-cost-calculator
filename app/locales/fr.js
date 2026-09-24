@@ -90,6 +90,7 @@ export default {
   "analysis.gaps_share": "{{pct}} du CA est touché par des trous de données.",
   "analysis.no_cause": "Aucune cause n'est affirmée : les données ne la portent pas encore.",
   "analysis.no_impact": "Pas encore de montant : une donnée d'entrée manque.",
+  "analysis.offset": "{{offset}} en a compensé une partie ({{offset_amount}}).",
 
   "assumption.volume_constant_price": "volume constant au nouveau prix",
   "assumption.orders_constant_aov": "commandes constantes avec un panier plus grand",
@@ -396,7 +397,7 @@ export default {
   "insight.cm2_drop.name": "Marge de contribution en baisse",
   "insight.cm2_drop.observation": "Votre marge de contribution a baissé de {{delta_pts}} points.",
   "insight.cm2_drop.context": "{{cm2_pct}} sur la période, contre {{prev_cm2_pct}} {{reference}}.",
-  "insight.cm2_drop.cause": "{{factor_1}} explique {{share_1}} de l'écart ; {{factor_2}} en explique {{share_2}}.",
+  "insight.cm2_drop.cause": "{{factor_1}} explique {{share_1}} de la baisse ; {{factor_2}} en explique {{share_2}}.",
   "insight.cm2_drop.impact": "Environ {{low}} à {{high}} de contribution sur la période.",
   "insight.cm2_drop.recommendation": "Agissez d'abord sur {{factor_1}}.",
   "insight.cm2_drop.simulation": "Ramenez {{factor_1}} à son niveau précédent, toutes choses égales par ailleurs.",

@@ -5,7 +5,7 @@
 // cause (portée par le pont seulement), levier de simulation, action unique, urgence, facilité,
 // réversibilité. Aucune phrase ici : les textes vivent dans les catalogues (insight.<id>.*).
 // kind : loss | degradation | opportunity | data | context (→ urgence par défaut).
-import { RULE_THRESHOLDS as T, URGENCY, EASE, REVERSIBILITY } from "./config.js";
+import { RULE_THRESHOLDS as T, URGENCY, EASE, REVERSIBILITY, CAUSE_OFFSET_MIN_SHARE } from "./config.js";
 import { BENCHMARKS } from "../econ/config.js";
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
@@ -16,7 +16,8 @@ const ev = (node, value, unit) => ({ node, value, unit });
 function causeFromBridge(bridge) {
   if (!bridge || bridge.delta == null || !bridge.ranked.length) return null;
   const top = bridge.ranked.slice(0, 2);
-  return { factor: top[0].factor, contributions: top.map((e) => ({ factor: e.factor, amount: e.amount, share: e.share })), explained: bridge.explained };
+  const offsets = (bridge.offsets ?? []).filter((o) => o.share >= CAUSE_OFFSET_MIN_SHARE).map((o) => ({ factor: o.factor, amount: o.amount, share: o.share }));
+  return { factor: top[0].factor, contributions: top.map((e) => ({ factor: e.factor, amount: e.amount, share: e.share })), offsets, explained: bridge.explained };
 }
 
 export const RULES = [
@@ -48,7 +49,7 @@ export const RULES = [
       const cause = causeFromBridge(bridgeCm2);
       const c = cause?.contributions ?? [];
       return {
-        vars: { delta_pts: Math.abs(deltaPts), cm2_pct: n.cm2_pct, prev_cm2_pct: r.cm2_pct, factor_1: c[0]?.factor ?? null, share_1: c[0] ? c[0].share * 100 : null, factor_2: c[1]?.factor ?? null, share_2: c[1] ? c[1].share * 100 : null, unexplained: bridgeCm2 ? (1 - bridgeCm2.explained) * 100 : null },
+        vars: { delta_pts: Math.abs(deltaPts), cm2_pct: n.cm2_pct, prev_cm2_pct: r.cm2_pct, factor_1: c[0]?.factor ?? null, share_1: c[0] ? c[0].share * 100 : null, factor_2: c[1]?.factor ?? null, share_2: c[1] ? c[1].share * 100 : null, unexplained: bridgeCm2 ? (1 - bridgeCm2.explained) * 100 : null, offset: cause?.offsets?.[0]?.factor ?? null, offset_amount: cause?.offsets?.[0]?.amount ?? null },
         evidence: [ev("cm2_pct", n.cm2_pct, "pct"), ev("cm2_pct_reference", r.cm2_pct, "pct"), ev("cm2", n.cm2, "money"), ev("cm2_reference", bridgeCm2?.reference ?? null, "money")],
         impact: { formula: "Δ CM2 (pont)", point: bridgeCm2?.delta ?? null },
         cause, explained: bridgeCm2?.explained ?? null,
@@ -69,7 +70,7 @@ export const RULES = [
       const marginRateRef = rl.known_ca_ht > 0 ? bridgeCm2.reference / rl.known_ca_ht : null;
       const gap = marginRateRef == null || current.shop.leaves.known_ca_ht == null ? null : marginRateRef * current.shop.leaves.known_ca_ht - n.cm2;
       return {
-        vars: { rev_delta: revDelta, cm2_delta: cm2Delta, factor_1: cause?.factor ?? null, share_1: cause ? cause.contributions[0].share * 100 : null, missing_share: pct(current.shop.leaves.unknown_ca_ht, n.ca_ht) },
+        vars: { rev_delta: revDelta, cm2_delta: cm2Delta, factor_1: cause?.factor ?? null, share_1: cause ? cause.contributions[0].share * 100 : null, missing_share: pct(current.shop.leaves.unknown_ca_ht, n.ca_ht), offset: cause?.offsets?.[0]?.factor ?? null, offset_amount: cause?.offsets?.[0]?.amount ?? null },
         evidence: [ev("ca_ht", n.ca_ht, "money"), ev("ca_ht_reference", r.ca_ht, "money"), ev("cm2", n.cm2, "money"), ev("cm2_reference", bridgeCm2.reference, "money")],
         impact: { formula: "taux CM2 de référence × CA HT connu − CM2", point: gap },
         cause, explained: bridgeCm2?.explained ?? null,

@@ -62,7 +62,7 @@ export function Analysis({ insight, rank = null, titles = {} }) {
           </div></div>
           {contributions.length > 0 && (
             <div className="tcc-cause">
-              <p>{r.cause}</p>
+              <p>{r.cause}{r.offset ? ` ${r.offset}` : ""}</p>
               {contributions.map((c) => (
                 <div key={c.factor} className="tcc-cause__row">
                   <span>{t.has(`factor.${c.factor}`) ? t(`factor.${c.factor}`) : t.has(`reason.${c.factor}`) ? t(`reason.${c.factor}`) : c.factor}</span>
@@ -80,7 +80,7 @@ export function Analysis({ insight, rank = null, titles = {} }) {
           <p className="tcc-calc__formula">{r.observation}</p>
           <div className="tcc-qia-host"><div className="tcc-qia">
             <div className="tcc-qia__block"><h4>{t("analysis.context")}</h4><p>{r.context ?? t("common.na")}</p></div>
-            <div className="tcc-qia__block"><h4>{t("analysis.cause")}</h4><p>{r.cause ?? t("analysis.no_cause")}</p></div>
+            <div className="tcc-qia__block"><h4>{t("analysis.cause")}</h4><p>{r.cause ? `${r.cause}${r.offset ? ` ${r.offset}` : ""}` : t("analysis.no_cause")}</p></div>
             <div className="tcc-qia__block"><h4>{t("analysis.impact")}</h4><p>{r.impact ?? t("analysis.no_impact")}</p></div>
           </div></div>
           {insight.impact?.formula && <p className="tcc-calc__note"><strong>{t("analysis.formula")}</strong>{": "}{insight.impact.formula}</p>}

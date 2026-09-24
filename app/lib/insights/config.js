@@ -30,6 +30,8 @@ export const UNCERTAINTY_BY_STATUS = { confirmed: 0, likely: 0.05, to_verify: 0.
 
 // D1 — référence : nombre de périodes moyennées ; « 6 mois » dès que l'historique le permet.
 export const REFERENCE_PERIODS = 4;
+// Compensation (effet en sens inverse) nommée dans la cause dès qu'elle atteint cette part de |Δ|.
+export const CAUSE_OFFSET_MIN_SHARE = 0.1;
 export const REFERENCE_SIX_MONTHS_DAYS = 182;
 
 // Seuils de déclenchement des règles (repères du brief ; l'objectif marchand prime, A12).

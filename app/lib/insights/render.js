@@ -2,7 +2,7 @@
 // Transforme un insight (clés + variables brutes) en textes traduits : chaque variable est
 // formatée selon son unité (table ci-dessous), les identifiants (facteur, motif, règle, produit)
 // deviennent des libellés. Aucun chiffre calculé : formatage seulement.
-const MONEY = new Set(["refunded", "gross", "discounts", "aov", "main_price", "cac", "be_cac", "landed", "price", "cm2", "net_result", "low", "high", "amount", "impact_low", "impact_high"]);
+const MONEY = new Set(["refunded", "gross", "discounts", "aov", "main_price", "cac", "be_cac", "landed", "price", "cm2", "net_result", "low", "high", "amount", "impact_low", "impact_high", "offset_amount"]);
 const PCT = new Set(["cm2_pct", "target", "known_share", "cogs_share", "order_cost_share", "prev_cm2_pct", "share_1", "share_2", "unexplained", "refund_share", "reason_share", "unknown_share", "top_share", "discount_share", "share", "otd", "missing_share", "target_rate"]);
 const SIGNED_PCT = new Set(["rev_delta", "cm2_delta", "spend_delta", "new_delta"]);
 const POINTS = new Set(["delta_pts"]);
@@ -14,7 +14,7 @@ export function formatVar(name, value, i18n, { titles = {} } = {}) {
   // Référence de comparaison : { kind, count, periodDays } ; « none » ou absente → chaîne vide.
   if (name === "reference") { const kind = typeof value === "object" && value ? value.kind : value; return kind && kind !== "none" ? t(`reference.${kind}`, typeof value === "object" ? { weeks: Math.round(((value.count ?? 1) * (value.periodDays ?? 30)) / 7) } : {}) : ""; }
   if (value == null) return t("common.na");
-  if (name === "factor" || name === "factor_1" || name === "factor_2") return t(`factor.${value}`);
+  if (name === "factor" || name === "factor_1" || name === "factor_2" || name === "offset") return t(`factor.${value}`);
   if (name === "reason") return t(`reason.${value}`);
   if (name === "rule") return t(`insight.${value}.name`);
   if (name === "top_gap") return t(`health.rule.${value}`);
@@ -48,6 +48,9 @@ export function renderInsight(insight, i18n, { titles = {}, reference = null } =
   }
   if (insight.status === "partial") { out.observation = out.partial ?? out.observation; out.impact = null; out.cause = null; out.simulation = null; }
   if (!insight.cause) out.cause = null;
+  // Compensation : un effet en sens inverse assez fort pour être nommé (cause.offsets, seuil config).
+  const off = insight.cause?.offsets?.[0] ?? null;
+  out.offset = out.cause && off ? t("analysis.offset", { offset: formatVar("offset", off.factor, i18n), offset_amount: formatVar("offset_amount", off.amount, i18n) }) : null;
   if (!insight.impact?.range) out.impact = insight.impact?.formula && insight.status !== "partial" ? out.impact : null;
   const conf = insight.status === "partial" ? "to_verify" : insight.status;
   out.confidence = { key: conf, label: t(`confidence.${conf}.label`), help: t(`confidence.${conf}.help`) };
