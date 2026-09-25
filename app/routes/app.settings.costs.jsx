@@ -35,6 +35,8 @@ export const action = async ({ request }) => {
   if (intent === "save_shipping") {
     const { rules, errors } = shippingRulesFromForm(form);
     if (Object.keys(errors).length) return { intent, ok: false, errors };
+    // Rien de saisi : réglage non renseigné, pas de « donnée corrigée » au journal.
+    if (!rules.confirmed) return { intent, ...(await saveShippingRules({ supabase, shop, rules })) };
     return done(await saveShippingRules({ supabase, shop, rules }), "shipping_cost_rules");
   }
   if (intent === "save_gateway") {

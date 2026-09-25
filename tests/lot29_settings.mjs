@@ -30,7 +30,7 @@ console.log("\n── 2. Port par pays, passerelles, coûts fixes ──");
 {
   const s = shippingRulesFromForm(fd({ shipping_default: "4,90", shipping_country_1: "fr", shipping_amount_1: "3", shipping_country_2: "", shipping_amount_2: "", shipping_country_3: "USA", shipping_amount_3: "9" }));
   ok(s.rules.default === 4.9 && s.rules.byCountry.FR === 3 && s.rules.confirmed === true && s.errors.shipping_country_3 === "invalid" && !("USA" in s.rules.byCountry), "port : défaut, pays en majuscules, ligne vide ignorée, code à 3 lettres refusé, confirmé");
-  ok(shippingRulesFromForm(fd({ shipping_default: "" })).rules.default === 0 && shippingRulesFromForm(fd({ shipping_default: "-2" })).errors.shipping_default === "range", "port : défaut vide → 0 ; négatif refusé");
+  ok(shippingRulesFromForm(fd({ shipping_default: "" })).rules.default === null && shippingRulesFromForm(fd({ shipping_default: "" })).rules.confirmed === false && shippingRulesFromForm(fd({ shipping_default: "-2" })).errors.shipping_default === "range", "port : défaut vide → non renseigné (null, non confirmé), jamais 0 ; négatif refusé");
   const g = gatewayRuleFromForm(fd({ gateway: "shopify_payments", pct: "1,5", fixed: "0.25" }));
   ok(g.rule.gateway === "shopify_payments" && g.rule.pct === 1.5 && g.rule.fixed === 0.25 && g.rule.confirmed === true && !Object.keys(g.errors).length, "règle de passerelle confirmée à la sauvegarde");
   ok(gatewayRuleFromForm(fd({ gateway: "", pct: "", fixed: "50" })).errors.gateway === "invalid" && gatewayRuleFromForm(fd({ gateway: "x", pct: "", fixed: "50" })).errors.pct === "invalid" && gatewayRuleFromForm(fd({ gateway: "x", pct: "1", fixed: "50" })).errors.fixed === "range", "règle : passerelle, taux vide, fixe hors borne");

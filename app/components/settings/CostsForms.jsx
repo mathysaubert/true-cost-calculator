@@ -2,7 +2,7 @@
 // Chaque bloc = un formulaire POST natif avec son intent ; aucun champ contrôlé.
 import { Form } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
-import { FIELDS, SHIPPING_ROWS, presetFor, ruleFor, isActiveFixedCost } from "../../lib/settings.js";
+import { FIELDS, SHIPPING_ROWS, presetFor, ruleFor, isActiveFixedCost, shippingState } from "../../lib/settings.js";
 import { NumberField, TextField, DateField } from "./Fields.jsx";
 import { Icon } from "../overview/Icons.jsx";
 
@@ -27,15 +27,18 @@ export function OrderCostsForm({ settings = {}, result = null }) {
   );
 }
 
+const SHIPPING_TONE = { set: "tcc-badge--good", unconfirmed: "tcc-badge--warn", unset: "tcc-badge--bad" };
+
 export function ShippingForm({ settings = {}, result = null }) {
   const { t } = useI18n();
   const rules = settings.shipping_cost_rules ?? {};
   const rows = Object.entries(rules.byCountry ?? {});
+  const shipState = shippingState(rules);
   return (
     <section className="tcc-block" aria-labelledby="tcc-shipping-title">
       <div className="tcc-block__head">
         <h3 id="tcc-shipping-title">{t("settings.shipping.title")}</h3>
-        <span className={`tcc-badge ${rules.confirmed ? "tcc-badge--good" : "tcc-badge--warn"}`}>{rules.confirmed ? t("settings.status.set") : t("settings.status.unconfirmed")}</span>
+        <span className={`tcc-badge ${SHIPPING_TONE[shipState]}`} data-shipping-state={shipState}>{t(`settings.status.${shipState}`)}</span>
       </div>
       <p className="tcc-muted">{t("settings.shipping.help")}</p>
       <Form method="post" data-save-bar="" className="tcc-form">

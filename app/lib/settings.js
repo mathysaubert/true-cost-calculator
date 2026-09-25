@@ -82,8 +82,22 @@ export function shippingRulesFromForm(form) {
     if (a < 0 || a > 10000) { errors[`shipping_amount_${i}`] = "range"; continue; }
     byCountry[c] = Math.round(a * 100) / 100;
   }
-  const rules = { default: def == null ? 0 : Math.round(def * 100) / 100, byCountry, confirmed: true };
+  // Règle « non renseigné » (2026-09-25) : un port par défaut vide reste NULL, jamais 0 € ; le moteur
+  // compte alors le port facturé au client, signalé « à confirmer ». 0 saisi = vrai choix de 0 €.
+  // Confirmé seulement si le marchand a saisi quelque chose (défaut ou surcharge par pays).
+  const dflt = def == null || def === undefined ? null : Math.round(def * 100) / 100;
+  const rules = { default: dflt, byCountry, confirmed: dflt != null || Object.keys(byCountry).length > 0 };
   return { rules, errors };
+}
+
+// État du port marchand : set (défaut confirmé : toutes les commandes couvertes) ; unconfirmed
+// (surcharges par pays seules, ou règle non confirmée : le reste retombe sur le port facturé) ; unset.
+export function shippingState(rules = {}) {
+  const sr = rules ?? {};
+  const hasDefault = sr.default != null, hasCountries = Object.keys(sr.byCountry ?? {}).length > 0;
+  if (sr.confirmed === true && hasDefault) return "set";
+  if (hasDefault || hasCountries) return "unconfirmed";
+  return "unset";
 }
 
 // Règle de frais d'une passerelle (S4) : une sauvegarde = une confirmation.
@@ -151,7 +165,7 @@ export function settingsStatus({ settings = {}, fixedCosts = [], gateways = [], 
     st("promo_rules", "marketing", promoRules.length ? "set" : "unset"),
     st("ads_connection", "connections", conn.some((c) => c.status === "connected") ? "set" : conn.some((c) => c.status === "error" || c.status === "revoked") ? "unconfirmed" : "unset"),
     st("gateway_fees", "costs", gwState),
-    st("shipping", "costs", sr.confirmed ? "set" : "unset"),
+    st("shipping", "costs", shippingState(sr)),
     st("packaging", "costs", settings.packaging_cost_per_order != null ? "set" : "unset"),
     st("return_cost", "costs", settings.return_cost_per_return != null ? "set" : "unset"),
     st("fixed_costs", "costs", active.length ? "set" : "unset"),
