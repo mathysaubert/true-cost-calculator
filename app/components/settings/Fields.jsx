@@ -3,20 +3,35 @@
 // valeur courante non confirmée (S6 : jamais enregistrée à la place du marchand). Repli (S3b) :
 // champs HTML natifs, décidé au premier rendu réel si les FormData n'arrivent pas.
 // D0 (React 19) : sur un web component, React 19 pose `value` en PROPRIÉTÉ au rendu client, alors que
-// Polaris lit la valeur de départ dans l'ATTRIBUT `value` (= propriété `defaultValue`), celle que
-// remet « Annuler » (form.reset → formResetCallback : value = defaultValue || ""). On passe donc la
-// même valeur à la propriété `defaultValue`, CÔTÉ CLIENT seulement (useStartValue) : le rendu serveur
-// garde l'attribut value seul (pas d'écart d'hydratation), le rendu client pose defaultValue, que
-// Polaris reflète dans l'attribut. Même valeur de départ dans les deux chemins. Preuve : tests/lot35.
+// Polaris lit la valeur de départ UNIQUEMENT dans l'ATTRIBUT `value`, celle que remet « Annuler »
+// (form.reset → formResetCallback : value = defaultValue || "", défaut lu dans l'attribut). Or Polaris
+// surcharge setAttribute sur ses éléments et IGNORE l'écriture d'un attribut dont le nom figure dans les
+// props React de l'élément (`value` y est) : ni la propriété `defaultValue` ni el.setAttribute ne créent
+// l'attribut (mesuré dans un vrai navigateur, vrai polaris.js : scripts/browser_reset_check.mjs). Seul
+// le HTML analysé (rendu serveur) le crée. useStartValue écrit donc l'attribut par la méthode DOM
+// native (Element.prototype.setAttribute), côté client seulement, à la même valeur que le rendu serveur.
 import { useLayoutEffect, useRef } from "react";
 import { useI18n } from "../../lib/i18n/context.jsx";
 
 const fmt = (v) => (v == null || v === "" ? "" : String(v));
 
-// Valeur de départ (celle que remet « Annuler ») posée sur l'élément Polaris à chaque valeur enregistrée.
-function useStartValue(start) {
+// Valeur de départ (celle que remet « Annuler »), remise à jour à chaque valeur enregistrée :
+// • champ texte : attribut `value` de l'élément ;
+// • liste s-select : sa réinitialisation reprend l'option portant l'attribut `selected` (sinon la
+//   première) ; on le pose sur l'option enregistrée et on le retire des autres.
+const setAttr = (el, name, v) => Element.prototype.setAttribute.call(el, name, v);
+const dropAttr = (el, name) => Element.prototype.removeAttribute.call(el, name);
+const startOnText = (el, start) => { if (el.getAttribute("value") !== start) setAttr(el, "value", start); };
+const startOnSelect = (el, start) => {
+  for (const o of el.querySelectorAll("s-option")) {
+    const v = o.value ?? o.getAttribute("value");
+    if (String(v) === start) { if (!o.hasAttribute("selected")) setAttr(o, "selected", ""); }
+    else if (o.hasAttribute("selected")) dropAttr(o, "selected");
+  }
+};
+function useStartValue(start, apply = startOnText) {
   const ref = useRef(null);
-  useLayoutEffect(() => { if (ref.current) ref.current.defaultValue = start; }, [start]);
+  useLayoutEffect(() => { if (ref.current) apply(ref.current, start); }, [start, apply]);
   return ref;
 }
 
@@ -73,10 +88,10 @@ export function SettingsBanner({ result, intent = null }) {
 // Liste déroulante Polaris non contrôlée : `value` initial, options { value, label } déjà traduites.
 export function SelectField({ name, label, value = "", options = [], help = null, error = null }) {
   const { t } = useI18n();
-  const start = useStartValue(value ?? "");
+  const start = useStartValue(value == null ? "" : String(value), startOnSelect);
   return (
     <s-select ref={start} name={name} label={label} value={value ?? ""} details={help ?? undefined} error={error ? t(`settings.error.${error}`) : undefined}>
-      {options.map((o) => <s-option key={String(o.value)} value={String(o.value)}>{o.label}</s-option>)}
+      {options.map((o) => <s-option key={String(o.value)} value={String(o.value)} selected={String(o.value) === String(value ?? "") ? true : undefined}>{o.label}</s-option>)}
     </s-select>
   );
 }
