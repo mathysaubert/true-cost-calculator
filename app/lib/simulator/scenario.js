@@ -23,9 +23,10 @@ export function parseScenario(get) {
 }
 
 // Valeurs → chaîne de requête (sans les zéros), pour les liens de pré-chargement et de rejeu.
-export function scenarioSearch({ values = {}, rule = null, days = null, horizon = null } = {}) {
+export function scenarioSearch({ values = {}, rule = null, days = null, horizon = null, mode = null, product = null } = {}) {
   const p = new URLSearchParams();
   if (days) p.set("days", String(days));
+  if (mode === "product" && product) { p.set("mode", "product"); p.set("product", String(product)); }
   for (const l of LEVERS) { const v = num(values[l.id]); if (v != null && v !== 0) p.set(l.id, String(round1(v))); }
   if (rule) p.set("rule", rule);
   if (horizon && horizon !== "period") p.set("h", horizon);

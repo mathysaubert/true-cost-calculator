@@ -49,8 +49,11 @@ export async function reviewDueDecisions({ supabase, shop, admin = null, now = n
   for (const d of dueForReview(data ?? [], now)) {
     try {
       const w = reviewWindow(d);
-      const view = await loadOverview({ supabase, shop, admin, days: w.days, now: w.now, withBriefing: false });
-      const obs = observedImpact({ afterNodes: view.waterfall?.nodes ?? {}, beforeNodes: view.previousNodes ?? {}, beforeOrders: view.previousOrders ?? 0, node: d.scenario?.node ?? "cm2" });
+      const productId = d.scenario?.product_id ?? null;
+      const view = await loadOverview({ supabase, shop, admin, days: w.days, now: w.now, withBriefing: false, observeProduct: productId });
+      // S3 : une décision produit est observée sur ce produit seul, jamais sur toute la boutique.
+      const src = productId ? { afterNodes: view.productObs?.after ?? {}, beforeNodes: view.productObs?.before ?? {}, beforeOrders: view.productObs?.beforeOrders ?? 0 } : { afterNodes: view.waterfall?.nodes ?? {}, beforeNodes: view.previousNodes ?? {}, beforeOrders: view.previousOrders ?? 0 };
+      const obs = observedImpact({ ...src, node: d.scenario?.node ?? "cm2" });
       const { error: e2 } = await supabase.from("decision_log").update({ observed_impact: obs.value, observed_at: now.toISOString(), note: obs.reason ? `observed:${obs.reason}` : null }).eq("shop_domain", shop).eq("id", d.id);
       if (e2) { console.warn(`[Decisions] observé KO : ${e2.message}`); continue; }
       if (obs.value == null) out.unobservable++; else out.reviewed++;

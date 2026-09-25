@@ -14,7 +14,7 @@ import { Icon } from "../overview/Icons.jsx";
 
 const num = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
 
-export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {}, rule = null, horizon: initialHorizon = "period", memory = [], compare = [], now = null }) {
+export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {}, rule = null, horizon: initialHorizon = "period", memory = [], compare = [], now = null, mode = "shop", product = null, productTitle = null }) {
   const { t, byUnit, money, ratio, pct, day } = useI18n();
   const [values, setValues] = useState(initial);
   const [horizon, setHorizon] = useState(initialHorizon);
@@ -35,6 +35,7 @@ export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {
   return (
     <div className="tcc-sim">
       {rule && <p className="tcc-muted tcc-sim__from"><Icon id="spark" />{t("sim.from_rule", { name: t(`insight.${rule}.name`) })}</p>}
+      {mode === "product" && productTitle && <p className="tcc-muted tcc-sim__from" data-sim-product={product}><Icon id="products" />{t("sim.product.scope", { title: productTitle })}</p>}
       <div className="tcc-sim__grid">
         <section className="tcc-block tcc-sim__levers" aria-labelledby="tcc-sim-levers">
           <div className="tcc-block__head"><h3 id="tcc-sim-levers">{t("sim.levers.title")}</h3><button type="button" className="tcc-cta tcc-cta--ghost" onClick={() => setValues({})}>{t("sim.reset")}</button></div>
@@ -107,6 +108,8 @@ export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {
           <Form method="post" className="tcc-decision">
             <input type="hidden" name="intent" value="keep" />
             <input type="hidden" name="days" value={days} />
+            <input type="hidden" name="mode" value={mode} />
+            {product && <input type="hidden" name="product" value={product} />}
             <input type="hidden" name="h" value={horizon} />
             {rule && <input type="hidden" name="rule" value={rule} />}
             {LEVERS.map((l) => (values[l.id] != null ? <input key={l.id} type="hidden" name={l.id} value={values[l.id]} /> : null))}
@@ -142,14 +145,15 @@ export function Simulator({ leaves = {}, periodDays = 30, days = 30, initial = {
                 <li key={m.id} data-decision={m.id} data-observed={st}>
                   <Icon id="chart" />
                   <span>
-                    {m.rule_id ? t(`insight.${m.rule_id}.name`) : t("sim.memory.manual")}{" · "}{m.decided_at}
+                    {m.mode === "new" ? t("sim.memory.new_product", { cm2: money(m.new_cm2), pct: pct(m.new_cm2_pct) }) : m.rule_id ? t(`insight.${m.rule_id}.name`) : t("sim.memory.manual")}
+                    {m.mode === "product" && m.product_title ? ` · ${t("sim.memory.product", { title: m.product_title })}` : ""}{" · "}{m.decided_at}
                     {m.expected_low != null ? ` · ${t("sim.memory.expected", { low: money(m.expected_low), high: money(m.expected_high) })}` : ""}
                     {st === "observed" ? ` · ${t("sim.memory.observed", { value: `${m.observed_impact > 0 ? "+" : ""}${money(m.observed_impact)}` })}` : ""}
                     {st === "unobservable" ? ` · ${t("sim.memory.unobservable")}` : ""}
                     {st === "pending" ? ` · ${t("sim.memory.pending", { date: day(String(m.review_at).slice(0, 10)) })}` : ""}
                     {st === "due" ? ` · ${t("sim.memory.due")}` : ""}
-                    {" · "}<Link to={`/app/simulator${scenarioSearch({ values: m.values, rule: m.rule_id, days: m.days, horizon: m.horizon })}`}>{t("sim.memory.replay")}</Link>
-                    {" · "}<Link to={`/app/simulator${currentSearch()}${currentSearch() ? "&" : "?"}compare=${nextCompare.join(",")}`} data-compare-toggle={inCompare ? "remove" : "add"}>{inCompare ? t("sim.compare.remove") : t("sim.compare.add")}</Link>
+                    {m.mode !== "new" && <>{" · "}<Link to={`/app/simulator${scenarioSearch({ values: m.values, rule: m.rule_id, days: m.days, horizon: m.horizon, mode: m.mode, product: m.product_id })}`}>{t("sim.memory.replay")}</Link></>}
+                    {m.mode !== "new" && <>{" · "}<Link to={`/app/simulator${currentSearch()}${currentSearch() ? "&" : "?"}compare=${nextCompare.join(",")}`} data-compare-toggle={inCompare ? "remove" : "add"}>{inCompare ? t("sim.compare.remove") : t("sim.compare.add")}</Link></>}
                   </span>
                 </li>
               );

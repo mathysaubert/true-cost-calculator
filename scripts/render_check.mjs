@@ -559,6 +559,30 @@ check("CSV (fr) : lien d'export data:text/csv téléchargeable, formulaire multi
   wrap("fr", React.createElement(CostsCsv, { csv: "variant_id,prix_achat\ngid,1", result: { intent: "import_csv", ok: true, saved: 3, csvErrors: [{ line: 4, fields: ["prix_achat", "categorie"] }, { line: 7, fields: ["variant_id"] }] } })),
   (h) => /href="data:text\/csv;charset=utf-8,variant_id%2Cprix_achat/.test(h) && /download="true-cost-calculator-costs\.csv"/.test(h) && /enctype="multipart\/form-data"/i.test(h) && /<input type="file" name="csv"/.test(h) && /3 variantes importées\. 2 lignes ont été rejetées\./.test(h) && /Ligne 4 : prix d(?:&#x27;|')achat, catégorie/.test(h) && /identifiant de variante manquant/.test(h));
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  S3 — Simulateur, mode Produit (produit existant, nouveau produit).
+// ════════════════════════════════════════════════════════════════════════════════
+const { NewProduct } = await vite.ssrLoadModule("/app/components/simulator/NewProduct.jsx");
+const { ModeBar } = await vite.ssrLoadModule("/app/components/simulator/ModeBar.jsx");
+const npInit = { price_ttc: "60", prix_achat: "22", port_entrant: "40", qty_par_lot: "10", packaging: "0.5", shipping: "4", payment_pct: "1.5", payment_fixed: "0.25", return_rate_pct: "5", return_cost: "3", vat_regime: "assujetti", shipping_model: "stock", categorie: "Textile" };
+
+console.log("\n=== RENDU RÉEL — Simulateur S3 (mode Produit) ===");
+check("barre de modes (fr) : 3 modes (Toute la boutique, Produit existant actif, Nouveau produit), sélecteur de produit en GET (2 produits, CA et commandes), bouton Charger",
+  wrapEur("fr", React.createElement(ModeBar, { mode: "product", products: [{ id: "gid://shopify/Product/1", title: "Tee", ca_ht: 1200, orders: 20 }, { id: "gid://shopify/Product/2", title: "Cap", ca_ht: 300, orders: 12 }], product: "gid://shopify/Product/1", days: 30 })),
+  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 3 && /aria-current="page"[^>]*>Produit existant</.test(h) && /<form method="get"[^>]*data-product-picker/.test(h) && /<option value="gid:\/\/shopify\/Product\/1" selected="">Tee · 1.200,00.€ · 20 commandes</.test(h) && /Cap · 300,00.€ · 12 commandes/.test(h) && />Charger</.test(h) && /2 produits vendus/.test(h));
+check("produit existant : le Simulateur annonce le périmètre produit et porte mode + produit dans « Retenir »",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { price: 5 }, mode: "product", product: "gid://shopify/Product/1", productTitle: "Tee" })),
+  (h) => /data-sim-product="gid:\/\/shopify\/Product\/1"/.test(h) && /Simulé sur les commandes réelles de : Tee/.test(h) && /name="mode" value="product"/.test(h) && /name="product" value="gid:\/\/shopify\/Product\/1"/.test(h));
+check("nouveau produit (fr, marchand FR) : 11 champs + 3 listes, cascade unitaire (prix HT, coût rendu, CM1, 4 coûts, CM2), CM2 % avec TVA de vente 20 %, méthode douane UE, bloc prix minimum, formulaire keep_new avec les données",
+  wrapEur("fr", React.createElement(NewProduct, { initial: npInit, shopCountryCode: "FR", days: 30 })),
+  (h) => (h.match(/data-field="/g) ?? []).length === 14 && /data-new-state="ok"/.test(h) && (h.match(/data-line="/g) ?? []).length === 8 && /data-line="price_ht"[\s\S]*?50,00.€/.test(h) && /TVA de vente 20,0.%/.test(h) && /douane UE/.test(h) && /Prix minimum pour un objectif/.test(h) && /name="intent" value="keep_new"/.test(h) && /name="np_prix_achat" value="22"/.test(h) && !/<s-text-field/.test(h));
+check("mémoire (fr) : ligne nouveau produit (CM2 unitaire et %, sans Rejouer ni Comparer), ligne produit existant (titre, Rejouer avec mode=product et produit)",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: {}, now: "2026-09-25T00:00:00Z", memory: [{ id: "n1", decided_at: "2026-09-25", rule_id: null, values: {}, mode: "new", new_cm2: 12.58, new_cm2_pct: 25.2 }, { id: "p1", decided_at: "2026-09-25", rule_id: null, values: { price: 5 }, days: 30, horizon: "period", mode: "product", product_id: "gid://shopify/Product/1", product_title: "Tee", expected_low: 10, expected_high: 20, review_at: "2026-10-25T00:00:00Z" }] })),
+  (h) => { const n = h.match(/<li data-decision="n1"[\s\S]*?<\/li>/)?.[0] ?? "", pr = h.match(/<li data-decision="p1"[\s\S]*?<\/li>/)?.[0] ?? ""; return /Nouveau produit : marge de contribution 2 de 12,58.€ par unité \(25,2.%\)/.test(n) && !/Rejouer|data-compare-toggle/.test(n) && /produit Tee/.test(pr) && /mode=product&amp;product=gid%3A%2F%2Fshopify%2FProduct%2F1/.test(pr) && /data-compare-toggle="add"/.test(pr); });
+check("nouveau produit vide (en) : « Enter at least: Selling price incl. tax, Purchase price », bouton Retenir désactivé",
+  wrapEur("en", React.createElement(NewProduct, { initial: {}, shopCountryCode: "FR", days: 30 })),
+  (h) => /data-new-state="missing"/.test(h) && /Enter at least: Selling price incl\. tax, Purchase price\./.test(h) && /<s-button type="submit" variant="secondary" disabled="true">/.test(h));
+
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
 process.exit(ko === 0 ? 0 : 1);
