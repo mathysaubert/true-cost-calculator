@@ -439,7 +439,9 @@ check("Marketing VIDE : trois messages, commission manuelle demande d'abord un p
   wrap("fr", React.createElement("div", null, React.createElement(Partners, { partners: [] }), React.createElement(PromoRules, { rules: [], partners: [], codes: [] }), React.createElement(ManualCommissions, { commissions: [], partners: [{ id: "p1", name: "A", mode: "codes" }] }))),
   (h) => /Aucun partenaire pour le moment/.test(h) && /Aucune règle pour le moment/.test(h) && /Aucune commission manuelle/.test(h) && /Ajoutez d(?:&#x27;|')abord un partenaire payé manuellement/.test(h) && !/name="intent" value="add_manual_commission"/.test(h));
 check("Connexions : Shopify synchronisé « il y a N heures » Connecté, Meta en erreur avec message, 3 autres « Non connecté · connecteur à venir »",
-  wrap("fr", React.createElement(ConnectionsList, { items: connectionsStatus({ rows: [{ provider: "meta", status: "error", external_account_name: "Compte X", last_sync_at: "2026-09-23T10:00:00Z", last_error: "token expiré" }], lastSync: "2026-09-24T10:00:00Z", now: "2026-09-24T12:00:00Z" }) })),
+  // Dates relatives à l'horloge réelle : le composant mesure l'écart avec l'heure courante (dates fixes
+  // = scénario qui bascule en « hier » au fil de la journée).
+  wrap("fr", React.createElement(ConnectionsList, { items: connectionsStatus({ rows: [{ provider: "meta", status: "error", external_account_name: "Compte X", last_sync_at: new Date(Date.now() - 50 * 3_600_000).toISOString(), last_error: "token expiré" }], lastSync: new Date(Date.now() - 2 * 3_600_000).toISOString(), now: new Date().toISOString() }) })),
   (h) => (h.match(/data-provider="/g) ?? []).length === 5 && /data-provider="shopify" data-status="connected"/.test(h) && /dernière synchronisation il y a \d+ heures?/.test(h) && /data-provider="meta" data-status="error"[\s\S]*?Compte X · [\s\S]*?erreur : token expiré[\s\S]*?tcc-badge--bad">Erreur</.test(h) && (h.match(/Non connecté · connecteur à venir/g) ?? []).length === 0 && (h.match(/connecteur à venir/g) ?? []).length === 3 && (h.match(/>Non connecté</g) ?? []).length === 3);
 
 // ════════════════════════════════════════════════════════════════════════════════
