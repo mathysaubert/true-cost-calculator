@@ -10,9 +10,17 @@ const { CustomsClassificationPanel: Panel, CustomsEstimatedTag: Tag, CustomsFeed
 const { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPanel } = await vite.ssrLoadModule("/app/components/costsUi.jsx");
 
 let ko = 0;
+// D0 (React 19) : React 19 sérialise method/action du <form> après les autres attributs. L'ordre des
+// attributs n'a aucun sens en HTML : on le normalise (method, action d'abord) pour garder des attentes stables.
+const normalizeForms = (html) => html.replace(/<form((?:\s+[\w-]+(?:="[^"]*")?)*)\s*>/g, (m, attrs) => {
+  const list = attrs.match(/[\w-]+(?:="[^"]*")?/g) ?? [];
+  const pick = (n) => list.filter((x) => x.split("=")[0].toLowerCase() === n);
+  const rest = list.filter((x) => !["method", "action"].includes(x.split("=")[0].toLowerCase()));
+  return `<form ${[...pick("method"), ...pick("action"), ...rest].join(" ")}>`;
+});
 function render(element) {
   const router = createMemoryRouter([{ path: "/", element }]);
-  return renderToStaticMarkup(React.createElement(RouterProvider, { router }));
+  return normalizeForms(renderToStaticMarkup(React.createElement(RouterProvider, { router })));
 }
 function check(label, element, expect) {
   try {
@@ -400,7 +408,7 @@ check("scénario pré-chargé (panier +7 %, règle) : 8 leviers (range + number,
   (h) => (h.match(/<input type="range"/g) ?? []).length === 8 && (h.match(/<input type="number" inputMode="decimal" aria-labelledby=/g) ?? []).length === 8 && /id="lever-basket"[^>]*value="7"/.test(h) && /Pré-chargé depuis : Panier proche du prix du produit principal/.test(h) && (h.match(/data-node="/g) ?? []).length === 5 && /data-node="cm2"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">\+/.test(h) && /data-node="be_roas"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">-/.test(h) && /data-node="be_roas"/.test(h) && /commandes constantes avec un panier plus grand \(× 1\.07\)/.test(h) && /name="intent" value="keep"/.test(h) && /type="hidden" name="basket" value="7"/.test(h) && /Retenir ce scénario/.test(h) && !/<s-text-field|<s-select/.test(h) && !/ style="/.test(h));
 check("scénario vide : « Déplacez un levier », écarts 0 sans signe, bouton Retenir désactivé, mémoire vide",
   wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: {}, memory: [] })),
-  (h) => /Déplacez un levier pour voir l(?:&#x27;|')effet/.test(h) && !/tcc-simtable__delta is-good/.test(h) && !/tcc-simtable__delta is-bad/.test(h) && /<s-button type="submit" variant="secondary" disabled="true">Retenir/.test(h) && /Aucun scénario retenu/.test(h));
+  (h) => /Déplacez un levier pour voir l(?:&#x27;|')effet/.test(h) && !/tcc-simtable__delta is-good/.test(h) && !/tcc-simtable__delta is-bad/.test(h) && /<s-button type="submit" variant="secondary" disabled="(?:true)?">Retenir/.test(h) && /Aucun scénario retenu/.test(h));
 check("horizon mois + levier indisponible (pas de pub) : bouton « Par mois » pressé, budget pub et CAC grisés « Indisponible », mémoire avec un scénario rejouable",
   wrapEur("fr", React.createElement(Simulator, { leaves: simMissing, periodDays: 30, days: 7, initial: { cogs: -10 }, horizon: "month", memory: [{ id: "d1", decided_at: "2026-09-24", rule_id: "aov_vs_main_price", values: { basket: 7 }, days: 30, horizon: "period", expected_low: 80, expected_high: 120 }] })),
   (h) => /aria-pressed="true">Par mois \(30 jours\)</.test(h) && /aria-pressed="false">Période choisie \(7 jours\)</.test(h) && /data-lever="ad_budget" [^>]*class="tcc-lever is-off"|class="tcc-lever is-off" data-lever="ad_budget"/.test(h) && (h.match(/Indisponible : le moteur/g) ?? []).length === 2 && /Montants projetés sur un mois glissant/.test(h) && /data-decision="d1"/.test(h) && /href="\/app\/simulator\?days=30&amp;basket=7&amp;rule=aov_vs_main_price"[^>]*>Rejouer</.test(h) && /80,00.€ – 120,00.€/.test(h));
@@ -557,7 +565,7 @@ check("douane (en) : 1 produit à confirmer (Tee, catégorie stockée Textile pr
   (h) => /Customs classification: 1 product to confirm/.test(h) && /data-customs="gid:\/\/shopify\/Product\/A"/.test(h) && !/data-customs="gid:\/\/shopify\/Product\/B"/.test(h) && /<s-select name="categorie"[^>]*value="Textile"/.test(h) && /<s-option value="Électronique">Electronics</.test(h) && /value="confirm_customs"/.test(h));
 check("CSV (fr) : lien d'export data:text/csv téléchargeable, formulaire multipart d'import, résultat 3 importées + 2 lignes rejetées avec champs traduits",
   wrap("fr", React.createElement(CostsCsv, { csv: "variant_id,prix_achat\ngid,1", result: { intent: "import_csv", ok: true, saved: 3, csvErrors: [{ line: 4, fields: ["prix_achat", "categorie"] }, { line: 7, fields: ["variant_id"] }] } })),
-  (h) => /href="data:text\/csv;charset=utf-8,variant_id%2Cprix_achat/.test(h) && /download="true-cost-calculator-costs\.csv"/.test(h) && /enctype="multipart\/form-data"/i.test(h) && /<input type="file" name="csv"/.test(h) && /3 variantes importées\. 2 lignes ont été rejetées\./.test(h) && /Ligne 4 : prix d(?:&#x27;|')achat, catégorie/.test(h) && /identifiant de variante manquant/.test(h));
+  (h) => /href="data:text\/csv;charset=utf-8,variant_id%2Cprix_achat/.test(h) && /download="true-cost-calculator-costs\.csv"/.test(h) && /enctype="multipart\/form-data"/i.test(h) && /<input type="file"[^>]*name="csv"/.test(h) && /3 variantes importées\. 2 lignes ont été rejetées\./.test(h) && /Ligne 4 : prix d(?:&#x27;|')achat, catégorie/.test(h) && /identifiant de variante manquant/.test(h));
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  S3 — Simulateur, mode Produit (produit existant, nouveau produit).
@@ -581,7 +589,7 @@ check("mémoire (fr) : ligne nouveau produit (CM2 unitaire et %, sans Rejouer ni
   (h) => { const n = h.match(/<li data-decision="n1"[\s\S]*?<\/li>/)?.[0] ?? "", pr = h.match(/<li data-decision="p1"[\s\S]*?<\/li>/)?.[0] ?? ""; return /Nouveau produit : marge de contribution 2 de 12,58.€ par unité \(25,2.%\)/.test(n) && !/Rejouer|data-compare-toggle/.test(n) && /produit Tee/.test(pr) && /mode=product&amp;product=gid%3A%2F%2Fshopify%2FProduct%2F1/.test(pr) && /data-compare-toggle="add"/.test(pr); });
 check("nouveau produit vide (en) : « Enter at least: Selling price incl. tax, Purchase price », bouton Retenir désactivé",
   wrapEur("en", React.createElement(NewProduct, { initial: {}, shopCountryCode: "FR", days: 30 })),
-  (h) => /data-new-state="missing"/.test(h) && /Enter at least: Selling price incl\. tax, Purchase price\./.test(h) && /<s-button type="submit" variant="secondary" disabled="true">/.test(h));
+  (h) => /data-new-state="missing"/.test(h) && /Enter at least: Selling price incl\. tax, Purchase price\./.test(h) && /<s-button type="submit" variant="secondary" disabled="(?:true)?">/.test(h));
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  D1c — Section Produits (liste par produit, audit catalogue Expert).

@@ -1,4 +1,6 @@
-import { AppProvider } from "@shopify/shopify-app-react-router/react";
+// D0 (shopify-app-react-router 3) : AppProvider n'accepte plus embedded={false} ; la page de connexion
+// manuelle charge elle-même Polaris (même URL que AppProvider) au lieu d'envelopper App Bridge.
+const POLARIS_URL = "https://cdn.shopify.com/shopifycloud/polaris.js";
 import { useState } from "react";
 import { Form, useActionData, useLoaderData } from "react-router";
 import { login } from "../../shopify.server";
@@ -25,7 +27,8 @@ export default function Auth() {
   const { errors } = actionData || loaderData;
 
   return (
-    <AppProvider embedded={false}>
+    <>
+      <script src={POLARIS_URL} />
       <s-page>
         <Form method="post">
           <s-section heading="Log in">
@@ -42,6 +45,6 @@ export default function Auth() {
           </s-section>
         </Form>
       </s-page>
-    </AppProvider>
+    </>
   );
 }

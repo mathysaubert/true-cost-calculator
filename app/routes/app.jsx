@@ -48,7 +48,7 @@ export default function App() {
   const { apiKey, locale, catalogs, currency, timeZone } = useLoaderData();
 
   return (
-    <AppProvider embedded apiKey={apiKey}>
+    <AppProvider apiKey={apiKey}>
       <I18nProvider locale={locale} catalogs={catalogs} currency={currency} timeZone={timeZone}>
         <AppNav />
         <Outlet />
