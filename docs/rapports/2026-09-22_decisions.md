@@ -535,3 +535,19 @@ sauvegarde App Bridge s'attache à un `<form>` natif par l'attribut `data-save-b
 état React → R3 ; (3) l'emplacement réservé fait 140 px (`min-block-size`) : la courbe fixe une
 hauteur en `rem` commune à la carte vide et au graphique.
 
+## K. S2 Simulateur : mode objectif, comparaison, résultat observé (2026-09-24)
+
+Phase 0 : `2026-09-24_s2_phase0.md`. Toutes les recommandations retenues.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| W1 | (b) Nœuds cibles du mode objectif : CM2 %, CM2, résultat, BE-ROAS (même liste que le résultat du Simulateur) | lot S2a |
+| W2 | (a) Les 8 leviers, un à la fois, par **bissection maison sur `runScenario`** dans `app/lib/simulator/objective.js` ; `findThreshold` du moteur intouché | lot S2a |
+| W3 | (a) Comparaison de 2 à 3 scénarios : le courant + des scénarios retenus (`?compare=<id>,<id>`), **rejoués sur les feuilles du jour**, mention « recalculé sur la période courante » | lot S2b |
+| W4 | (a) Résultat observé calculé à l'ouverture du Simulateur, en arrière-plan, pour les décisions dont `review_at ≤ maintenant` et `observed_at` vide ; (b) cron plus tard avec les notifications | lot S2c, aucun cron nouveau |
+| W5 | Observé = CM2 des 30 jours après la décision − CM2 des 30 jours avant (mêmes fenêtres, feuilles réelles), toujours « toutes causes confondues » ; vide avec la raison si l'historique ne couvre pas la fenêtre « avant » | lot S2c |
+| W6 | `review_at = decided_at + horizon_days` posé à la décision | action `keep` (aucune migration) |
+| W7 | Aucune restriction d'offre ; facturation intouchée | — |
+
+Ordre : S2a → S2b → S2c.
+

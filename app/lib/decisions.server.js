@@ -36,3 +36,25 @@ export async function recordDecision({ supabase, shop, ...rest }) {
   if (error) return { ok: false, error: error.message };
   return { ok: true, ...data };
 }
+
+// ── S2c : résultat observé à J+30 (W4a, W5) — une fois par décision, en arrière-plan ─────────────
+import { loadOverview } from "./overview.server.js";
+import { reviewWindow, observedImpact, dueForReview } from "./simulator/observed.js";
+
+export async function reviewDueDecisions({ supabase, shop, admin = null, now = new Date(), limit = 5 }) {
+  const out = { reviewed: 0, unobservable: 0 };
+  if (!supabase || !shop) return out;
+  const { data, error } = await supabase.from("decision_log").select("id, kind, review_at, observed_at, horizon_days, scenario, decided_at").eq("shop_domain", shop).eq("kind", "simulated").is("observed_at", null).lte("review_at", now.toISOString()).order("review_at", { ascending: true }).limit(limit);
+  if (error) { console.warn(`[Decisions] revue KO : ${error.message}`); return out; }
+  for (const d of dueForReview(data ?? [], now)) {
+    try {
+      const w = reviewWindow(d);
+      const view = await loadOverview({ supabase, shop, admin, days: w.days, now: w.now, withBriefing: false });
+      const obs = observedImpact({ afterNodes: view.waterfall?.nodes ?? {}, beforeNodes: view.previousNodes ?? {}, beforeOrders: view.previousOrders ?? 0, node: d.scenario?.node ?? "cm2" });
+      const { error: e2 } = await supabase.from("decision_log").update({ observed_impact: obs.value, observed_at: now.toISOString(), note: obs.reason ? `observed:${obs.reason}` : null }).eq("shop_domain", shop).eq("id", d.id);
+      if (e2) { console.warn(`[Decisions] observé KO : ${e2.message}`); continue; }
+      if (obs.value == null) out.unobservable++; else out.reviewed++;
+    } catch (e) { console.warn(`[Decisions] revue ${d.id} : ${e?.message}`); }
+  }
+  return out;
+}

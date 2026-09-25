@@ -395,9 +395,9 @@ const simLeaves = HEA.briefing ? shopOf("healthy").current.agg.shop.leaves : {};
 const simMissing = shopOf("missing").current.agg.shop.leaves;
 
 console.log("\n=== RENDU RÉEL — Simulateur (S1) ===");
-check("scénario pré-chargé (panier +7 %, règle) : 8 leviers (range + number), valeur 7 sur le panier, « Pré-chargé depuis », 5 lignes de résultat avec avant / après / écart positif / fourchette, hypothèse « commandes constantes », formulaire Retenir avec champs cachés, aucun champ Polaris",
+check("scénario pré-chargé (panier +7 %, règle) : 8 leviers (range + number, hors le champ cible de l'objectif), valeur 7 sur le panier, « Pré-chargé depuis », 5 lignes de résultat avec avant / après / écart positif / fourchette, hypothèse « commandes constantes », formulaire Retenir avec champs cachés, aucun champ Polaris",
   wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { basket: 7 }, rule: "aov_vs_main_price" })),
-  (h) => (h.match(/<input type="range"/g) ?? []).length === 8 && (h.match(/<input type="number"/g) ?? []).length === 8 && /id="lever-basket"[^>]*value="7"/.test(h) && /Pré-chargé depuis : Panier proche du prix du produit principal/.test(h) && (h.match(/data-node="/g) ?? []).length === 5 && /data-node="cm2"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">\+/.test(h) && /data-node="be_roas"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">-/.test(h) && /data-node="be_roas"/.test(h) && /commandes constantes avec un panier plus grand \(× 1\.07\)/.test(h) && /name="intent" value="keep"/.test(h) && /type="hidden" name="basket" value="7"/.test(h) && /Retenir ce scénario/.test(h) && !/<s-text-field|<s-select/.test(h) && !/ style="/.test(h));
+  (h) => (h.match(/<input type="range"/g) ?? []).length === 8 && (h.match(/<input type="number" inputMode="decimal" aria-labelledby=/g) ?? []).length === 8 && /id="lever-basket"[^>]*value="7"/.test(h) && /Pré-chargé depuis : Panier proche du prix du produit principal/.test(h) && (h.match(/data-node="/g) ?? []).length === 5 && /data-node="cm2"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">\+/.test(h) && /data-node="be_roas"[\s\S]*?tcc-simtable__delta is-good" data-tone="good">-/.test(h) && /data-node="be_roas"/.test(h) && /commandes constantes avec un panier plus grand \(× 1\.07\)/.test(h) && /name="intent" value="keep"/.test(h) && /type="hidden" name="basket" value="7"/.test(h) && /Retenir ce scénario/.test(h) && !/<s-text-field|<s-select/.test(h) && !/ style="/.test(h));
 check("scénario vide : « Déplacez un levier », écarts 0 sans signe, bouton Retenir désactivé, mémoire vide",
   wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: {}, memory: [] })),
   (h) => /Déplacez un levier pour voir l(?:&#x27;|')effet/.test(h) && !/tcc-simtable__delta is-good/.test(h) && !/tcc-simtable__delta is-bad/.test(h) && /<s-button type="submit" variant="secondary" disabled="true">Retenir/.test(h) && /Aucun scénario retenu/.test(h));
@@ -500,6 +500,25 @@ check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa
 check("état vide : « Compléter les réglages » vers /app/settings + écran classique en secondaire",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: {} })),
   (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" href="\/app">Ouvrir l(?:&#x27;|')écran classique</.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  S2 — objectif (bloc initial), comparaison (2 scénarios + courant), mémoire avec attendu / observé.
+// ════════════════════════════════════════════════════════════════════════════════
+console.log("\n=== RENDU RÉEL — Simulateur S2 (objectif, comparaison, observé) ===");
+check("objectif : bloc « Atteindre un objectif » avec cible (6 options, CM2 % par défaut), valeur, levier (budget pub désactivé sans pub), bouton Trouver, aucun résultat au rendu serveur",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simMissing, periodDays: 30, days: 30, initial: {} })),
+  (h) => /data-objective="idle"/.test(h) && /Atteindre un objectif/.test(h) && (h.match(/<option value="/g) ?? []).length >= 6 + 8 && /<option value="cm2_pct" selected="">Marge de contribution 2 \(%\)</.test(h) && /<option value="ad_budget" disabled="">Budget publicitaire</.test(h) && /<button type="button" class="tcc-cta">Trouver</.test(h) && !/tcc-objective__result/.test(h));
+check("comparaison : courant + 2 retenus = 3 colonnes, 5 lignes, « Recalculé sur la période courante », lien Fermer ; mémoire : « Retirer de la comparaison » sur un scénario comparé, « Comparer » sur l'autre",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: { price: 5 }, compare: [{ id: "d1", rule_id: "aov_vs_main_price", values: { basket: 7 } }, { id: "d2", rule_id: null, values: { cogs: -5 } }], memory: [{ id: "d1", decided_at: "2026-09-24", rule_id: "aov_vs_main_price", values: { basket: 7 }, days: 30, horizon: "period", expected_low: 80, expected_high: 120 }, { id: "d3", decided_at: "2026-09-20", rule_id: null, values: { price: 3 }, days: 30, horizon: "period" }], now: "2026-09-24T12:00:00Z" })),
+  (h) => /data-compare="3"/.test(h) && /Comparer des scénarios/.test(h) && /Recalculé sur la période courante/.test(h) && (h.match(/role="columnheader">/g) ?? []).length >= 4 + 5 && /Scénario courant</.test(h) && /Panier proche du prix du produit principal</.test(h) && /Fermer la comparaison/.test(h) && /data-decision="d1"[\s\S]*?data-compare-toggle="remove"[^>]*>Retirer de la comparaison</.test(h) && /data-decision="d3"[\s\S]*?data-compare-toggle="add"[^>]*>Comparer</.test(h) && /href="\/app\/simulator\?days=30&amp;price=5&amp;compare=d2"/.test(h));
+check("mémoire observée : observé « +95,00 € (toutes causes confondues) », non observable avec la raison, en attente « observé à partir du », due, attendu 80 – 120",
+  wrapEur("fr", React.createElement(Simulator, { leaves: simLeaves, periodDays: 30, days: 30, initial: {}, now: "2026-10-25T00:00:00Z", memory: [
+    { id: "o1", decided_at: "2026-09-24", rule_id: null, values: { price: 3 }, expected_low: 80, expected_high: 120, review_at: "2026-10-24T10:00:00Z", observed_at: "2026-10-24T10:00:00Z", observed_impact: 95 },
+    { id: "o2", decided_at: "2026-09-24", rule_id: null, values: { price: 3 }, review_at: "2026-10-24T10:00:00Z", observed_at: "2026-10-24T10:00:00Z", observed_impact: null, note: "observed:no_history" },
+    { id: "o3", decided_at: "2026-10-20", rule_id: null, values: { price: 3 }, review_at: "2026-11-19T10:00:00Z" },
+    { id: "o4", decided_at: "2026-09-20", rule_id: null, values: { price: 3 }, review_at: "2026-10-20T10:00:00Z" },
+  ] })),
+  (h) => /data-decision="o1" data-observed="observed"[\s\S]*?attendu 80,00.€ – 120,00.€[\s\S]*?observé \+95,00.€ \(toutes causes confondues\)/.test(h) && /data-decision="o2" data-observed="unobservable"[\s\S]*?non observable : l(?:&#x27;|')historique ne couvre pas/.test(h) && /data-decision="o3" data-observed="pending"[\s\S]*?observé à partir du 19 nov\. 2026/.test(h) && /data-decision="o4" data-observed="due"[\s\S]*?observation en attente/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

@@ -466,6 +466,12 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-lever input[type="range"] { inline-size: 100%; accent-color: var(--tcc-accent); }
 .tcc-lever input[type="number"] { inline-size: 100%; min-block-size: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-ink); font: inherit; font-variant-numeric: tabular-nums; }
 .tcc-lever__unit { font-size: 0.8125rem; color: var(--tcc-ink-2); }
+.tcc-objective { display: grid; gap: 8px; padding: 12px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); border: 1px solid var(--tcc-line); }
+.tcc-objective__row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: end; }
+.tcc-objective__row label { display: grid; gap: 4px; font-size: 0.75rem; color: var(--tcc-ink-2); }
+.tcc-objective__row select, .tcc-objective__row input { min-block-size: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-ink); font: inherit; font-size: 0.875rem; }
+.tcc-objective__result { font-size: 0.875rem; font-weight: 600; }
+@container tcc-sim (max-width: 560px) { .tcc-objective__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .tcc-seg__btn { min-block-size: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--tcc-line); background: transparent; color: var(--tcc-ink-2); font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
 .tcc-seg__btn[aria-pressed="true"] { background: var(--tcc-surface); color: var(--tcc-ink); border-color: var(--tcc-ink-3); }
 .tcc-simtable { display: grid; gap: 4px; font-size: 0.875rem; }
