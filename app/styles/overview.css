@@ -474,6 +474,16 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-newp__field { display: grid; gap: 4px; font-size: 0.75rem; color: var(--tcc-ink-2); }
 .tcc-newp__field input, .tcc-newp__field select, .tcc-objective__row select { min-block-size: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--tcc-line); background: var(--tcc-surface); color: var(--tcc-ink); font: inherit; font-size: 0.875rem; }
 .tcc-newp__pct { font-weight: 700; }
+/* ── D1c : section Produits (liste par produit, audit catalogue) ── */
+.tcc-prodtable { display: grid; gap: 4px; font-size: 0.875rem; }
+.tcc-prodtable__row { display: grid; grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: center; padding: 8px 12px; border-radius: var(--tcc-radius-s); background: var(--tcc-surface); border: 1px solid var(--tcc-line); font-variant-numeric: tabular-nums; }
+.tcc-prodtable__row.is-head { background: transparent; border-color: transparent; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tcc-ink-3); }
+.tcc-prodtable__row.is-head a { color: inherit; text-decoration: none; }
+.tcc-prodtable__row.is-head a[aria-current="true"] { color: var(--tcc-ink); text-decoration: underline; }
+.tcc-prodtable--audit .tcc-prodtable__row { grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)); }
+.tcc-prodtable__title { display: grid; gap: 2px; min-inline-size: 0; overflow-wrap: anywhere; }
+.tcc-table__amount.is-bad { color: var(--tcc-bad-ink); }
+@container tcc-table (max-width: 600px) { .tcc-prodtable__row, .tcc-prodtable--audit .tcc-prodtable__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tcc-prodtable__title { grid-column: 1 / -1; } .tcc-prodtable__row.is-head { display: none; } }
 .tcc-newp__pct.is-bad { color: var(--tcc-bad-ink); }
 @container tcc-sim (max-width: 560px) { .tcc-objective__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .tcc-seg__btn { min-block-size: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--tcc-line); background: transparent; color: var(--tcc-ink-2); font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }

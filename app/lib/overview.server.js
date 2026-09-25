@@ -3,6 +3,8 @@
 // on les adapte (econ/adapters.js), on appelle aggregate() par période, puis confidence.js et
 // insights/buildBriefing. Admin GraphQL : shop.plan.partnerDevelopment (C6, mémorisé),
 // shop { name shopOwnerName } (salutation) et les titres des produits cités par les insights.
+import { unitDefaultsFromSettings } from "./simulator/newProduct.js";
+import { costSourcesByProduct, productListEntry } from "./products.js";
 import { aggregate } from "./econ/aggregate.js";
 import { linesFromOrderMarginsRows, ordersForEngine, applyOrderDiscounts } from "./econ/adapters.js";
 import { overviewWindows, buildKpis, buildNotes, buildGaps, buildChartSeries, OVERVIEW_LINES_CAP } from "./overview.js";
@@ -79,7 +81,7 @@ export function previousWindows(win, count = REFERENCE_PERIODS) {
 
 // Lecture des faits sur [plus ancienne fenêtre de référence, aujourd'hui] puis agrégation par période.
 export const PRODUCT_LIST_MAX = 50;
-export async function loadOverview({ supabase, shop, admin = null, days, now = new Date(), hasAllOrders = false, withBriefing = true, withProducts = false, observeProduct = null }) {
+export async function loadOverview({ supabase, shop, admin = null, days, now = new Date(), hasAllOrders = false, withBriefing = true, withProducts = false, observeProduct = null, productLimit = PRODUCT_LIST_MAX }) {
   const { settings, isDevShop, devShopSource, includeTestOrders } = await loadOverviewSettings({ supabase, shop, admin });
   const timeZone = settings.shop_timezone || "UTC";
   const win = overviewWindows({ now, timeZone, days });
@@ -133,12 +135,17 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
   const productIds = briefing ? [...briefing.priorities, ...briefing.insights].map((i) => i.subject?.kind === "product" ? i.subject.key : null).filter(Boolean) : [];
   const titles = await loadProductTitles(admin, productIds);
   // S3 (mode Produit) : les PRODUCT_LIST_MAX produits au plus fort CA HT, avec leurs feuilles.
-  let productList = null, productLeaves = null;
+  let productList = null, productLeaves = null, productCount = 0;
   if (withProducts) {
     const entries = Object.entries(current.byProduct ?? {}).filter(([id, e]) => id !== "__unknown__" && (e.nodes?.ca_ht ?? 0) > 0)
-      .sort((a, b) => (b[1].nodes.ca_ht ?? 0) - (a[1].nodes.ca_ht ?? 0)).slice(0, PRODUCT_LIST_MAX);
-    const names = await loadProductTitles(admin, entries.map(([id]) => id), PRODUCT_LIST_MAX);
-    productList = entries.map(([id, e]) => ({ id, title: names[id] ?? String(id).split("/").pop(), ca_ht: e.nodes.ca_ht, orders: e.leaves.orders ?? 0 }));
+      .sort((a, b) => (b[1].nodes.ca_ht ?? 0) - (a[1].nodes.ca_ht ?? 0));
+    productCount = entries.length;
+    entries.splice(productLimit);
+    const names = await loadProductTitles(admin, entries.map(([id]) => id), productLimit);
+    // D1c : statut de coût par produit depuis la source de coût des lignes de la période (commandes retenues).
+    const keptIds = new Set(orders.filter((o) => !o.excluded_reason && inWin(o)).map((o) => o.order_id));
+    const sources = costSourcesByProduct(lineSlice.filter((l) => keptIds.has(l.order_id)));
+    productList = entries.map(([id, e]) => productListEntry({ id, title: names[id] ?? String(id).split("/").pop(), entry: e, sources: sources.get(id) }));
     productLeaves = Object.fromEntries(entries.map(([id, e]) => [id, e.leaves]));
   }
 
@@ -159,6 +166,6 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     previousNodes: previous.shop.nodes, previousOrders: previous.shop.leaves.orders ?? 0,
     // S3 : observé à J+30 d'une décision produit — nœuds du produit dans les deux fenêtres.
     productObs: observeProduct ? { after: current.byProduct?.[observeProduct]?.nodes ?? {}, before: previous.byProduct?.[observeProduct]?.nodes ?? {}, beforeOrders: previous.byProduct?.[observeProduct]?.leaves?.orders ?? 0 } : null,
-    productList, productLeaves, settingsForNewProduct: { vat_regime: settings.vat_regime ?? null, shipping_model: settings.shipping_model ?? null, packaging: settings.packaging_cost_per_order ?? null, shipping: settings.shipping_cost_rules?.confirmed ? settings.shipping_cost_rules.default ?? null : null, return_cost: settings.return_cost_per_return ?? null, gateway: (Array.isArray(settings.gateway_fee_rules) ? settings.gateway_fee_rules : []).find((r) => r?.confirmed) ?? null, shop_country_code: settings.shop_country_code ?? null },
+    productList, productLeaves, productCount, newProductDefaults: unitDefaultsFromSettings(settings), shopCountryCode: settings.shop_country_code ?? null, thresholdPct: Number(settings.profitability_threshold_pct) || 0,
   };
 }

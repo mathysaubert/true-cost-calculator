@@ -61,7 +61,7 @@ console.log("\n── 2. createTranslator ──");
 console.log("\n── 3. Catalogues : fr = en, aucune clé orpheline, aucune clé absente ──");
 const F4_FILES = [
   "app/routes/app.jsx", "app/routes/app.overview.jsx", "app/routes/app.metrics.jsx", "app/routes/app.data-health.jsx", "app/root.jsx", "app/lib/i18n/context.jsx", "app/lib/insights/render.js",
-  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.settings.shop.jsx", "app/routes/app.settings.marketing.jsx", "app/routes/app.settings.connections.jsx", "app/routes/app.settings.plan.jsx", "app/routes/app.settings.products.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx", "app/components/simulator/NewProduct.jsx", "app/components/simulator/ModeBar.jsx",
+  "app/routes/app.settings._index.jsx", "app/routes/app.settings.costs.jsx", "app/routes/app.settings.goals.jsx", "app/routes/app.settings.shop.jsx", "app/routes/app.settings.marketing.jsx", "app/routes/app.settings.connections.jsx", "app/routes/app.settings.plan.jsx", "app/routes/app.settings.products.jsx", "app/routes/app.simulator.jsx", "app/components/simulator/Simulator.jsx", "app/components/simulator/NewProduct.jsx", "app/components/simulator/ModeBar.jsx", "app/routes/app.products.jsx", "app/components/products/ProductList.jsx", "app/components/products/CatalogAudit.jsx",
   ...readdirSync(new URL("app/components/overview/", ROOT)).map((f) => `app/components/overview/${f}`),
   ...readdirSync(new URL("app/components/settings/", ROOT)).map((f) => `app/components/settings/${f}`),
   ...readdirSync(new URL("app/components/charts/", ROOT)).map((f) => `app/components/charts/${f}`),
@@ -351,7 +351,7 @@ console.log("\n── 12. sections.js ──");
 {
   ok(SECTIONS.length === 13 && SECTIONS.map((s) => s.id).join(",") === "overview,decisions,simulator,ask,metrics,profit,growth,customers,products,marketing,inventory,data_health,settings", "13 sections en 3 groupes dans l'ordre décidé (Piloter / Explorer / Système)");
   ok(SECTIONS.filter((s) => s.group === "steer").length === 4 && SECTIONS.filter((s) => s.group === "explore").length === 7 && SECTIONS.filter((s) => s.group === "system").length === 2, "groupes : 4 / 7 / 2");
-  ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,simulator:/app/simulator,metrics:/app/metrics,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Simulateur (S1), Indicateurs, Fiabilité des données, Réglages (R1)");
+  ok(LIVE_SECTIONS.map((s) => `${s.id}:${s.path}`).join(",") === "overview:/app/overview,simulator:/app/simulator,metrics:/app/metrics,products:/app/products,data_health:/app/data-health,settings:/app/settings", "livrées : Aujourd'hui, Simulateur (S1), Indicateurs, Produits (D1c), Fiabilité des données, Réglages (R1)");
   ok(SECTIONS.filter((s) => s.status === "soon").every((s) => s.path === null), "les sections « Bientôt » n'ont pas de route");
   ok(OVERVIEW_RESERVED.length === 0, "plus aucun emplacement réservé : courbe (B1) et cascade (B2) livrées");
   ok(/rel="home"/.test(read("app/routes/app.jsx")) && /LIVE_SECTIONS/.test(read("app/routes/app.jsx")), "s-app-nav : rel=\"home\" + sections livrées seulement");

@@ -74,13 +74,14 @@ async function runForShop(shop) {
     .eq("shop_domain", shop).order("order_created_at", { ascending: false }).limit(ORDER_MARGINS_CAP);
   const agg = aggregateOrderMargins(rows ?? []);
 
-  // 3. ÉTAT VEILLE + SEUIL boutique (défaut 0 = perte stricte = legacy).
+  // 3. ÉTAT VEILLE + SEUIL boutique (défaut 0 = perte stricte = legacy). D1c (X7) : le seuil est lu dans
+  // shop_settings (source de vérité), plus dans shop_plans (colonne supprimée en D2).
   const { data: prevRows } = await supabase.from("product_profitability_state")
     .select("product_id, last_state").eq("shop_domain", shop);
   const prevMap = new Map((prevRows ?? []).map((p) => [p.product_id, { last_state: p.last_state }]));
-  const { data: planRow } = await supabase.from("shop_plans")
+  const { data: settingsRow } = await supabase.from("shop_settings")
     .select("profitability_threshold_pct").eq("shop_domain", shop).maybeSingle();
-  const thresholdPct = planRow?.profitability_threshold_pct ?? 0;
+  const thresholdPct = settingsRow?.profitability_threshold_pct ?? 0;
 
   // 4+5. DIFF (premier passage = prevMap vide → tout en seeds, zéro basculement).
   const { basculements, seeds, majNormales } = computeProfitabilityChanges(agg.byProduct, prevMap, thresholdPct);

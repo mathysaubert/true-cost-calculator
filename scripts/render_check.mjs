@@ -223,9 +223,9 @@ check("en-tête sans prénom ni sync → « Bonjour 👋 », « En attente de la
 check("sélecteur segmenté : 3 liens ?days=, aria-current=\"page\" sur 30 seulement, aucun s-button-group",
   wrap("fr", React.createElement(PeriodSelector, { days: 30 })),
   (h) => /<nav class="tcc-seg" aria-label="Période">/.test(h) && (h.match(/href="\/?\?days=/g) ?? []).length === 3 && (h.match(/aria-current="page"/g) ?? []).length === 1 && /aria-current="page"[^>]*>30 jours/.test(h) && !/s-button-group/.test(h));
-check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Simulateur, Indicateurs, Fiabilité et Réglages = liens, 8 sections grisées « Bientôt », ni Trésorerie ni Expériences",
+check("rail hybride : 3 groupes (Piloter / Explorer / Système), Aujourd'hui = lien aria-current, Simulateur, Indicateurs, Produits, Fiabilité et Réglages = liens, 7 sections grisées « Bientôt », ni Trésorerie ni Expériences",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 5 && /href="\/app\/metrics"/.test(h) && /href="\/app\/data-health"/.test(h) && /href="\/app\/settings"/.test(h) && /href="\/app\/simulator"/.test(h) && (h.match(/is-soon/g) ?? []).length === 8 && (h.match(/Bientôt/g) ?? []).length === 8 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
+  (h) => (h.match(/class="tcc-rail__group"/g) ?? []).length === 3 && /<h4>Piloter<\/h4>/.test(h) && /<h4>Explorer<\/h4>/.test(h) && /<h4>Système<\/h4>/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/<a class="tcc-rail__item"/g) ?? []).length === 6 && /href="\/app\/metrics"/.test(h) && /href="\/app\/products"/.test(h) && /href="\/app\/data-health"/.test(h) && /href="\/app\/settings"/.test(h) && /href="\/app\/simulator"/.test(h) && (h.match(/is-soon/g) ?? []).length === 7 && (h.match(/Bientôt/g) ?? []).length === 7 && /aria-disabled="true"/.test(h) && /Demander/.test(h) && /Décisions/.test(h) && !/Trésorerie/.test(h) && !/Expériences/.test(h));
 
 console.log("\n=== RENDU RÉEL — Bandeaux, état vide, emplacements réservés, moteur ===");
 check("trous → s-banner warning : 6 commandes lues par l'ancienne version, 1 ligne sans coût, plafond, 2 exclues",
@@ -330,9 +330,9 @@ check("fiabilité (saine, en) : anneau 100, « high », « Everything the engine
 check("règles (manquante) : 7 règles, points « x / y », jauge svg, « la fiabilité atteindrait … », aucune couleur en dur",
   wrapEur("fr", React.createElement(HealthRules, { confidence: MIS.confidence })),
   (h) => (h.match(/class="tcc-health-rule( is-na)?" data-rule=/g) ?? []).length === 7 && /15 \/ 30/.test(h) && /0 \/ 20/.test(h) && /<svg class="tcc-health-rule__meter"/.test(h) && /la fiabilité atteindrait/.test(h) && /ROAS de point mort/.test(h) && !/health\.unlock\./.test(h) && !/#[0-9a-fA-F]{6}\b/.test(h) && !/ style="/.test(h));
-check("rail : 3 groupes titrés (Piloter, Explorer, Système), 5 liens (Aujourd'hui actif, Simulateur, Indicateurs, Fiabilité des données, Réglages), 8 « Bientôt »",
+check("rail : 3 groupes titrés (Piloter, Explorer, Système), 6 liens (Aujourd'hui actif, Simulateur, Indicateurs, Produits, Fiabilité des données, Réglages), 7 « Bientôt »",
   wrap("fr", React.createElement(SectionRail, { current: "overview" })),
-  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 5 && (h.match(/is-soon/g) ?? []).length === 8 && /Fiabilité des données/.test(h) && /Demander/.test(h) && /Réglages/.test(h));
+  (h) => /Piloter/.test(h) && /Explorer/.test(h) && /Système/.test(h) && /aria-current="page"[^>]*>Aujourd(?:&#x27;|')hui</.test(h) && (h.match(/class="tcc-rail__item" /g) ?? []).length === 6 && (h.match(/is-soon/g) ?? []).length === 7 && /Fiabilité des données/.test(h) && /Demander/.test(h) && /Réglages/.test(h));
 check("état vide actionnable (fr) : raisons + « Ce qui peut déjà être dit » avec un partiel",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: { legacy: 6 }, partials: [{ id: "cost_coverage", status: "partial", missing: { orders: 1 }, vars: { lines: 2 }, unlocks: ["cm2_pct"] }] })),
   (h) => /6 lues par l(?:&#x27;|')ancienne version/.test(h) && /Ce qui peut déjà être dit/.test(h) && /Coûts produits manquants/.test(h) && /Débloque/.test(h));
@@ -582,6 +582,45 @@ check("mémoire (fr) : ligne nouveau produit (CM2 unitaire et %, sans Rejouer ni
 check("nouveau produit vide (en) : « Enter at least: Selling price incl. tax, Purchase price », bouton Retenir désactivé",
   wrapEur("en", React.createElement(NewProduct, { initial: {}, shopCountryCode: "FR", days: 30 })),
   (h) => /data-new-state="missing"/.test(h) && /Enter at least: Selling price incl\. tax, Purchase price\./.test(h) && /<s-button type="submit" variant="secondary" disabled="true">/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  D1c — Section Produits (liste par produit, audit catalogue Expert).
+// ════════════════════════════════════════════════════════════════════════════════
+const { ProductList, ProductSummary } = await vite.ssrLoadModule("/app/components/products/ProductList.jsx");
+const { CatalogAudit } = await vite.ssrLoadModule("/app/components/products/CatalogAudit.jsx");
+const { productSummary: pSummary } = await vite.ssrLoadModule("/app/lib/products.js");
+const pList = [
+  { id: "gid://shopify/Product/1", title: "Tee", ca_ht: 2418, orders: 40, units: 39, cm2: 1267.89, cm2_pct: 52.4, unknown_ca_ht: 0, status: "set" },
+  { id: "gid://shopify/Product/2", title: "Cap", ca_ht: 300, orders: 12, units: 12, cm2: -18.5, cm2_pct: -6.2, unknown_ca_ht: 0, status: "to_confirm" },
+  { id: "gid://shopify/Product/3", title: "Mug", ca_ht: 150, orders: 6, units: 6, cm2: null, cm2_pct: null, unknown_ca_ht: 150, status: "missing" },
+];
+const auditRes = { ok: true, intent: "audit", scanned: 4, noCost: 1, incomplete: false, taxesIncluded: true, thresholdPct: 25, missingSettings: ["shipping", "payment_pct"], returnRatePct: 5,
+  rows: [{ id: "gid://shopify/Product/1", title: "Tee", price_ttc: 60, cost: 22, cost_source: "merchant", landed: 29.12, cm2: 12.58, cm2_pct: 25.2, category: "Textile", customs_estimated: false },
+         { id: "gid://shopify/Product/2", title: "Cap", price_ttc: 20, cost: 25, cost_source: "shopify", landed: 27, cm2: -11.3, cm2_pct: -67.8, category: "Accessoires", customs_estimated: true },
+         { id: "gid://shopify/Product/4", title: "Bag", price_ttc: 45, cost: 20, cost_source: "merchant", landed: 23, cm2: 5.1, cm2_pct: 13.6, category: "Maroquinerie", customs_estimated: false }] };
+
+console.log("\n=== RENDU RÉEL — Section Produits (D1c) ===");
+check("liste (fr) : synthèse (3 produits, part du CA sans coût), 5 filtres avec compteurs, en-têtes triables, 3 lignes (CA, CM2 négative en rouge, CM2 absente « n/d », unités, statuts renseigné / à confirmer / sans coût), lien Coûts produits",
+  wrapEur("fr", React.createElement(React.Fragment, null, React.createElement(ProductSummary, { summary: pSummary(pList), total: 3 }), React.createElement(ProductList, { products: pList, summary: pSummary(pList), days: 30, status: "all", sort: "ca_ht" }))),
+  (h) => /3 produits vendus sur la période/.test(h) && /5,2.% du CA produits n(?:&#x27;|')a aucun coût connu/.test(h) && (h.match(/data-status-filter="/g) ?? []).length === 5 && /data-status-filter="set"[^>]*>Coûts renseignés · 1</.test(h) && (h.match(/data-sort="/g) ?? []).length === 4 && /data-sort="ca_ht"[^>]*aria-current="true"|aria-current="true"[^>]*data-sort="ca_ht"/.test(h) && (h.match(/data-cost-status="/g) ?? []).length === 3 && /data-product="gid:\/\/shopify\/Product\/1"[\s\S]*?2.418,00.€[\s\S]*?1.267,89.€[\s\S]*?52,4.%[\s\S]*?39</.test(h) && /tcc-table__amount is-bad" data-col="cm2">-18,50.€/.test(h) && /data-cost-status="missing"[\s\S]*?data-col="cm2">n\. d\.<[\s\S]*?tcc-badge--bad">Sans coût</.test(h) && /tcc-badge--warn">À confirmer</.test(h) && /href="\/app\/settings\/products"/.test(h) && /40 commandes/.test(h) && !/ style="/.test(h));
+check("liste filtrée vide (en) : filtre actif, « No product matches this filter. », pas de synthèse sans produit",
+  wrapEur("en", React.createElement(React.Fragment, null, React.createElement(ProductSummary, { summary: pSummary([]) }), React.createElement(ProductList, { products: [], summary: pSummary(pList), days: 7, status: "partial", sort: "cm2" }))),
+  (h) => /No product matches this filter\./.test(h) && /aria-current="page"[^>]*data-status-filter="partial"|data-status-filter="partial"[^>]*aria-current="page"/.test(h) && !/data-products-summary/.test(h) && /href="\/?\?days=7&amp;status=partial&amp;sort=cm2"/.test(h));
+check("audit verrouillé (fr, non Expert) : badge Expert, explication, lien « Voir les offres », aucun formulaire",
+  wrapEur("fr", React.createElement(CatalogAudit, { isExpert: false })),
+  (h) => /data-audit="locked"/.test(h) && /Audit du catalogue/.test(h) && /tcc-badge--accent">Expert</.test(h) && /href="\/app\/settings\/plan"[^>]*>Voir les offres</.test(h) && !/name="intent"/.test(h));
+check("audit, offre indéterminée (fr) : message de rechargement, pas de lien d'offre",
+  wrapEur("fr", React.createElement(CatalogAudit, { isExpert: false, indeterminate: true })),
+  (h) => /n(?:&#x27;|')a pas pu être vérifiée/.test(h) && !/Voir les offres/.test(h));
+check("audit Expert au repos (fr) : formulaire run_audit, taux de retour observé pré-rempli (2,5), bouton « Lancer l'audit »",
+  wrapEur("fr", React.createElement(CatalogAudit, { isExpert: true, returnRatePct: 2.5, thresholdPct: 25 })),
+  (h) => /data-audit="idle"/.test(h) && /name="intent" value="run_audit"/.test(h) && /name="return_rate_pct"[^>]*value="2.5"/.test(h) && /Lancer l(?:&#x27;|')audit/.test(h) && !/data-audit-group/.test(h));
+check("audit Expert avec résultat (fr) : 4 analysés dont 1 sans coût, réglages manquants nommés, 3 groupes (à perte, sous l'objectif 0 à 25 %, à l'objectif), coût Shopify à confirmer, douane estimée",
+  wrapEur("fr", React.createElement(CatalogAudit, { isExpert: true, returnRatePct: 5, thresholdPct: 25, result: auditRes })),
+  (h) => /data-audit="done"/.test(h) && /4 produits actifs analysés\. 1 produit n(?:&#x27;|')a ni prix ni coût/.test(h) && /Non renseignés, comptés 0 : Votre port par commande, Frais de paiement \(%\)\./.test(h) && /data-audit-group="loser"[\s\S]*?1 à perte[\s\S]*?CM2 sous 0.%[\s\S]*?Cap[\s\S]*?coût Shopify, à confirmer/.test(h) && /data-audit-group="risky"[\s\S]*?1 sous votre objectif[\s\S]*?CM2 de 0 à 25.%[\s\S]*?Bag/.test(h) && /data-audit-group="winner"[\s\S]*?1 à l(?:&#x27;|')objectif[\s\S]*?CM2 de 25.% ou plus[\s\S]*?Tee[\s\S]*?12,58.€[\s\S]*?25,2.%/.test(h) && /catégorie douanière estimée/.test(h) && !/ style="/.test(h));
+check("audit en erreur (en) : plafond atteint",
+  wrapEur("en", React.createElement(CatalogAudit, { isExpert: true, result: { ok: false, intent: "audit", error: "rate_limited" } })),
+  (h) => /<s-banner tone="critical">Limit reached: 10 audits per day\./.test(h) && /data-audit="idle"/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();

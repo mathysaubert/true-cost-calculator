@@ -55,9 +55,7 @@ export const loader = async ({ request }) => {
   const products = view.productList ?? [];
   const product = mode === "product" ? (products.find((p) => p.id === url.searchParams.get("product"))?.id ?? products[0]?.id ?? null) : null;
   const leaves = mode === "product" ? view.productLeaves?.[product] ?? {} : view.waterfall?.leaves ?? {};
-  const s = view.settingsForNewProduct ?? {};
-  const newInitial = Object.fromEntries(Object.entries({ vat_regime: s.vat_regime, shipping_model: s.shipping_model, packaging: s.packaging, shipping: s.shipping, return_cost: s.return_cost, payment_pct: s.gateway?.pct, payment_fixed: s.gateway?.fixed }).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
-  return { days, mode, products, product, productTitle: products.find((p) => p.id === product)?.title ?? null, periodDays: periodDaysOf(view.windows?.current), leaves, ordersInPeriod: view.ordersInPeriod ?? 0, excludedCurrent: view.excludedCurrent, isDevShop: view.isDevShop, includeTestOrders: view.includeTestOrders, initial: values, rule, horizon, memory, compare, now: new Date().toISOString(), newInitial, shopCountryCode: s.shop_country_code ?? null };
+  return { days, mode, products, product, productTitle: products.find((p) => p.id === product)?.title ?? null, periodDays: periodDaysOf(view.windows?.current), leaves, ordersInPeriod: view.ordersInPeriod ?? 0, excludedCurrent: view.excludedCurrent, isDevShop: view.isDevShop, includeTestOrders: view.includeTestOrders, initial: values, rule, horizon, memory, compare, now: new Date().toISOString(), newInitial: view.newProductDefaults ?? {}, shopCountryCode: view.shopCountryCode ?? null };
 };
 
 export const action = async ({ request }) => {

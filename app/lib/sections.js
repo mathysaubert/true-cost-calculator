@@ -16,7 +16,7 @@ export const NAV_GROUPS = [
     { id: "profit",       path: null, status: "soon" },
     { id: "growth",       path: null, status: "soon" },
     { id: "customers",    path: null, status: "soon" },
-    { id: "products",     path: null, status: "soon" },
+    { id: "products",     path: "/app/products",    status: "live" },
     { id: "marketing",    path: null, status: "soon" },
     { id: "inventory",    path: null, status: "soon" },
   ] },
