@@ -551,3 +551,20 @@ Phase 0 : `2026-09-24_s2_phase0.md`. Toutes les recommandations retenues.
 
 Ordre : S2a → S2b → S2c.
 
+## L. S3 et F4-D : bascule finale (2026-09-25)
+
+Phase 0 : `2026-09-25_s3-f4-d_phase0.md`. Toutes les recommandations retenues.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| X1 | (b) Par étapes : D1 nouvelles maisons, puis D0 technique (React 19, `shopify-app-react-router` 3, Node 22), puis D2 suppression ; l'écran classique reste la roue de secours jusqu'à D2 | ordre : D1b → D1a → S3 → D1c → D0 → D2 → D3 |
+| X2 | (b) react-router 8 dans un lot séparé après D2 | D3 |
+| X3 | (a) Réglages > Coûts produits = portage de `costsUi` / `customsUi` (logique `variantCosts.js`, `customsClassification*.js` inchangée), traduit | D1a |
+| X4 | Réglages > Offre : même code de facturation (`billing.request`, `isTest` boutique de dev, essai bêta), déplacé et traduit | D1b |
+| X5 | (a) S3 mode Produit : produit existant (Simulateur sur `byProduct`) + nouveau produit (calculateur unitaire via `computeLandedCost`), sans le « + 4,5 % », scénarios dans `decision_log` | S3 |
+| X6 | (a) Section Produits minimale + audit Expert | D1c |
+| X7 | Cron de rentabilité sur `shop_settings` ; `margin_alerts` supprimée avec le calculateur | D1c, D2 |
+| X8 | Recommandation IA supprimée en D2, réintroduite en I1 ; abonnés Pro réels vérifiés en lecture (2026-09-25) : aucun marchand réel abonné | D2 |
+| X9 | Suppression en base en D2 (tables `calculations`, `calculation_annotations`, `margin_alerts`, trigger R0-02, colonnes de réglages de `shop_plans`) ; **sauvegarde Supabase faite par Mathys avant D2** | D2 |
+| X10 | (b) export CSV des calculs si une boutique réelle en a, sinon (a) suppression ; vérifié en lecture avant D2 (2026-09-25 : 3 calculs, tous sur des boutiques non marchandes) | D2 |
+

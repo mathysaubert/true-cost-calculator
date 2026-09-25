@@ -6,10 +6,12 @@
 export const SETTINGS_NAV = [
   { id: "index",       path: "/app/settings",       status: "live" },
   { id: "costs",       path: "/app/settings/costs", status: "live" },
+  { id: "products",    path: "/app/settings/products", status: "live" },
   { id: "goals",       path: "/app/settings/goals", status: "live" },
   { id: "shop",        path: "/app/settings/shop",        status: "live" },
   { id: "marketing",   path: "/app/settings/marketing",   status: "live" },
   { id: "connections", path: "/app/settings/connections", status: "live" },
+  { id: "plan",        path: "/app/settings/plan",        status: "live" },
 ];
 
 // Champs scalaires par formulaire : colonne shop_settings, unité, bornes. `mirror` = recopié vers shop_plans.

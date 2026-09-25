@@ -543,6 +543,22 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 .tcc-wf-host { container-type: inline-size; container-name: tcc-wf; }
 @container tcc-wf (max-width: 480px) { .tcc-wf__row { grid-template-columns: minmax(0, 1fr) auto; } .tcc-wf__track { grid-column: 1 / -1; } }
 
+/* ── F4-D1b : offres ; F4-D1a : coûts produits ─────────────────────────────────────────────── */
+.tcc-plans-host { container-type: inline-size; container-name: tcc-plans; }
+.tcc-plans { display: grid; gap: var(--tcc-gap); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container tcc-plans (max-width: 760px) { .tcc-plans { grid-template-columns: minmax(0, 1fr); } }
+.tcc-plan { display: grid; gap: 10px; align-content: start; padding: 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
+.tcc-plan.is-current { border-color: var(--tcc-good); }
+.tcc-plan__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tcc-plan__head h3 { font-size: 1rem; font-weight: 700; }
+.tcc-plan__price { font: var(--tcc-num-hero); letter-spacing: -0.02em; }
+.tcc-pc .tcc-block__head { flex-wrap: wrap; align-items: center; }
+.tcc-pc .tcc-block__head h4 { flex: 1; min-inline-size: 12ch; font-size: 0.9375rem; font-weight: 700; }
+.tcc-pc__panel { margin-block-start: 12px; }
+.tcc-pc__variant { display: grid; gap: 8px; margin: 0; padding: 12px; border: 1px solid var(--tcc-line); border-radius: var(--tcc-radius-s); background: var(--tcc-surface-2); }
+.tcc-pc__variant legend { font-size: 0.8125rem; font-weight: 600; padding: 0 4px; }
+.tcc-pc__file { display: grid; gap: 4px; font-size: 0.8125rem; color: var(--tcc-ink-2); }
+
 /* ── I0-C : décision retenue depuis l'opportunité ─────────────────────────────────────────── */
 .tcc-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .tcc-decision .tcc-muted { font-size: 0.8125rem; }

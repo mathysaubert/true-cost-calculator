@@ -358,9 +358,9 @@ const gws = [{ gateway: "shopify_payments", orders: 12 }, { gateway: "paypal", o
 const fixedRows = [{ id: "a1", label: "Loyer", amount_monthly: 1200, active_from: "2026-01-01", active_to: null }, { id: "b2", label: "Ancien outil", amount_monthly: 49, active_from: null, active_to: "2026-06-30" }];
 
 console.log("\n=== RENDU RÉEL — Réglages (R1) ===");
-check("sous-nav : 6 liens (Vue d'ensemble active, Coûts, Objectifs, Boutique, Marketing, Connexions), aucun « Bientôt »",
+check("sous-nav : 8 liens (Vue d'ensemble active, Coûts, Coûts produits, Objectifs, Boutique, Marketing, Connexions, Offre), aucun « Bientôt »",
   wrap("fr", React.createElement(SettingsNav, { current: "index" })),
-  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 6 && /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && /href="\/app\/settings\/costs"/.test(h) && /href="\/app\/settings\/connections"/.test(h) && !/is-soon/.test(h));
+  (h) => (h.match(/<a class="tcc-subnav__item"/g) ?? []).length === 8 && /href="\/app\/settings\/products"/.test(h) && /href="\/app\/settings\/plan"/.test(h) && /aria-current="page"[^>]*>Vue d(?:&#x27;|')ensemble</.test(h) && /href="\/app\/settings\/costs"/.test(h) && /href="\/app\/settings\/connections"/.test(h) && !/is-soon/.test(h));
 check("coûts de commande VIDES : 4 champs s-text-field name=…, value vide, aide, suffixe jours, aucun placeholder chiffré, bouton Enregistrer, intent",
   wrap("fr", React.createElement(OrderCostsForm, { settings: {} })),
   (h) => (h.match(/<s-text-field/g) ?? []).length === 4 && /name="packaging_cost_per_order"[^>]*value=""/.test(h) && /details="Cartons, calage/.test(h) && /suffix="jours"/.test(h) && !/placeholder="\d/.test(h) && /name="intent" value="save_order_costs"/.test(h) && /<s-button type="submit"[^>]*>Enregistrer</.test(h) && !/ style="/.test(h));
@@ -490,13 +490,13 @@ check("formulaire Réglages : <form … data-save-bar> (App Bridge) ; formulaire
   (h) => /<form method="post" action="\/" data-save-bar=""[^>]*class="tcc-card tcc-form"/.test(h) && !/<form method="post" action="\/" data-save-bar=""[^>]*>\s*<input type="hidden" name="intent" value="delete_fixed_cost"/.test(h) && /<form method="post" action="\/" data-discover="true"><input type="hidden" name="intent" value="delete_fixed_cost"/.test(h));
 check("activation (fr) : 3 jalons, 1 / 3, sync faite, coûts à 50 % « Y aller » vers l'écran classique, situation « Y aller » vers Aujourd'hui",
   wrap("fr", React.createElement(ActivationChecklist, { checklist: activationChecklist({ lastSync: "2026-09-24T10:00:00Z", confidence: { rules: [{ id: "cost_coverage", applicable: true, measure: 0.5 }] }, briefing: null, ordersInPeriod: 0 }) })),
-  (h) => /data-activation="pending"/.test(h) && /tcc-badge--warn">1 \/ 3</.test(h) && /data-step="synced" data-state="done"[\s\S]*?tcc-badge--good">Fait</.test(h) && /data-step="costs" data-state="todo"[\s\S]*?Aujourd(?:&#x27;|')hui 50.% du CA a un coût connu[\s\S]*?href="\/app"[^>]*>Y aller</.test(h) && /data-step="situation" data-state="todo"[\s\S]*?href="\/app\/overview"/.test(h));
+  (h) => /data-activation="pending"/.test(h) && /tcc-badge--warn">1 \/ 3</.test(h) && /data-step="synced" data-state="done"[\s\S]*?tcc-badge--good">Fait</.test(h) && /data-step="costs" data-state="todo"[\s\S]*?Aujourd(?:&#x27;|')hui 50.% du CA a un coût connu[\s\S]*?href="\/app\/settings\/products"[^>]*>Y aller</.test(h) && /data-step="situation" data-state="todo"[\s\S]*?href="\/app\/overview"/.test(h));
 check("activation complète (en) : 3 / 3, « Everything is in place »",
   wrap("en", React.createElement(ActivationChecklist, { checklist: activationChecklist({ lastSync: "2026-09-24T10:00:00Z", confidence: { rules: [{ id: "cost_coverage", applicable: true, measure: 0.9 }] }, briefing: { situation: [{}] }, ordersInPeriod: 3 }) })),
   (h) => /data-activation="complete"/.test(h) && /3 \/ 3/.test(h) && /Everything is in place/.test(h) && !/>Go</.test(h));
-check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa page (coûts → écran classique, frais → Réglages > Coûts, pub → Connexions)",
+check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa page (coûts → Réglages > Coûts produits, frais → Réglages > Coûts, pub → Connexions)",
   wrapEur("fr", React.createElement(DataHealth, { confidence: MIS.confidence, compact: true })),
-  (h) => (h.match(/data-fix="/g) ?? []).length === 3 && /data-fix="cost_coverage" href="\/app"/.test(h.replace(/class="[^"]*" to=/g, "").replace(/href="([^"]*)"[^>]*data-fix="([^"]*)"/g, 'data-fix="$2" href="$1"')) && /Compléter</.test(h) && /data-fix="(payment_fees|shipping_costs)"/.test(h));
+  (h) => (h.match(/data-fix="/g) ?? []).length === 3 && /data-fix="cost_coverage" href="\/app\/settings\/products"/.test(h.replace(/class="[^"]*" to=/g, "").replace(/href="([^"]*)"[^>]*data-fix="([^"]*)"/g, 'data-fix="$2" href="$1"')) && /Compléter</.test(h) && /data-fix="(payment_fees|shipping_costs)"/.test(h));
 check("état vide : « Compléter les réglages » vers /app/settings + écran classique en secondaire",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: {} })),
   (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" href="\/app">Ouvrir l(?:&#x27;|')écran classique</.test(h));
@@ -519,6 +519,45 @@ check("mémoire observée : observé « +95,00 € (toutes causes confondues) »
     { id: "o4", decided_at: "2026-09-20", rule_id: null, values: { price: 3 }, review_at: "2026-10-20T10:00:00Z" },
   ] })),
   (h) => /data-decision="o1" data-observed="observed"[\s\S]*?attendu 80,00.€ – 120,00.€[\s\S]*?observé \+95,00.€ \(toutes causes confondues\)/.test(h) && /data-decision="o2" data-observed="unobservable"[\s\S]*?non observable : l(?:&#x27;|')historique ne couvre pas/.test(h) && /data-decision="o3" data-observed="pending"[\s\S]*?observé à partir du 19 nov\. 2026/.test(h) && /data-decision="o4" data-observed="due"[\s\S]*?observation en attente/.test(h));
+
+// ════════════════════════════════════════════════════════════════════════════════
+//  F4-D1b Offre, F4-D1a Coûts produits (portage de l'écran classique, traduit).
+// ════════════════════════════════════════════════════════════════════════════════
+const { PlanCards } = await vite.ssrLoadModule("/app/components/settings/PlanCards.jsx");
+const { planView } = await vite.ssrLoadModule("/app/lib/plans.js");
+const { ProductCostSummary, ProductCostList: PcList, CustomsPanel, CostsCsv } = await vite.ssrLoadModule("/app/components/settings/ProductCosts.jsx");
+const { groupProducts, statusCounts } = await vite.ssrLoadModule("/app/lib/productCosts.js");
+const pcRows = [
+  { variant_id: "gid://shopify/ProductVariant/1", product_id: "gid://shopify/Product/A", product_title: "Tee", variant_title: "S", price: 60, prix_achat: 22, port_entrant: 5, qty_par_lot: 10, cout_emballage: 0.5, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Textile", source: "confirmed", stored: true, customs_confirmed: false },
+  { variant_id: "gid://shopify/ProductVariant/2", product_id: "gid://shopify/Product/A", product_title: "Tee", variant_title: "M", price: 60, prix_achat: 18.4, port_entrant: 8, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "dropshipping", pays_import: "Chine", categorie: "Textile", source: "estimated", stored: false },
+  { variant_id: "gid://shopify/ProductVariant/3", product_id: "gid://shopify/Product/B", product_title: "Poster", variant_title: "Default Title", price: 40, prix_achat: 0, port_entrant: 8, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "dropshipping", pays_import: "Chine", categorie: "Autre", source: "estimated", stored: false },
+];
+const pcProducts = groupProducts(pcRows);
+
+console.log("\n=== RENDU RÉEL — Offre (F4-D1b) ===");
+check("offre gratuite (fr), boutique de dev : bandeau test, « Offre actuelle : Gratuit », 3 cartes (prix /mois, essai 7 j), badges Populaire / Recommandé, boutons Choisir Pro et Choisir Expert (formulaires intent), aucun bouton sur Gratuit",
+  wrap("fr", React.createElement(PlanCards, { view: planView({ ent: { isPro: false, isExpert: false, source: "live" } }), isDevShop: true })),
+  (h) => /tone="info">Boutique de développement/.test(h) && /data-current-plan="free"/.test(h) && /Offre actuelle : Gratuit\./.test(h) && (h.match(/data-plan="/g) ?? []).length === 3 && /29.\$US \/ mois|29.\$ \/ mois/.test(h) && /7 jours d(?:&#x27;|')essai gratuit/.test(h) && /Populaire/.test(h) && /Recommandé/.test(h) && /name="intent" value="subscribe_pro"/.test(h) && /name="intent" value="subscribe_expert"/.test(h) && !/value="subscribe_free"/.test(h) && !/ style="/.test(h));
+check("offre Pro (en), boutique bêta : seul « Choose Expert » avec essai de 45 jours ; carte Pro « Current »",
+  wrap("en", React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: false, source: "live" }, isBeta: true, betaTrialDays: 45 }) })),
+  (h) => /data-plan="pro" [^>]*|class="tcc-plan is-current" data-plan="pro"/.test(h) && /Current</.test(h) && /45-day free trial/.test(h) && !/value="subscribe_pro"/.test(h) && /value="subscribe_expert"/.test(h));
+check("offre Expert (fr) : « la plus complète », aucun bouton ; plan indéterminé : bandeau avertissement, aucun bouton",
+  wrap("fr", React.createElement("div", null, React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: true, source: "cache" } }) }), React.createElement(PlanCards, { view: planView({ ent: { source: "indeterminate" } }) }))),
+  (h) => /Vous avez l(?:&#x27;|')offre la plus complète/.test(h) && /dernière offre connue/.test(h) && /tone="warning">Votre offre n(?:&#x27;|')a pas pu être lue/.test(h) && !/name="intent"/.test(h));
+
+console.log("\n=== RENDU RÉEL — Coûts produits (F4-D1a) ===");
+check("résumé et liste (fr) : filtres Tous (2) / À compléter (1) / Partiels (1) / Complets (0) ; Tee « Partiel : 1 variantes sur 2 » + « Douane à confirmer » ; Poster « À compléter » ; liens Saisir les coûts",
+  wrap("fr", React.createElement("div", null, React.createElement(ProductCostSummary, { counts: statusCounts(pcProducts), filter: "all" }), React.createElement(PcList, { products: pcProducts, filter: "all" }))),
+  (h) => /Tous \(2\)/.test(h) && /À compléter \(1\)/.test(h) && /Partiels \(1\)/.test(h) && /Complets \(0\)/.test(h) && /data-product="gid:\/\/shopify\/Product\/A" data-status="partial"[\s\S]*?Partiel : 1 variantes sur 2[\s\S]*?Douane à confirmer/.test(h) && /data-status="todo"[\s\S]*?À compléter/.test(h) && (h.match(/>Saisir les coûts</g) ?? []).length === 2);
+check("panneau ouvert (Tee, EUR) : formulaire data-save-bar, 2 variantes (S renseignée, M suggestion), valeurs réelles sur S, exemples « ex : 18,40 » sur M (jamais une valeur), selects Chine / Textile traduits, champ en erreur signalé",
+  wrapEur("fr", React.createElement(PcList, { products: pcProducts, openId: "gid://shopify/Product/A", filter: "all", currency: "EUR", result: { intent: "save_product", product_id: "gid://shopify/Product/A", errors: [{ variant_id: "gid://shopify/ProductVariant/2", fields: ["prix_achat"] }], skipped: [{ variant_id: "gid://shopify/ProductVariant/2", empty: ["cout_emballage"] }] } })),
+  (h) => /<form method="post" action="\/" data-save-bar=""[^>]*class="tcc-form tcc-pc__panel"/.test(h) && (h.match(/data-variant="/g) ?? []).length === 2 && /S · renseignée/.test(h) && /name="prix_achat_0"[^>]*value="22"/.test(h) && /name="prix_achat_1"[^>]*value=""[^>]*placeholder="ex : 18,40"/.test(h) && /name="prix_achat_1"[^>]*error="Saisissez un nombre\."/.test(h) && /name="cout_emballage_1"[^>]*error="Obligatoire pour enregistrer cette variante\."/.test(h) && /Quantité par lot vide = 1/.test(h) && /<s-option value="Chine">Chine</.test(h) && /<s-option value="Électronique">Électronique</.test(h) && /Prix d(?:&#x27;|')achat \(EUR\)/.test(h) && /name="vid_1" value="gid:\/\/shopify\/ProductVariant\/2"/.test(h));
+check("douane (en) : 1 produit à confirmer (Tee, catégorie stockée Textile présélectionnée), formulaire intent confirm_customs ; Poster (aucune variante stockée) absent",
+  wrap("en", React.createElement(CustomsPanel, { products: pcProducts })),
+  (h) => /Customs classification: 1 product to confirm/.test(h) && /data-customs="gid:\/\/shopify\/Product\/A"/.test(h) && !/data-customs="gid:\/\/shopify\/Product\/B"/.test(h) && /<s-select name="categorie"[^>]*value="Textile"/.test(h) && /<s-option value="Électronique">Electronics</.test(h) && /value="confirm_customs"/.test(h));
+check("CSV (fr) : lien d'export data:text/csv téléchargeable, formulaire multipart d'import, résultat 3 importées + 2 lignes rejetées avec champs traduits",
+  wrap("fr", React.createElement(CostsCsv, { csv: "variant_id,prix_achat\ngid,1", result: { intent: "import_csv", ok: true, saved: 3, csvErrors: [{ line: 4, fields: ["prix_achat", "categorie"] }, { line: 7, fields: ["variant_id"] }] } })),
+  (h) => /href="data:text\/csv;charset=utf-8,variant_id%2Cprix_achat/.test(h) && /download="true-cost-calculator-costs\.csv"/.test(h) && /enctype="multipart\/form-data"/i.test(h) && /<input type="file" name="csv"/.test(h) && /3 variantes importées\. 2 lignes ont été rejetées\./.test(h) && /Ligne 4 : prix d(?:&#x27;|')achat, catégorie/.test(h) && /identifiant de variante manquant/.test(h));
 
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
