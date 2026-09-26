@@ -4,7 +4,7 @@ import { useI18n } from "../../lib/i18n/context.jsx";
 import { FIELDS, CM2_TARGET_BAND } from "../../lib/settings.js";
 import { NumberField } from "./Fields.jsx";
 
-export function GoalsForm({ settings = {}, result = null, alertThreshold = null }) {
+export function GoalsForm({ settings = {}, result = null }) {
   const { t, pct } = useI18n();
   const bad = result?.intent === "save_goals" ? result.errors ?? {} : {};
   return (
@@ -20,7 +20,6 @@ export function GoalsForm({ settings = {}, result = null, alertThreshold = null 
         </div>
         <div className="tcc-form__actions"><s-button type="submit" variant="secondary">{t("settings.save")}</s-button></div>
       </Form>
-      {alertThreshold != null && <p className="tcc-muted">{t("settings.goals.alert_threshold", { pct: pct(alertThreshold, { digits: 0 }) })}</p>}
     </section>
   );
 }

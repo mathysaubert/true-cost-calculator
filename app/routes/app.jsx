@@ -58,17 +58,16 @@ export default function App() {
   );
 }
 
-// rel="home" fixe la page d'accueil (/app, écran classique, masqué du menu par l'admin) ; puis les
-// sections livrées ; enfin l'écran classique, accessible jusqu'à F4-D.
+// rel="home" fixe la page d'accueil (Aujourd'hui, masquée du menu par l'admin), puis les sections
+// livrées. L'écran classique a été supprimé en D2-3 (2026-09-26).
 function AppNav() {
   const { catalogs, locale } = useLoaderData();
   const cat = catalogs[locale] ?? catalogs.en ?? {};
   const label = (k) => cat[k] ?? catalogs.en?.[k] ?? k;
   return (
     <s-app-nav>
-      <s-link rel="home" href="/app">{label("nav.home")}</s-link>
+      <s-link rel="home" href="/app/overview">{label("nav.home")}</s-link>
       {LIVE_SECTIONS.map((s) => <s-link key={s.id} href={s.path}>{label(`nav.${s.id}`)}</s-link>)}
-      <s-link href="/app">{label("nav.legacy")}</s-link>
     </s-app-nav>
   );
 }

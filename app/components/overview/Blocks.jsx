@@ -19,7 +19,6 @@ export function OverviewEmptyState({ excluded = {}, partials = [], titles = {} }
         {total > 0 && <p className="tcc-empty__reasons">{t("overview.empty.body_excluded", { count: total, reasons })}</p>}
         <div className="tcc-form__actions">
           <Link className="tcc-cta" to="/app/settings">{t("overview.empty.cta_settings")}</Link>
-          <Link className="tcc-cta tcc-cta--ghost" to="/app" data-legacy-link="">{t("overview.empty.cta_legacy")}</Link>
         </div>
       </div>
       <PartialConclusions partials={partials} titles={titles} title={t("overview.empty.partial_title")} />

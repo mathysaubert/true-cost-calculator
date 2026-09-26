@@ -7,7 +7,6 @@ export default {
   "app.tagline": "Votre copilote financier pour une croissance rentable",
 
   "nav.home": "Accueil",
-  "nav.legacy": "Écran classique",
   "nav.sections": "Sections",
   "nav.soon": "Bientôt",
   "nav.group.steer": "Piloter",
@@ -362,7 +361,6 @@ export default {
   "settings.goals.title": "Objectifs",
   "settings.goals.subtitle": "Les cibles auxquelles le copilote vous compare. Elles ne changent jamais vos chiffres, seulement ce qui est signalé.",
   "settings.goals.band": "La plupart des boutiques rentables gardent une marge de contribution entre {{low}} et {{high}} du CA.",
-  "settings.goals.alert_threshold": "Seuil d'alerte de l'écran classique (alertes de calcul) : {{pct}}. Inchangé ici.",
   "sim.subtitle": "Changez un levier à la fois et lisez ce que cela représenterait, toutes choses égales par ailleurs. Un scénario, jamais une prévision.",
   "sim.from_rule": "Pré-chargé depuis : {{name}}",
   "sim.levers.title": "Leviers",
@@ -813,7 +811,6 @@ export default {
   "overview.empty.body": "Les commandes apparaissent ici quelques secondes après leur passage, journée en cours comprise. Élargissez la période ou revenez après votre prochaine vente.",
   "overview.empty.body_excluded_one": "{{count}} commande de la période est exclue de l'analyse ({{reasons}}).",
   "overview.empty.body_excluded_other": "{{count}} commandes de la période sont exclues de l'analyse ({{reasons}}).",
-  "overview.empty.cta_legacy": "Ouvrir l'écran classique",
   "overview.empty.cta_settings": "Compléter les réglages",
   "activation.title": "Mise en route",
   "activation.progress": "{{done}} / {{total}}",

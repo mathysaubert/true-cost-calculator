@@ -6,8 +6,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 const vite = await createServer({ server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
-const { CustomsClassificationPanel: Panel, CustomsEstimatedTag: Tag, CustomsFeedbackBanner } = await vite.ssrLoadModule("/app/components/customsUi.jsx");
-const { CostSummaryBanner, ReliabilityCounter, ProductCostList, ProductCostPanel } = await vite.ssrLoadModule("/app/components/costsUi.jsx");
 
 let ko = 0;
 // D0 (React 19) : React 19 sérialise method/action du <form> après les autres attributs. L'ordre des
@@ -33,106 +31,8 @@ function check(label, element, expect) {
   } catch (e) { ko++; console.log(`  ERR ${label} → THROW ${e.constructor.name}: ${e.message}`); }
 }
 
-console.log("=== RENDU RÉEL — CustomsClassificationPanel (Suivi des coûts) ===");
-check("rows=null (ÉTAT INITIAL avant réponse listFetcher) — ne doit PLUS crasher", React.createElement(Panel, { rows: null, onConfirmed(){} }), () => true);
-check("rows=[] (chargé, catalogue vide) → panneau masqué", React.createElement(Panel, { rows: [], onConfirmed(){} }), (h) => h === "");
-check("rows=[1 produit estimé] → affiche « à confirmer »", React.createElement(Panel, { rows: [{ product_id: "p1", product_title: "Tapis", categorie: "Sport", customs_confirmed: false }], onConfirmed(){} }), (h) => /à confirmer/.test(h) && /Tapis/.test(h));
-check("rows=[1 produit confirmé] → panneau masqué (null)", React.createElement(Panel, { rows: [{ product_id: "p1", product_title: "Tapis", categorie: "Sport", customs_confirmed: true }], onConfirmed(){} }), (h) => h === "");
-check("rows=[2 variantes divergentes] → « catégories divergentes »", React.createElement(Panel, { rows: [{ product_id: "p1", product_title: "Tapis", categorie: "Sport", customs_confirmed: false }, { product_id: "p1", product_title: "Tapis", categorie: "Textile", customs_confirmed: false }], onConfirmed(){} }), (h) => /divergentes/.test(h));
-
-console.log("\n=== RENDU RÉEL — CustomsEstimatedTag (Monitor / Audit) ===");
-check("estimated=true → badge « Taux estimé »", React.createElement(Tag, { estimated: true }), (h) => /estimé/.test(h));
-check("estimated=false → null (aucun affichage, par contrat)", React.createElement(Tag, { estimated: false }), (h) => h === "");
-check("estimated=undefined (champ absent) → null", React.createElement(Tag, { estimated: undefined }), (h) => h === "");
-
-const titleFor = (id) => ({ p4: "Gourde", p3: "Mug", p1: "Tee" }[id] ?? null);
-
-console.log("\n=== RENDU RÉEL — CustomsFeedbackBanner (Suivi [4], règle d'or) ===");
-check("feedback null → rien",
-  React.createElement(CustomsFeedbackBanner, { feedback: null, onClose() {} }), (h) => h === "");
-check("succès + rateChanged → « taux a changé », prochains calculs, pas de « vérités auditées »",
-  React.createElement(CustomsFeedbackBanner, { feedback: { success: true, rateChanged: true }, onClose() {} }),
-  (h) => /Catégorie confirmée/.test(h) && /taux de douane a changé/.test(h) && /prochains calculs utiliseront ce taux/.test(h) && !/vérités auditées/.test(h));
-check("succès sans changement → « prochains calculs », message court",
-  React.createElement(CustomsFeedbackBanner, { feedback: { success: true, rateChanged: false }, onClose() {} }),
-  (h) => /Catégorie confirmée/.test(h) && /prochains calculs utiliseront ce taux/.test(h) && !/taux de douane a changé/.test(h));
-check("erreur → message d'erreur affiché",
-  React.createElement(CustomsFeedbackBanner, { feedback: { success: false, error: "Aucune variante à confirmer." }, onClose() {} }),
-  (h) => /Aucune variante à confirmer/.test(h));
-
-console.log("\n=== RENDU RÉEL — CostSummaryBanner (Suivi [1], toujours visible) ===");
-check("sans commande analysée → invite « synchronisez »",
-  React.createElement(CostSummaryBanner, { validCount: 0, feesCurrency: "USD" }),
-  (h) => /Pas encore de commandes analysées/.test(h) && /synchronisez/.test(h));
-check("avec données → CA net, marge nette, commandes, pill à perte",
-  React.createElement(CostSummaryBanner, { validCount: 5, totals: { net_revenue: 1000, net_margin: -50, orders: 5 }, unprofitableCount: 2, multiCurrency: false, feesCurrency: "USD" }),
-  (h) => /CA net/.test(h) && /Marge nette/.test(h) && /Commandes/.test(h) && /produits à perte/.test(h));
-check("multi-devises → renvoi au détail (pas de total agrégé faux)",
-  React.createElement(CostSummaryBanner, { validCount: 3, multiCurrency: true, feesCurrency: "USD" }),
-  (h) => /plusieurs devises/.test(h));
-
-console.log("\n=== RENDU RÉEL — ReliabilityCounter (Suivi, point 4) ===");
-check("aucune vente (hasSales false) → null (l'invite « synchronisez » vit ailleurs)",
-  React.createElement(ReliabilityCounter, { reliability: { hasSales: false }, titleFor, onSelectProduct() {} }), (h) => h === "");
-check("X % + missing + top-3 → « ventes analysées », ligne missing, produits cliquables",
-  React.createElement(ReliabilityCounter, { reliability: { reliabilityPct: 50, missingProducts: [{ product_id: "p4", units: 9 }], missingCount: 1, topIncomplete: [{ product_id: "p4", units: 9, status: "missing" }, { product_id: "p3", units: 3, status: "estimated" }], hasSales: true }, titleFor, onSelectProduct() {} }),
-  (h) => /ventes analysées/.test(h) && /sans coût renseigné/.test(h) && /marge inconnue/.test(h) && /Gourde/.test(h));
-check("tout-missing (pct null) → invite « Renseignez vos coûts », pas de %",
-  React.createElement(ReliabilityCounter, { reliability: { reliabilityPct: null, missingProducts: [{ product_id: "p1", units: 5 }], missingCount: 1, topIncomplete: [{ product_id: "p1", units: 5, status: "missing" }], hasSales: true }, titleFor, onSelectProduct() {} }),
-  (h) => /Renseignez vos coûts/.test(h) && /sans coût renseigné/.test(h) && !/ventes analysées/.test(h));
-check("borne 100 % → aucun produit à compléter, aucune ligne missing",
-  React.createElement(ReliabilityCounter, { reliability: { reliabilityPct: 100, missingProducts: [], missingCount: 0, topIncomplete: [], hasSales: true }, titleFor, onSelectProduct() {} }),
-  (h) => /100/.test(h) && /ventes analysées/.test(h) && !/sans coût renseigné/.test(h));
-check("produit supprimé (titleFor null) → « (produit supprimé de la boutique) », lien inactif",
-  React.createElement(ReliabilityCounter, { reliability: { reliabilityPct: 60, missingProducts: [{ product_id: null, units: 4 }], missingCount: 1, topIncomplete: [{ product_id: null, units: 4, status: "missing" }], hasSales: true }, titleFor: () => null, onSelectProduct() {} }),
-  (h) => /produit supprimé de la boutique/.test(h) && /disabled/.test(h));
-
-console.log("\n=== RENDU RÉEL — ProductCostList (Suivi) ===");
-check("liste vide → « Aucun produit actif »",
-  React.createElement(ProductCostList, { products: [], onToggle() {} }), (h) => /Aucun produit actif/.test(h));
-check("liste partielle → titre + « Partiel » + marge réelle + note 30 jours",
-  React.createElement(ProductCostList, { products: [{ product_id: "p1", title: "T-shirt bleu", status: { key: "partial", label: "Partiel : 1 variante sur 2" }, marginPct: 18, variantRows: [] }], onToggle() {} }),
-  (h) => /T-shirt bleu/.test(h) && /Partiel : 1 variante sur 2/.test(h) && /18/.test(h) && /Statut des coûts/.test(h) && /sans vente sur la période/.test(h));
-check("liste : produit sans vente (marge « — ») → tooltip explicatif présent",
-  React.createElement(ProductCostList, { products: [{ product_id: "p1", title: "Mug licorne", status: { key: "todo", label: "À compléter" }, marginPct: null, variantRows: [] }], onToggle() {} }),
-  (h) => /Aucune vente de ce produit dans les commandes analysées/.test(h) && /30 derniers jours/.test(h));
-
-console.log("\n=== RENDU RÉEL — ProductCostPanel (Suivi, champs vides + placeholders) ===");
-{
-  const product = { product_id: "p1", title: "Tee", variantRows: [
-    { variant_id: "v1", variant_title: "M", source: "estimated", stored: false, prix_achat: 0, port_entrant: 8, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Autre" },
-    { variant_id: "v2", variant_title: "L", source: "confirmed", stored: true, prix_achat: 9, port_entrant: 5, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Sport" },
-  ] };
-  check("panneau : bouton « Enregistrer ce produit », suggestion en placeholder (« ex : 8 »), ✓ sur variante confirmée, aide repli",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
-    (h) => /Enregistrer ce produit/.test(h) && /ex : 8/.test(h) && /✓/.test(h) && /Comment vous expédiez/.test(h) && /valeur suggérée affichée en exemple/.test(h));
-  check("panneau : erreur de validation prix d'achat (≤ 0) affichée",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", errors: [{ variant_id: "v1", messages: ["Indiquez le prix d'achat fournisseur"] }] }),
-    (h) => /Indiquez le prix d/.test(h) && /achat fournisseur/.test(h) && /non enregistrée/.test(h));
-  check("panneau multi-variantes → en-tête « Variante » présent",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
-    (h) => />Variante</.test(h));
-
-  // Point 10 : produit mono-variante → pas de colonne « Variante », champs directs.
-  const mono = { product_id: "p2", title: "Gourde", variantRows: [{ variant_id: "v1", variant_title: "Default Title", source: "estimated", stored: false, prix_achat: 0, port_entrant: 8, qty_par_lot: 1, cout_emballage: 0, vat_regime: "assujetti", shipping_model: "stock", pays_import: "Chine", categorie: "Autre" }] };
-  check("panneau mono-variante → aucune colonne « Variante », ni « Variante unique »",
-    React.createElement(ProductCostPanel, { product: mono, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
-    (h) => !/>Variante</.test(h) && !/Variante unique/.test(h) && /Prix d/.test(h));
-
-  // Point 9 : boucle post-enregistrement, 3 états (saved=true).
-  check("post-save : produit incomplet restant → « Continuez : {titre} » cliquable",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: { product_id: "p9", title: "Mug licorne" }, hasAnalyzedOrders: true, onContinue() {} }),
-    (h) => /Continuez :/.test(h) && /Mug licorne/.test(h));
-  check("post-save : tout renseigné + aucune commande → invite synchroniser",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: false, onContinue() {} }),
-    (h) => /Tous vos produits sont renseignés/.test(h) && /Synchronisez vos commandes/.test(h));
-  check("post-save : tout renseigné + commandes présentes → clôture « marges se calculent avec ces coûts »",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD", saved: true, nextIncomplete: null, hasAnalyzedOrders: true, onContinue() {} }),
-    (h) => /Tous vos produits sont renseignés : vos marges réelles se calculent/.test(h) && !/Synchronisez vos commandes/.test(h));
-  check("panneau : intro « ces coûts servent à calculer votre vraie marge »",
-    React.createElement(ProductCostPanel, { product, draft: {}, onEdit() {}, onSave() {}, feesCurrency: "USD" }),
-    (h) => /Ces coûts servent à calculer votre vraie marge sur chaque commande/.test(h));
-}
+// D2-3 (2026-09-26) : les composants de l'écran classique (costsUi, customsUi) sont supprimés avec lui ;
+// Réglages > Coûts produits est couvert plus bas (F4-D1a).
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  F4-A — Vue d'ensemble (Overview) : composants RÉELS rendus sous I18nProvider (en puis fr) :
@@ -241,9 +141,9 @@ check("trous → s-banner warning : 6 commandes lues par l'ancienne version, 1 l
   (h) => /tone="warning"/.test(h) && /6 orders were read by the previous version and are not counted/.test(h) && /1 order line has no product cost/.test(h) && /5,000/.test(h) && /2 orders are excluded from every figure: 1 cancelled, 1 B2B/.test(h));
 check("aucun trou → null", wrap("en", React.createElement(DataGapsBanner, { gaps: [] })), (h) => /<div class="tcc"><\/div>/.test(h));
 check("notes (fr) → pub non connectée, coûts fixes absents", wrap("fr", React.createElement(OverviewNotes, { notes: buildNotes(aggFull) })), (h) => /Aucune source publicitaire connectée/.test(h) && /Aucun coût fixe saisi/.test(h));
-check("état vide avec 6 legacy → titre, « 6 commandes … (6 lues par l'ancienne version) », lien écran classique",
+check("état vide avec 6 legacy → titre, « 6 commandes … (6 lues par l'ancienne version) », plus de lien vers l'écran classique (D2-3)",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: legacyExcl })),
-  (h) => /Aucune commande à analyser/.test(h) && /6 commandes de la période sont exclues/.test(h) && /6 lues par l(?:&#x27;|')ancienne version/.test(h) && /href="\/app"/.test(h) && /journée en cours comprise/.test(h));
+  (h) => /Aucune commande à analyser/.test(h) && /6 commandes de la période sont exclues/.test(h) && /6 lues par l(?:&#x27;|')ancienne version/.test(h) && !/href="\/app"/.test(h) && /journée en cours comprise/.test(h));
 check("boutique de dev OFF → bandeau info + « Include draft and test orders » (form POST) ; ON (fr) → « Exclure… » ; marchande → null",
   wrap("en", React.createElement("div", null, React.createElement(DevShopBanner, { isDevShop: true, includeTestOrders: false }), React.createElement(DevShopBanner, { isDevShop: false, includeTestOrders: true }))),
   (h) => /tone="info"/.test(h) && /Include draft and test orders/.test(h) && /method="post"/.test(h) && (h.match(/<s-banner/g) ?? []).length === 1);
@@ -390,9 +290,9 @@ check("passerelles : 2 formulaires (shopify_payments 12 commandes à confirmer a
 check("coûts fixes : 2 lignes (Loyer actif avec Terminer + Supprimer ; ancien outil terminé, Supprimer seul), total « 1 200,00 $ par mois » sur l'actif, formulaire d'ajout ; vide → message",
   wrap("fr", React.createElement("div", null, React.createElement(FixedCosts, { rows: fixedRows, today: "2026-09-24" }), React.createElement(FixedCosts, { rows: [], today: "2026-09-24" }))),
   (h) => (h.match(/data-fixed-cost="/g) ?? []).length === 2 && /data-fixed-cost="a1"[\s\S]*?Terminer aujourd(?:&#x27;|')hui/.test(h) && /class="tcc-table__row is-off" role="row" data-fixed-cost="b2"/.test(h) && /1.200,00.\$ par mois/.test(h) && (h.match(/name="intent" value="add_fixed_cost"/g) ?? []).length === 2 && /Aucun coût fixe pour le moment/.test(h));
-check("objectifs : 3 champs avec suffixe % sur les taux, seuil 0 → vide, bande 40 % – 60 %, seuil d'alerte classique rappelé",
-  wrap("fr", React.createElement(GoalsForm, { settings: { profitability_threshold_pct: 0, main_product_price: 60 }, alertThreshold: 25 })),
-  (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value=""[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && /alertes de calcul\) : 25.%/.test(h));
+check("objectifs : 3 champs avec suffixe % sur les taux, seuil 0 → vide, bande 40 % – 60 %, plus de seuil d'alerte de l'écran classique (D2-3)",
+  wrap("fr", React.createElement(GoalsForm, { settings: { profitability_threshold_pct: 0, main_product_price: 60 } })),
+  (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value=""[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && !/alertes de calcul/.test(h));
 check("état des réglages : 13 lignes en 5 pages (Boutique, Marketing, Connexions, Coûts, Objectifs) avec badges Renseigné / À confirmer / Manquant et lien Ouvrir",
   wrap("fr", React.createElement(SettingsIndex, { items: settingsStatus({ settings: setFull, fixedCosts: fixedRows, gateways: gws, day: "2026-09-24" }) })),
   (h) => (h.match(/data-setting="/g) ?? []).length === 13 && (h.match(/<section class="tcc-block"/g) ?? []).length === 5 && /href="\/app\/settings\/shop"/.test(h) && /data-setting="gateway_fees" data-state="unconfirmed"/.test(h) && /data-setting="fixed_costs" data-state="set"/.test(h) && /href="\/app\/settings\/costs"[^>]*>Ouvrir</.test(h) && /tcc-badge--warn">À confirmer</.test(h));
@@ -513,9 +413,9 @@ check("activation complète (en) : 3 / 3, « Everything is in place »",
 check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa page (coûts → Réglages > Coûts produits, frais → Réglages > Coûts, pub → Connexions)",
   wrapEur("fr", React.createElement(DataHealth, { confidence: MIS.confidence, compact: true })),
   (h) => (h.match(/data-fix="/g) ?? []).length === 3 && /data-fix="cost_coverage" href="\/app\/settings\/products"/.test(h.replace(/class="[^"]*" to=/g, "").replace(/href="([^"]*)"[^>]*data-fix="([^"]*)"/g, 'data-fix="$2" href="$1"')) && /Compléter</.test(h) && /data-fix="(payment_fees|shipping_costs)"/.test(h));
-check("état vide : « Compléter les réglages » vers /app/settings + écran classique en secondaire",
+check("état vide : « Compléter les réglages » vers /app/settings, seul bouton (écran classique supprimé en D2-3)",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: {} })),
-  (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" data-legacy-link="" href="\/app" data-discover="true">Ouvrir l(?:&#x27;|')écran classique</.test(h));
+  (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && !/écran classique|data-legacy-link/.test(h));
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  S2 — objectif (bloc initial), comparaison (2 scénarios + courant), mémoire avec attendu / observé.

@@ -568,3 +568,34 @@ Phase 0 : `2026-09-25_s3-f4-d_phase0.md`. Toutes les recommandations retenues.
 | X9 | Suppression en base en D2 (tables `calculations`, `calculation_annotations`, `margin_alerts`, trigger R0-02, colonnes de réglages de `shop_plans`) ; **sauvegarde Supabase faite par Mathys avant D2** | D2 |
 | X10 | (b) export CSV des calculs si une boutique réelle en a, sinon (a) suppression ; vérifié en lecture avant D2 (2026-09-25 : 3 calculs, tous sur des boutiques non marchandes) | D2 |
 
+
+## M. Tarification du nouveau TCC (2026-09-26)
+
+Décidée par Mathys. Mise en œuvre à préparer dans la Phase 0 de D2 (`2026-09-26_d2_phase0.md`).
+
+| # | Décision | Conséquence |
+|---|---|---|
+| Y1 | Facturation **mixte** : palier selon le nombre de commandes par mois, plus quelques fonctions réservées aux offres hautes | compteur de commandes mensuel et règle de palier ; contrôle d'accès aux fonctions Pro et Expert |
+| Y2 | Paliers : **Gratuit 0 $** jusqu'à 50 commandes/mois ; **Pro 29 $/mois** jusqu'à 500 ; **Expert 69 $/mois** jusqu'à 3 000 | tarifs et plafonds dans la configuration de facturation et l'écran Offre |
+| Y3 | **Dépassement** : tout continue d'être calculé ; le passage au palier supérieur est demandé à partir du mois suivant. **Jamais de blocage ni de trou dans les chiffres** | aucune coupure de calcul, de synchronisation ni d'écran ; seule une demande de changement d'offre |
+| Y4 | **Contenu.** Gratuit : Aujourd'hui (avec les priorités), Indicateurs, Produits, Fiabilité des données, Réglages. Pro : en plus le Simulateur complet, la mesure des décisions à 30 jours, les alertes e-mail de perte. Expert : en plus l'audit du catalogue ; le copilote IA et la publicité connectée y seront ajoutés quand ils existeront. **Les offres ne décrivent que ce qui existe** | arguments des offres réécrits (rappel D2) ; contrôle d'accès du Simulateur, de la mesure à 30 jours, des alertes e-mail, de l'audit |
+| Y5 | **Essai de 14 jours** sur Pro et Expert (au lieu de 7) | configuration de facturation |
+| Y6 | **Bêta** : 45 jours d'Expert offerts, **offre privée** pour les boutiques recrutées par Mathys (objectif 10, plafond 20), en échange d'un appel de retour et d'un avis. **Pas d'essai de 14 jours en plus** s'ils s'abonnent ensuite | mécanisme bêta à revoir (liste, plafond, pas de cumul d'essais) |
+
+## N. D2 : arbitrages de la Phase 0 (2026-09-26)
+
+Phase 0 : `2026-09-26_d2_phase0.md`.
+
+| # | Décision | Conséquence |
+|---|---|---|
+| Z1 | (b) **Shopify App Pricing**, sous condition de la vérification D2-0 sur une **app de test séparée** ; activation sur la vraie app **seulement sur GO séparé** de Mathys | lots D2-0 puis D2-1 ; repli sur la Billing API si D2-0 échoue |
+| Z2 | (a) Compte pour le palier : toutes les commandes **créées dans le mois** (fuseau de la boutique), sauf commandes de test et brouillons ; comptage depuis `orders` | D2-2 ; le compteur d'ingestion `usage.orders_count` est remplacé |
+| Z3 | (b) Dépassement : bandeau dans l'app + page Offre mise en avant à partir du 1er du mois suivant, **et un e-mail unique** au marchand ; jamais de blocage | D2-2 ; fin de la coupure des alertes |
+| Z4 | (a) Fonction non incluse : carte explicative (ce qu'elle fait, l'offre qui l'inclut, bouton de passage). En Gratuit, les décisions retenues restent enregistrées ; leur mesure à 30 jours s'affiche en Pro | D2-2 |
+| Z5 | (c) Au-delà de 3 000 commandes/mois : pas de blocage, **demande vers une offre sur mesure** (plan privé) | D2-2 (demande), D2-1 (plan privé sur mesure) |
+| Z6 | (a) Alerte e-mail de perte calculée sur la **CM2 par produit** du moteur `econ` | D2-5 |
+| Z7 | (a) Suivi des testeurs bêta (appel, avis) **hors de l'app**, dans le tableau de Mathys | accès au plan privé géré dans le Partner Dashboard |
+| Z8 | Noms des offres gardés : « True Cost Calculator Pro » et « True Cost Calculator Expert » | — |
+| Z9 | Route `debug.jsx` retirée avec l'écran classique | D2-3 |
+
+Ordre des lots : **D2-3 → D2-4 → D2-0 → D2-1 → D2-2 → D2-5 → D3**.

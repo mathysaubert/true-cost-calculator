@@ -15,11 +15,8 @@ import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
-  const [s, { data: alert }] = await Promise.all([
-    loadSettings({ supabase, shop: session.shop }),
-    supabase.from("margin_alerts").select("threshold").eq("shop_domain", session.shop).maybeSingle(),
-  ]);
-  return { settings: s.settings, alertThreshold: alert?.threshold ?? null };
+  const s = await loadSettings({ supabase, shop: session.shop });
+  return { settings: s.settings };
 };
 
 export const action = async ({ request }) => {
@@ -45,7 +42,7 @@ export default function SettingsGoals() {
         <SectionRail current="settings" />
         <SettingsNav current="goals" />
         <SettingsBanner result={result} />
-        <GoalsForm settings={view.settings} result={result} alertThreshold={view.alertThreshold} />
+        <GoalsForm settings={view.settings} result={result} />
       </div>
     </s-page>
   );

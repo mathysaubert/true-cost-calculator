@@ -5,7 +5,7 @@
 //  Pour lancer : node tests/lot29_settings.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { parseShopForm, parseCountryList, partnerFromForm, promoRuleFromForm, manualCommissionFromForm, codesFromOrders, connectionsStatus, SHOP_FIELDS, PROVIDERS, FIELDS, MIRROR_COLUMNS, SETTINGS_NAV, parseNumber, parseFields, shippingRulesFromForm, gatewayRuleFromForm, mergeGatewayRule, ruleFor, gatewaysFromOrders, fixedCostFromForm, isActiveFixedCost, mirrorFor, dataRuleOf, settingsStatus, presetFor } from "../app/lib/settings.js";
+import { parseShopForm, parseCountryList, partnerFromForm, promoRuleFromForm, manualCommissionFromForm, codesFromOrders, connectionsStatus, SHOP_FIELDS, PROVIDERS, FIELDS, SETTINGS_NAV, parseNumber, parseFields, shippingRulesFromForm, gatewayRuleFromForm, mergeGatewayRule, ruleFor, gatewaysFromOrders, fixedCostFromForm, isActiveFixedCost, dataRuleOf, settingsStatus, presetFor } from "../app/lib/settings.js";
 import { CATALOGS } from "../app/locales/index.js";
 import { settingsPathForRule, activationChecklist, RULE_PAGES, COSTS_DONE_SHARE } from "../app/lib/activation.js";
 
@@ -23,7 +23,7 @@ console.log("\n── 1. Nombres et champs scalaires ──");
   ok(parseFields(FIELDS.order_costs, fd({ return_window_days: "2.5" })).errors.return_window_days === "invalid", "jours : un décimal est invalide");
   ok(parseFields(FIELDS.goals, fd({ profitability_threshold_pct: "120" })).errors.profitability_threshold_pct === "range" && parseFields(FIELDS.goals, fd({ main_product_price: "-1" })).errors.main_product_price === "range", "bornes : 120 % et prix négatif refusés");
   ok(Object.keys(parseFields(FIELDS.goals, fd({})).values).length === 0, "champ absent du formulaire → non touché");
-  ok(FIELDS.goals.find((f) => f.key === "profitability_threshold_pct").mirror === true && MIRROR_COLUMNS.includes("profitability_threshold_pct") && MIRROR_COLUMNS.length === 7, "seuil CM2 recopié vers shop_plans ; 7 colonnes miroir (S1a)");
+  ok(FIELDS.goals.every((f) => f.mirror === undefined) && FIELDS.order_costs.every((f) => f.mirror === undefined), "D2-3 : plus aucun champ recopié vers shop_plans");
 }
 
 console.log("\n── 2. Port par pays, passerelles, coûts fixes ──");
@@ -48,7 +48,7 @@ console.log("\n── 2. Port par pays, passerelles, coûts fixes ──");
 
 console.log("\n── 3. Recopie, fiabilité, état des réglages ──");
 {
-  ok(JSON.stringify(mirrorFor({ profitability_threshold_pct: 45, main_product_price: 60, vat_regime: "franchise" })) === JSON.stringify({ profitability_threshold_pct: 45, vat_regime: "franchise" }), "mirrorFor : seules les colonnes historiques partent vers shop_plans");
+  ok(!/MIRROR_COLUMNS|mirrorFor/.test(readFileSync(new URL("../app/lib/settings.js", import.meta.url), "utf8")), "D2-3 : MIRROR_COLUMNS et mirrorFor retirés");
   ok(dataRuleOf("save_gateway") === "payment_fees" && dataRuleOf("save_shipping") === "shipping_costs" && dataRuleOf("save_order_costs") === "shipping_costs" && dataRuleOf("add_fixed_cost") === "fixed_costs" && dataRuleOf("save_goals") === null, "règle de fiabilité par intent (S10) ; objectifs = aucune");
   const st = settingsStatus({ settings: { gateway_fee_rules: [{ gateway: "paypal", pct: 3.4, fixed: 0.35, confirmed: true }], shipping_cost_rules: {}, packaging_cost_per_order: 0.3, profitability_threshold_pct: 0, main_product_price: 60 }, fixedCosts: [{ active_from: null, active_to: "2026-01-01" }], gateways: [{ gateway: "shopify_payments", orders: 5 }, { gateway: "paypal", orders: 2 }], day: "2026-09-24" });
   const by = Object.fromEntries(st.map((i) => [i.id, i.state]));
@@ -68,7 +68,7 @@ console.log("\n── 3b. R2 : Boutique, Marketing, Connexions ──");
   const bad = parseShopForm(fd({ shop_country_code: "FRA", vat_regime: "autre", history_months: "0", locale_override: "xx", sales_countries: "F1" }));
   ok(bad.errors.shop_country_code === "invalid" && bad.errors.vat_regime === "invalid" && bad.errors.history_months === "range" && bad.errors.locale_override === "invalid" && bad.errors.sales_countries === "invalid", "Boutique : chaque champ invalide est signalé");
   ok(!("history_months" in parseShopForm(fd({ history_months: "" })).values), "historique vide → inchangé (colonne NOT NULL)");
-  ok(SHOP_FIELDS.find((f) => f.key === "vat_regime").mirror === true && MIRROR_COLUMNS.includes("vat_regime"), "régime de TVA recopié vers shop_plans (S1a)");
+  ok(SHOP_FIELDS.find((f) => f.key === "vat_regime").mirror === undefined, "régime de TVA : écrit dans shop_settings seulement (D2-3)");
   const p = partnerFromForm(fd({ name: "  Influ ", mode: "manual" }));
   ok(p.row.name === "Influ" && p.row.mode === "manual" && partnerFromForm(fd({ name: "", mode: "x" })).errors.name === "invalid" && partnerFromForm(fd({ name: "a", mode: "x" })).errors.mode === "invalid", "partenaire : nom nettoyé, mode validé");
   const partners = [{ id: "p1", name: "A", mode: "codes" }, { id: "p2", name: "B", mode: "manual" }];
@@ -119,7 +119,7 @@ console.log("\n── 4. Catalogues et scans ──");
   const pure = read("app/lib/settings.js");
   ok(!/supabase|fetch\(|import\s+.*react|Date\.now\(|new Date\(/i.test(pure), "settings.js : aucune I/O, aucun React, aucune date courante");
   const server = read("app/lib/settings.server.js");
-  ok(/from\("shop_settings"\)\.upsert/.test(server) && /from\("shop_plans"\)\.upsert/.test(server) && /mirrorFor/.test(server), "serveur : écrit shop_settings puis recopie shop_plans (S1a)");
+  ok(/from\("shop_settings"\)\.upsert/.test(server) && !/from\("shop_plans"\)/.test(server) && !/mirrorFor/.test(server), "serveur : écrit shop_settings seulement, plus de recopie vers shop_plans (D2-3)");
   ok(/kind: "data_fixed"/.test(server) && /source: "settings"/.test(server) && /scenario->>rule_id/.test(server), "serveur : data_fixed explicite, source settings, dédoublonné par règle (S10)");
   const ui = ["app/components/settings/Fields.jsx", "app/components/settings/CostsForms.jsx", "app/components/settings/GoalsForm.jsx"].map(read).join("\n");
   ok(!/useState|onChange=/.test(ui) && /<Form method="post"/.test(ui) && /<s-text-field/.test(ui), "S3a : champs Polaris WC non contrôlés dans des formulaires natifs, aucun état React");

@@ -19,14 +19,12 @@ const norm = (s) => s.replace(/\s+/g, " ").trim();
 
 console.log("\n── 1. Facturation déplacée à l'identique (X4) ──");
 {
-  const legacy = read("app/routes/app._index.jsx"), moved = read("app/lib/billing.server.js");
-  const block = (src, plan) => { const i = src.indexOf(`plan: ${plan},`); return norm(src.slice(src.lastIndexOf("await billing.request({", i), src.indexOf("});", i) + 3)); };
-  ok(block(legacy, "PLAN_PRO") === block(moved, "PLAN_PRO"), "billing.request Pro : arguments identiques (plan, isTest, returnUrl)");
-  ok(block(legacy, "PLAN_EXPERT") === block(moved, "PLAN_EXPERT"), "billing.request Expert : arguments identiques (y compris l'essai bêta)");
-  const devFn = (src) => norm(src.slice(src.indexOf("async function isDevStore(admin)"), src.indexOf("return false; // au moindre doute") + 40));
-  ok(devFn(legacy) === devFn(moved), "isDevStore : corps identique (défaut sûr : doute → facturation réelle)");
-  const q = (src) => norm(src.slice(src.indexOf("query AllSubscriptions"), src.indexOf("`;", src.indexOf("query AllSubscriptions"))));
-  ok(q(legacy) === q(moved), "requête des abonnements identique (allSubscriptions, pas activeSubscriptions)");
+  // D2-3 : la copie de l'écran classique est supprimée ; billing.server.js est la seule facturation.
+  const moved = read("app/lib/billing.server.js");
+  ok(/plan: PLAN_PRO,\s*isTest: await isDevStore\(admin\),[^\n]*\n\s*returnUrl: `https:\/\/\$\{session\.shop\}\/admin\/apps\/\$\{process\.env\.SHOPIFY_API_KEY\}\?subscribed=true`/.test(moved), "billing.request Pro : plan, isTest (boutique de dev), returnUrl vers l'app");
+  ok(/plan: PLAN_EXPERT,[\s\S]*?\.\.\.betaTrialOverride\(session\.shop, process\.env\.BETA_SHOPS\)/.test(moved), "billing.request Expert : essai bêta fusionné");
+  ok(/async function isDevStore\(admin\)[\s\S]*?return false; \/\/ au moindre doute/.test(moved), "isDevStore : doute → facturation réelle");
+  ok(/query AllSubscriptions[\s\S]*?allSubscriptions/.test(moved), "requête des abonnements : allSubscriptions (pas activeSubscriptions)");
   ok(/resolveEntitlement\(\{ shop, json: subJson, refetch/.test(moved), "droit au plan : même résolveur (fail-safe D1, FROZEN D2, indéterminé Q1)");
   const route = read("app/routes/app.settings.plan.jsx");
   ok(/intent === "subscribe_pro"\) return requestSubscription/.test(route) && /intent === "subscribe_expert"\) return requestSubscription/.test(route) && !/billing\.request/.test(route), "la route n'appelle la facturation que via le module déplacé");

@@ -1,5 +1,5 @@
 /* global globalThis */
-// ── Reproduction serveur : bouton d'abonnement (Réglages > Offre) contre écran classique ─────────
+// ── Preuve serveur : bouton d'abonnement (Réglages > Offre) → redirection vers la validation Shopify ─
 // Vraie chaîne serveur : gestionnaire de requêtes React Router construit par Vite depuis la config du
 // projet, vraies routes, vrai shopify.server (authenticate.admin, billing.request). Simulés : Prisma
 // (session en mémoire), Supabase (mémoire), Sentry, et l'API GraphQL de Shopify (fetch intercepté,
@@ -65,9 +65,9 @@ async function post(label, url, body, contentType) {
 }
 
 const offre = await post("Réglages > Offre (formulaire, intent=subscribe_pro)", "/app/settings/plan.data", new URLSearchParams({ intent: "subscribe_pro" }).toString(), "application/x-www-form-urlencoded");
-const classique = await post("Écran classique (JSON, _action=subscribe)", "/app.data?index", JSON.stringify({ _action: "subscribe" }), "application/json");
-
 await vite.close();
-const same = (offre.status === classique.status) && (offre.reauth === classique.reauth);
-console.log(`\nComparaison : ${same ? "réponses identiques" : "réponses DIFFÉRENTES"} (Offre ${offre.status} / classique ${classique.status})`);
-process.exit(0);
+// D2-3 (2026-09-26) : l'écran classique est supprimé ; seule la page Offre porte l'abonnement.
+const good = offre.status === 401 && typeof offre.reauth === "string" && offre.reauth.includes("/charges/");
+console.log(`\n${good ? "✅" : "❌"} Offre : 401 + en-tête de redirection App Bridge vers la page de validation Shopify`);
+process.exitCode = good ? 0 : 1;
+process.exit(process.exitCode ?? 0);

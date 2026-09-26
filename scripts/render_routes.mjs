@@ -64,7 +64,7 @@ const STATES = {
 
 // ── Arbre des routes (mêmes ids que le mode framework) ───────────────────────────────────────────
 const APP_CHILDREN = [
-  ["app._index", { index: true }, /tcc|Calculat|calcul/i],
+  ["app._index", { index: true }, null],
   ["app.overview", { path: "overview" }, /<s-page/],
   ["app.metrics", { path: "metrics" }, /<s-page/],
   ["app.data-health", { path: "data-health" }, /<s-page/],
@@ -128,6 +128,10 @@ for (const stateKey of ["empty", "loaded"]) {
     await check(id, url, stateKey, (r) => r.status === 200 && shell(r.html) && marker.test(r.html) && !/THROW|undefined undefined/.test(r.html));
   }
 }
+console.log("\n=== D2-3 — /app (ancien écran classique) : redirections ===");
+await check("/app → Aujourd'hui, paramètres de l'admin conservés", "/app?shop=render-check.myshopify.com&host=abc&embedded=1", "loaded", (r) => r.redirect === "/app/overview?shop=render-check.myshopify.com&host=abc&embedded=1");
+await check("retour d'abonnement /app?subscribed=true → Réglages > Offre", "/app?subscribed=true&shop=render-check.myshopify.com", "loaded", (r) => r.redirect === "/app/settings/plan?subscribed=true&shop=render-check.myshopify.com");
+
 console.log("\n=== RENDU RÉEL — pages demandées par paramètres (modes, filtres) ===");
 await check("app.simulator ?mode=product", "/app/simulator?mode=product", "loaded", (r) => r.status === 200 && /data-product-picker/.test(r.html) && /Tee/.test(r.html));
 await check("app.simulator ?mode=new", "/app/simulator?mode=new", "loaded", (r) => r.status === 200 && /data-mode="new"/.test(r.html) && /name="intent" value="keep_new"/.test(r.html));

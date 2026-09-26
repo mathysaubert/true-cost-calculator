@@ -126,8 +126,12 @@ console.log("\n── T2 : contrat d'idempotence + câblage de la reprise (scan 
   }
   ok(legacy.includes("syncNow(") && legacy.includes("export async function syncShopOrders({ admin, supabase, shop })"),
     "orderSync.server.js : même signature legacy, délègue à syncNow (bouton = cron = recalcul)");
-  const route = readFileSync(new URL("../app/routes/app._index.jsx", import.meta.url), "utf8");
-  ok(route.includes("export const config = { maxDuration: 60 };"), "route sync : maxDuration 60 (pattern cron) exporté");
+  // D2-3 : le bouton de synchronisation de l'écran classique a disparu ; les points d'entrée restants
+  // (crons de synchronisation et de rentabilité) portent le maxDuration de 60 s.
+  for (const [r, max] of [["api.cron.sync.jsx", 300], ["api.cron.profitability.jsx", 60]]) {
+    const route = readFileSync(new URL(`../app/routes/${r}`, import.meta.url), "utf8");
+    ok(route.includes(`export const config = { maxDuration: ${max} };`), `${r} : maxDuration ${max} exporté`);
+  }
 }
 
 console.log("\n" + "═".repeat(66));

@@ -32,14 +32,14 @@ console.log("\n── 1. Bandeau des commandes de test ──");
 
 console.log("\n── 2. Écran classique et erreurs ──");
 {
-  ok(/<Link className="tcc-cta tcc-cta--ghost" to="\/app" data-legacy-link="">/.test(read("app/components/overview/Blocks.jsx")), "état vide : « Ouvrir l'écran classique » est un lien React Router (session conservée)");
+  ok(!/data-legacy-link|cta_legacy/.test(read("app/components/overview/Blocks.jsx")), "D2-3 : l'état vide n'a plus de bouton vers l'écran classique (supprimé)");
   const raw = [];
   for (const dir of ["app/components", "app/routes"]) {
     const walk = (d) => { for (const e of readdirSync(new URL(`../${d}/`, import.meta.url), { withFileTypes: true })) { const p = `${d}/${e.name}`; if (e.isDirectory()) walk(p); else if (p.endsWith(".jsx") && !p.endsWith("app._index.jsx") && /<a\b[^>]*\shref="\/app/.test(read(p))) raw.push(p); } };
     walk(dir);
   }
   ok(raw.length === 0, `aucun lien HTML brut vers /app… dans les composants et routes (hors écran classique protégé)${raw.length ? " : " + raw.join(", ") : ""}`);
-  ok(/<s-link rel="home" href="\/app">/.test(read("app/routes/app.jsx")) && /<s-link href="\/app">/.test(read("app/routes/app.jsx")), "menu de l'admin (s-app-nav) : liens gérés par App Bridge, inchangés");
+  ok(/<s-link rel="home" href="\/app\/overview">/.test(read("app/routes/app.jsx")) && !/nav\.legacy/.test(read("app/routes/app.jsx")), "D2-3 : menu de l'admin sans « Écran classique », accueil = Aujourd'hui");
   // Réponse d'erreur telle que la produit le bundle minifié (nom de classe raccourci).
   const Xe = class { constructor(status, statusText, data) { this.status = status; this.statusText = statusText; this.internal = false; this.data = data; } };
   const bounce = new Xe(200, "", '\n <script data-api-key="k" src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>\n');

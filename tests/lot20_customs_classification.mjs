@@ -12,7 +12,6 @@ import {
   resolveCustomsConfirmedOnWrite, frozenClassificationStatus,
   resolveAuditCategory, mergeCustomsFeedback,
 } from "../app/lib/customsClassification.js";
-import { selectDeletableLines } from "../app/lib/recalcMargins.js";
 import { renderLossAlertEmail, computeProfitabilityChanges } from "../app/lib/profitabilityAlert.js";
 import { confirmCustomsCategory, applyCustomsInvalidation } from "../app/lib/customsClassification.server.js";
 
@@ -122,20 +121,8 @@ console.log("\n── frozenClassificationStatus : lecture du champ figé ──
 // la classification — reste couverte par resolveCustomsConfirmedOnWrite via costs_save / costs_import_csv
 // (sections « invalidation » ci-dessus, inchangées).
 
-// ── COMPOSITION pure : correction de taux → le recalcul ne cible que estimated/missing ──
-console.log("\n── composition : rateChanged ⇒ recalcul ne touche PAS les lignes confirmed ──");
-{
-  const now = new Date("2026-07-22T00:00:00Z");
-  const iso = (d) => new Date(Date.UTC(2026, 6, 22) - d * 86_400_000).toISOString();
-  const rows = [
-    { order_id: "o1", line_item_id: "l1", cost_source: "estimated", order_created_at: iso(3) }, // recalculable
-    { order_id: "o2", line_item_id: "l2", cost_source: "confirmed", order_created_at: iso(3) }, // IMMUABLE
-    { order_id: "o3", line_item_id: "l3", cost_source: "missing",   order_created_at: iso(3) }, // recalculable
-  ];
-  ok(customsRateChanged("Textile", "Sport") === true, "prérequis : la correction change bien le taux");
-  const del = selectDeletableLines(rows, now).map((r) => r.order_id);
-  ok(del.join(",") === "o1,o3", "le recalcul ne supprimerait QUE o1 (estimated) + o3 (missing) — o2 confirmed intacte");
-}
+// (D2-3, 2026-09-26) : la composition « correction de taux → recalcul des lignes estimées » est retirée
+// avec le recalcul des marges de l'écran classique (recalcEstimatedMargins, recalcMargins.js).
 
 // ── Suffixe email « (taux de douane estimé) » — pire cas, douane dominante (réinjecté ère XV/b) ──
 console.log("\n── email : suffixe douane estimé (pire cas, parité texte/HTML) ──");

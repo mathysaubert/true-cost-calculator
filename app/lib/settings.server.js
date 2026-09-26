@@ -1,8 +1,8 @@
 // ── Réglages (R1) — lectures / écritures Supabase ─────────────────────────────────────────────
-// Écrit shop_settings (source de vérité, S1) et recopie les colonnes historiques vers shop_plans ;
+// Écrit shop_settings (source de vérité, S1) ; plus de recopie vers shop_plans (D2-3) ;
 // le trigger R0-02 relit des valeurs identiques et ne réécrit rien. Chaque sauvegarde qui touche
 // une règle de fiabilité laisse une trace decision_log data_fixed (S10), une par règle et par jour.
-import { mirrorFor, mergeGatewayRule, gatewaysFromOrders } from "./settings.js";
+import { mergeGatewayRule, gatewaysFromOrders } from "./settings.js";
 import { decisionRow } from "./decisions.js";
 import { dayInTimeZone } from "./overview.js";
 
@@ -19,16 +19,11 @@ export async function loadSettings({ supabase, shop, gatewayDays = 90 }) {
   return { settings, fixedCosts: fixed ?? [], gateways: gatewaysFromOrders(orders ?? []), today: dayInTimeZone(new Date(), settings.shop_timezone || "UTC") };
 }
 
-// Écriture de colonnes scalaires + recopie vers shop_plans (S1a). Erreur → { ok:false } jamais lancée.
+// Écriture de colonnes scalaires dans shop_settings. Erreur → { ok:false } jamais lancée.
 export async function saveSettings({ supabase, shop, values = {} }) {
   if (!Object.keys(values).length) return { ok: true, saved: 0 };
   const { error } = await supabase.from("shop_settings").upsert({ shop_domain: shop, ...values, updated_at: now() }, { onConflict: "shop_domain" });
   if (error) return { ok: false, error: error.message };
-  const mirror = mirrorFor(values);
-  if (Object.keys(mirror).length) {
-    const { error: e2 } = await supabase.from("shop_plans").upsert({ shop_domain: shop, ...mirror, updated_at: now() }, { onConflict: "shop_domain" });
-    if (e2) console.warn(`[Settings] recopie shop_plans KO : ${e2.message}`);
-  }
   return { ok: true, saved: Object.keys(values).length };
 }
 

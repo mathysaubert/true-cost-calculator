@@ -10,7 +10,6 @@ export default {
   "app.tagline": "Your financial copilot for profitable growth",
 
   "nav.home": "Home",
-  "nav.legacy": "Classic screen",
   "nav.sections": "Sections",
   "nav.soon": "Coming soon",
   "nav.group.steer": "Steer",
@@ -365,7 +364,6 @@ export default {
   "settings.goals.title": "Goals",
   "settings.goals.subtitle": "The targets the copilot compares you against. They never change your figures, only what gets flagged.",
   "settings.goals.band": "Most profitable stores keep a contribution margin between {{low}} and {{high}} of revenue.",
-  "settings.goals.alert_threshold": "Classic screen alert threshold (calculation alerts): {{pct}}. Unchanged here.",
   "sim.subtitle": "Change one lever at a time and read what it would mean, everything else equal. A scenario, never a forecast.",
   "sim.from_rule": "Pre-loaded from: {{name}}",
   "sim.levers.title": "Levers",
@@ -816,7 +814,6 @@ export default {
   "overview.empty.body": "Orders appear here a few seconds after they are placed, today included. Extend the period or come back after your next sale.",
   "overview.empty.body_excluded_one": "{{count}} order in this period is excluded from the analysis ({{reasons}}).",
   "overview.empty.body_excluded_other": "{{count}} orders in this period are excluded from the analysis ({{reasons}}).",
-  "overview.empty.cta_legacy": "Open the classic screen",
   "overview.empty.cta_settings": "Complete the settings",
   "activation.title": "Getting started",
   "activation.progress": "{{done}} / {{total}}",

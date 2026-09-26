@@ -1,6 +1,6 @@
 // ── Réglages (R1, arbitrages S1-S10 du 2026-09-24) — PUR : champs, analyse des formulaires, états ──
-// shop_settings est la source de vérité (S1) ; les colonnes historiques sont recopiées vers
-// shop_plans par le serveur (MIRROR_COLUMNS). Jamais un chiffre non confirmé pré-rempli (S6) :
+// shop_settings est la source de vérité (S1) ; plus aucune recopie vers shop_plans depuis D2-3
+// (2026-09-26 : son seul lecteur, l'écran classique, est supprimé). Jamais un chiffre non confirmé pré-rempli (S6) :
 // les valeurs courantes servent de placeholders, une règle n'existe qu'après « Confirmer ».
 
 export const SETTINGS_NAV = [
@@ -14,7 +14,7 @@ export const SETTINGS_NAV = [
   { id: "plan",        path: "/app/settings/plan",        status: "live" },
 ];
 
-// Champs scalaires par formulaire : colonne shop_settings, unité, bornes. `mirror` = recopié vers shop_plans.
+// Champs scalaires par formulaire : colonne shop_settings, unité, bornes.
 export const FIELDS = {
   order_costs: [
     { key: "packaging_cost_per_order", kind: "money", min: 0, max: 1000 },
@@ -23,12 +23,11 @@ export const FIELDS = {
     { key: "delivery_promise_days",    kind: "int",   min: 0, max: 60 },
   ],
   goals: [
-    { key: "profitability_threshold_pct", kind: "pct",   min: 0, max: 100, mirror: true },
+    { key: "profitability_threshold_pct", kind: "pct",   min: 0, max: 100 },
     { key: "target_margin_after_ads_pct", kind: "pct",   min: 0, max: 100 },
     { key: "main_product_price",          kind: "money", min: 0, max: 1000000 },
   ],
 };
-export const MIRROR_COLUMNS = ["vat_regime", "shipping_model", "default_import_country", "shopify_fee_pct", "processor_fee_pct", "processor_fixed_fee", "profitability_threshold_pct"];
 export const SHIPPING_ROWS = 5;
 export const CM2_TARGET_BAND = { low: 40, high: 60 }; // rappel A12
 
@@ -139,10 +138,6 @@ export function fixedCostFromForm(form) {
 }
 export const isActiveFixedCost = (r, day) => (!r.active_from || r.active_from <= day) && (!r.active_to || r.active_to >= day);
 
-// Sous-ensemble recopié vers shop_plans (S1a).
-export function mirrorFor(values = {}) {
-  return Object.fromEntries(Object.entries(values).filter(([k]) => MIRROR_COLUMNS.includes(k)));
-}
 
 // Règle de fiabilité touchée par une sauvegarde (S10 : decision_log data_fixed explicite).
 export function dataRuleOf(intent) {
@@ -183,7 +178,7 @@ export const LOCALE_CHOICES = SUPPORTED_LOCALES;
 export const COUNTRY_LIST_FIELDS = ["sales_countries", "shipping_countries", "supply_countries"];
 export const SHOP_FIELDS = [
   { key: "shop_country_code", kind: "country" },
-  { key: "vat_regime", kind: "enum", values: VAT_REGIMES, mirror: true },
+  { key: "vat_regime", kind: "enum", values: VAT_REGIMES },
   { key: "b2b_tag", kind: "text", max: 60 },
   { key: "history_months", kind: "int", min: 1, max: 60, placeholder: 24 },
   { key: "locale_override", kind: "locale" },

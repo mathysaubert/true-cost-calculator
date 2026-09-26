@@ -101,26 +101,20 @@ console.log("\n── T2 : betaTrialOverride (objet étalé dans billing.request
 // ── T2/V3 : scan du source — l'override ne vit QUE dans subscribe_expert ; Pro/Free intacts ──
 console.log("\n── T2/V3 : périmètre du câblage dans le source ──");
 {
-  const route = readFileSync(new URL("../app/routes/app._index.jsx", import.meta.url), "utf8");
+  // D2-3 : l'écran classique est supprimé ; les abonnements vivent dans app/lib/billing.server.js (D1b).
+  const route = readFileSync(new URL("../app/lib/billing.server.js", import.meta.url), "utf8");
   const server = readFileSync(new URL("../app/shopify.server.js", import.meta.url), "utf8");
 
   const calls = route.match(/betaTrialOverride\(/g) ?? [];
-  ok(calls.length === 1, "app._index.jsx : exactement UN appel betaTrialOverride (le handler subscribe_expert)");
-
-  const proBlock = route.slice(route.indexOf('_action === "subscribe"'), route.indexOf('_action === "subscribe_expert"'));
-  const expertBlock = route.slice(route.indexOf('_action === "subscribe_expert"'), route.indexOf("// Plan check for action handlers"));
-  ok(proBlock.length > 0 && expertBlock.length > 0, "les deux handlers subscribe sont localisés dans le source");
-  ok(!proBlock.includes("betaTrialOverride") && !proBlock.includes("trialDays"),
-    "handler Pro : AUCUN override, aucun trialDays → shop bêta + Pro reçoit 7 j (O4)");
-  ok(expertBlock.includes("betaTrialOverride(session.shop, process.env.BETA_SHOPS)"),
-    "handler Expert : override branché sur session.shop + process.env.BETA_SHOPS (env lue au site d'appel, O2)");
-  ok(expertBlock.includes("isTest: await isDevStore(admin)"),
-    "handler Expert : la ligne isTest est INTACTE (O8 — bêta réelle → test:false)");
-
-  // V3 : plus aucun trialDays en dur hors {config nominale 7 ; constante BETA_TRIAL_DAYS}.
-  ok(!/trialDays\s*:\s*\d/.test(route), "app._index.jsx : aucun trialDays numérique en dur");
-  ok((server.match(/trialDays\s*:\s*7\b/g) ?? []).length === 2,
-    "shopify.server.js : la config nominale trialDays: 7 des DEUX plans est intacte");
+  ok(calls.length === 1, "billing.server.js : exactement UN appel betaTrialOverride (abonnement Expert)");
+  const proBlock = route.slice(route.indexOf('if (plan === "pro")'), route.indexOf('if (plan === "expert")'));
+  const expertBlock = route.slice(route.indexOf('if (plan === "expert")'), route.indexOf('return { ok: false, error: "unknown_plan" }'));
+  ok(proBlock.length > 0 && expertBlock.length > 0, "les deux abonnements sont localisés dans le source");
+  ok(!proBlock.includes("betaTrialOverride") && !proBlock.includes("trialDays"), "Pro : AUCUN override, aucun trialDays → boutique bêta + Pro reçoit l'essai de la config (O4)");
+  ok(expertBlock.includes("betaTrialOverride(session.shop, process.env.BETA_SHOPS)"), "Expert : override branché sur session.shop + process.env.BETA_SHOPS (env lue au site d'appel, O2)");
+  ok(expertBlock.includes("isTest: await isDevStore(admin)"), "Expert : la ligne isTest est INTACTE (O8 — bêta réelle → test:false)");
+  ok(!/trialDays\s*:\s*\d/.test(route), "billing.server.js : aucun trialDays numérique en dur");
+  ok((server.match(/trialDays\s*:\s*7\b/g) ?? []).length === 2, "shopify.server.js : la config nominale trialDays: 7 des DEUX plans est intacte");
   ok(!server.includes("BETA"), "shopify.server.js : aucune logique bêta (la config nominale ne bouge pas)");
   // Scan du CODE seul (commentaires retirés) : la prose a le droit de citer process.env ou 45.
   const libCode = readFileSync(new URL("../app/lib/betaShops.js", import.meta.url), "utf8").replace(/\/\/.*$/gm, "");

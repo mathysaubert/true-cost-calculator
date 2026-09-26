@@ -115,8 +115,7 @@ console.log("\n── 4. Lint i18n : aucune chaîne en dur (JSX) hors exclusions
 const CSS = read("app/styles/overview.css");
 {
   const EXCLUDE = new Set([
-    "app/routes/app._index.jsx", "app/components/costsUi.jsx", "app/components/customsUi.jsx",
-    "app/routes/auth.login/route.jsx", "app/routes/_index/route.jsx", "app/routes/debug.jsx", "app/routes/privacy.jsx",
+    "app/routes/auth.login/route.jsx", "app/routes/_index/route.jsx", "app/routes/privacy.jsx",
     "app/routes/auth.session-token.jsx", "app/routes/auth.$.jsx", "app/root.jsx", // root : ErrorBoundary sans locale (hors coquille)
   ]);
   const walk = (dir, out = []) => { for (const f of readdirSync(dir)) { const p = join(dir, f); if (statSync(p).isDirectory()) walk(p, out); else if (/\.(jsx|js)$/.test(f)) out.push(p); } return out; };
