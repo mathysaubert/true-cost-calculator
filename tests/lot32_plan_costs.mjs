@@ -89,7 +89,10 @@ console.log("\n── 4. Intégrité, catalogues, scans ──");
   const route = read("app/routes/app.settings.products.jsx");
   ok(!/productSuggestions|sug\[f\]/.test(route + read("app/lib/productCosts.js")) && /rule: "cost_coverage"/.test(route) && /rule: "landed_cost"/.test(route), "aucune suggestion enregistrée (arbitrage c) ; data_fixed explicite sur les coûts et la douane (S10)");
   const ui = read("app/components/settings/ProductCosts.jsx");
-  ok(/data-save-bar=""/.test(ui) && !/useState|onChange=|useFetcher/.test(ui) && /placeholder=\{ph\(r, f\)\}/.test(ui), "portage : formulaires natifs, barre de sauvegarde, aucun état React, suggestions en exemples");
+  // Seul état React admis : celui du téléchargement (useExport, bouton en attente), jamais un champ.
+  const exportHook = ui.slice(ui.indexOf("function useExport()"), ui.indexOf("export function CostsCsv("));
+  const outsideExport = ui.replace(exportHook, "");
+  ok(/data-save-bar=""/.test(ui) && exportHook.includes("useState") && !/useState\(/.test(outsideExport.replace(/import \{ useState \} from "react";/, "")) && !/onChange=|useFetcher/.test(ui) && /placeholder=\{ph\(r, f\)\}/.test(ui), "portage : formulaires natifs, barre de sauvegarde, aucun état React sur les champs (seul le téléchargement a un état), suggestions en exemples");
   ok(PAYS_KEYS.every((k) => CATALOGS.en[`productcosts.country.${k}`] && CATALOGS.fr[`productcosts.country.${k}`]) && CATEGORIE_KEYS.every((k) => CATALOGS.en[`productcosts.category.${k}`]) && COST_FIELDS.every((k) => CATALOGS.fr[`productcosts.field.${k}`] && CATALOGS.en[`productcosts.error.${k}`]), "pays, catégories, champs et erreurs traduits en/fr");
   ok(!/app\._index/.test(route + read("app/routes/app.settings.plan.jsx")), "aucune dépendance aux routes de l'écran classique");
   ok(read("package.json").includes("lot32_plan_costs"), "lot 32 dans la chaîne de tests");

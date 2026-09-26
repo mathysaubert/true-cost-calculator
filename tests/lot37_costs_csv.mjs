@@ -77,8 +77,8 @@ console.log("\n── 5. Écran classique inchangé, branchements, catalogues �
 {
   ok(parseCostsCsv(`variant_id,prix_achat,port_entrant,qty_par_lot,cout_emballage,vat_regime,shipping_model,pays_import,categorie\n${gid(1)},0,0,1,0,assujetti,stock,Chine,Autre`).errors.length === 1, "écran classique (protégé jusqu'à D2) : ses fonctions refusent toujours le prix 0 (son panneau remplit les vides par la suggestion)");
   const srv = read("app/lib/productCosts.server.js");
-  ok(/csv: costsCsvTemplate\(rows\)/.test(srv) && /parseCostsCsvStrict\(text/.test(srv) && !/buildCostsCsv|parseCostsCsv\(/.test(srv), "Réglages : modèle et import stricts ; plus d'appel aux fonctions de l'écran classique");
-  ok(/decodeCsvBytes\(new Uint8Array\(await file\.arrayBuffer\(\)\)\)/.test(read("app/routes/app.settings.products.jsx")), "route : octets décodés (UTF-8 ou Windows-1252)");
+  ok(/costsCsvTemplate\(rows, \{ bom: true \}\)/.test(srv) && /parseCostsCsvStrict\(text/.test(srv) && !/buildCostsCsv|parseCostsCsv\(/.test(srv), "Réglages : modèle et import stricts ; plus d'appel aux fonctions de l'écran classique");
+  ok(/decodeCsvBytes\(u8\)/.test(srv) && /importCostsFile\(\{ supabase, shop, bytes \}\)/.test(read("app/routes/app.settings.products.jsx")), "route : octets transmis, décodés côté serveur (UTF-8 ou Windows-1252)");
   const reasons = ["not_number", "negative", "not_integer", "below_one", "too_large", "unknown_value", "missing_id", "bad_id"];
   ok(reasons.every((r) => CATALOGS.fr[`productcosts.csv.reason.${r}`] && CATALOGS.en[`productcosts.csv.reason.${r}`]) && CATALOGS.fr["productcosts.csv.incomplete_other"], "raisons et message « à compléter » traduits en/fr");
   ok(read("package.json").includes("lot37_costs_csv"), "lot 37 dans la chaîne de tests");

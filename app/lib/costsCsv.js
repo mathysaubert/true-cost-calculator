@@ -36,10 +36,11 @@ export function templateRow(r = {}) {
   out[SUGGESTION_COLUMN] = !merchant && Number.isFinite(suggestion) && suggestion > 0 ? suggestion : "";
   return out;
 }
-export function costsCsvTemplate(rows = []) {
+// bom : marque d'encodage UTF-8 en tête (téléchargement : Excel lit alors les accents correctement).
+export function costsCsvTemplate(rows = [], { bom = false } = {}) {
   const lines = [CSV_TEMPLATE_COLUMNS.join(",")];
   for (const r of rows) { const t = templateRow(r); lines.push(CSV_TEMPLATE_COLUMNS.map((c) => cell(t[c])).join(",")); }
-  return lines.join("\r\n");
+  return (bom ? BOM : "") + lines.join("\r\n");
 }
 
 // ── Décodage et découpage ───────────────────────────────────────────────────────────────────────
@@ -103,8 +104,13 @@ export function validateCostFields(raw = {}) {
 export function parseCostsCsvStrict(text) {
   const clean = stripBom(String(text ?? ""));
   const sep = detectSeparator(clean);
-  const raw = splitCsv(clean, sep);
-  const out = { rows: [], incomplete: [], errors: [], header: null, separator: sep };
+  return { ...parseCostRows(splitCsv(clean, sep)), separator: sep };
+}
+
+// Lignes déjà découpées (CSV, ou première feuille d'un .xlsx avec cellules en texte) → mêmes règles.
+export function parseCostRows(rawRows = []) {
+  const raw = rawRows.map((r) => r.map((c) => (c == null ? "" : String(c)))).filter((r) => r.some((c) => c.trim() !== ""));
+  const out = { rows: [], incomplete: [], errors: [], header: null };
   if (!raw.length) { out.header = { reason: "empty_file" }; return out; }
   const head = raw[0].map((h) => stripBom(String(h)).trim().toLowerCase());
   const missing = ["variant_id", ...CSV_COST_FIELDS].filter((c) => !head.includes(c));

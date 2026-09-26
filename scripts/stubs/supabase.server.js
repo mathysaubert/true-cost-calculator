@@ -22,8 +22,10 @@ class Query {
   range(a, b) { this.rng = [a, b]; return this; }
   maybeSingle() { this.mode = "maybe"; return this; }
   single() { this.mode = "one"; return this; }
-  insert() { this.write = true; return this; } upsert() { this.write = true; return this; }
-  update() { this.write = true; return this; } delete() { this.write = true; return this; }
+  // Écritures : sans effet, mais notées dans globalThis.__RR_WRITES (preuves des harnais serveur).
+  note(op, payload) { this.write = true; (globalThis.__RR_WRITES ??= []).push({ table: this.table, op, rows: Array.isArray(payload) ? payload.length : payload ? 1 : 0, payload }); return this; }
+  insert(p) { return this.note("insert", p); } upsert(p) { return this.note("upsert", p); }
+  update(p) { return this.note("update", p); } delete() { return this.note("delete", null); }
   exec() {
     if (this.write) return { data: this.mode === "many" ? [] : null, error: null };
     let rows = rowsOf(this.table).filter((r) => this.filters.every((f) => f(r)));

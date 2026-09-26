@@ -1,6 +1,7 @@
 // ── Réglages > Coûts produits (F4-D1a) : liste par produit, panneau par variante, douane, CSV ──
 // Formulaires POST natifs, champs Polaris non contrôlés (S3 prouvé), barre de sauvegarde App Bridge.
 // Les suggestions sont des exemples (placeholders), jamais des valeurs pré-remplies (S6).
+import { useState } from "react";
 import { Form, Link } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
 import { NUMBER_FIELDS, ENUM_FIELDS, STATUS_FILTERS, isMerchant } from "../../lib/productCosts.js";
@@ -111,22 +112,50 @@ function csvIssue(t, x) {
   return x.value ? `${field} « ${x.value} » : ${reason}` : `${field} : ${reason}`;
 }
 
-export function CostsCsv({ csv = "", result = null }) {
+// Téléchargement du modèle par la route authentifiée : fetch (App Bridge y ajoute le jeton de session),
+// puis fichier enregistré depuis la page (lien d'objet). Un lien simple n'aurait pas de jeton.
+export const EXPORT_PATH = "/app/settings/products/export";
+const EXPORT_NAMES = { xlsx: "true-cost-calculator-costs.xlsx", csv: "true-cost-calculator-costs.csv" };
+function useExport() {
+  const [state, setState] = useState({ busy: null, error: false });
+  const download = async (format) => {
+    setState({ busy: format, error: false });
+    try {
+      const res = await fetch(`${EXPORT_PATH}?format=${format}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = EXPORT_NAMES[format];
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setState({ busy: null, error: false });
+    } catch (e) {
+      console.error("[ProductCosts] export :", e?.message);
+      setState({ busy: null, error: true });
+    }
+  };
+  return [state, download];
+}
+
+export function CostsCsv({ result = null }) {
   const { t, int } = useI18n();
   const imported = result?.intent === "import_csv" ? result : null;
+  const [exp, download] = useExport();
   return (
     <section className="tcc-block" aria-labelledby="tcc-csv-title">
       <div className="tcc-block__head"><h3 id="tcc-csv-title">{t("productcosts.csv.title")}</h3></div>
       <p className="tcc-muted">{t("productcosts.csv.help")}</p>
       <div className="tcc-form__actions">
-        <a className="tcc-cta tcc-cta--ghost" href={`data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`} download="true-cost-calculator-costs.csv"><Icon id="check" />{t("productcosts.csv.export")}</a>
+        <s-button variant="primary" data-export="xlsx" loading={exp.busy === "xlsx" ? "true" : undefined} disabled={exp.busy ? "true" : undefined} onClick={() => download("xlsx")}>{t("productcosts.csv.export")}</s-button>
+        <s-button variant="tertiary" data-export="csv" loading={exp.busy === "csv" ? "true" : undefined} disabled={exp.busy ? "true" : undefined} onClick={() => download("csv")}>{t("productcosts.csv.export_csv")}</s-button>
       </div>
+      {exp.error && <s-banner tone="critical" data-export-error="">{t("productcosts.csv.download_error")}</s-banner>}
       <Form method="post" encType="multipart/form-data" className="tcc-card tcc-form">
         <input type="hidden" name="intent" value="import_csv" />
-        <label className="tcc-pc__file">{t("productcosts.csv.file")}<input type="file" name="csv" accept=".csv,text/csv" /></label>
+        <label className="tcc-pc__file">{t("productcosts.csv.file")}<input type="file" name="csv" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
         <div className="tcc-form__actions"><s-button type="submit" variant="secondary">{t("productcosts.csv.import")}</s-button></div>
       </Form>
-      {imported?.header && <s-banner tone="critical" data-csv-header={imported.header.reason}>{imported.header.reason === "empty_file" ? t("productcosts.csv.empty_file") : t("productcosts.csv.missing_columns", { columns: imported.header.columns.join(", ") })}</s-banner>}
+      {imported?.header && <s-banner tone="critical" data-csv-header={imported.header.reason}>{imported.header.reason === "missing_columns" ? t("productcosts.csv.missing_columns", { columns: imported.header.columns.join(", ") }) : t(`productcosts.csv.${imported.header.reason}`)}</s-banner>}
       {imported && !imported.header && !imported.ok && <s-banner tone="critical">{t("settings.error.failed")}</s-banner>}
       {imported?.ok && <s-banner tone={imported.errorCount ? "warning" : "success"}>{t("productcosts.csv.done", { count: imported.saved ?? 0 })}{imported.errorCount ? ` ${t("productcosts.csv.line_errors", { count: imported.errorCount })}` : ""}</s-banner>}
       {imported?.incomplete > 0 && <s-banner tone="info" data-csv-incomplete={imported.incomplete}>{t("productcosts.csv.incomplete", { count: imported.incomplete })}</s-banner>}

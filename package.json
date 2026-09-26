@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs && node tests/lot5_variant_costs.mjs && node tests/lot6_order_ingest.mjs && node tests/lot7_order_history.mjs && node tests/lot8_breakdown_backfill.mjs && node tests/lot9_profitability_alert.mjs && node tests/lot10_loss_alert_email.mjs && node tests/lot11_dunning_decision.mjs && node tests/lot12_dunning_email.mjs && node tests/lot13_dunning_status.mjs && node tests/lot14_session_reaper.mjs && node tests/lot15_cpa_targets.mjs && node tests/lot16_plan_entitlement.mjs && node tests/lot17_alerting_decision.mjs && node tests/lot18_audit_classify.mjs && node tests/lot19_recalc_margins.mjs && node tests/lot20_customs_classification.mjs && node tests/lot21_beta_shops.mjs && node tests/lot22_bulk_resume.mjs && node tests/lot23_schema.mjs && node tests/lot24_econ.mjs && node tests/lot25_sync.mjs && node tests/lot26_dashboard_i18n.mjs && node tests/lot27_insights.mjs && node tests/lot28_decisions.mjs && node tests/lot29_settings.mjs && node tests/lot30_simulator.mjs && node tests/lot31_charts.mjs && node tests/lot32_plan_costs.mjs && node tests/lot33_simulator_product.mjs && node tests/lot34_products.mjs && node tests/lot35_settings_reset.mjs && node tests/lot36_shipping_unset.mjs && node tests/lot37_costs_csv.mjs",
+    "test": "node tests/lot1_customs.mjs && node tests/lot2_ui_labels.mjs && node tests/lot3_cpa_roas.mjs && node tests/invariants.mjs && node tests/lot4_display_guardrails.mjs && node tests/lot5_variant_costs.mjs && node tests/lot6_order_ingest.mjs && node tests/lot7_order_history.mjs && node tests/lot8_breakdown_backfill.mjs && node tests/lot9_profitability_alert.mjs && node tests/lot10_loss_alert_email.mjs && node tests/lot11_dunning_decision.mjs && node tests/lot12_dunning_email.mjs && node tests/lot13_dunning_status.mjs && node tests/lot14_session_reaper.mjs && node tests/lot15_cpa_targets.mjs && node tests/lot16_plan_entitlement.mjs && node tests/lot17_alerting_decision.mjs && node tests/lot18_audit_classify.mjs && node tests/lot19_recalc_margins.mjs && node tests/lot20_customs_classification.mjs && node tests/lot21_beta_shops.mjs && node tests/lot22_bulk_resume.mjs && node tests/lot23_schema.mjs && node tests/lot24_econ.mjs && node tests/lot25_sync.mjs && node tests/lot26_dashboard_i18n.mjs && node tests/lot27_insights.mjs && node tests/lot28_decisions.mjs && node tests/lot29_settings.mjs && node tests/lot30_simulator.mjs && node tests/lot31_charts.mjs && node tests/lot32_plan_costs.mjs && node tests/lot33_simulator_product.mjs && node tests/lot34_products.mjs && node tests/lot35_settings_reset.mjs && node tests/lot36_shipping_unset.mjs && node tests/lot37_costs_csv.mjs && node tests/lot38_costs_xlsx.mjs",
     "vercel-build": "npm run lint && npm test && prisma generate && prisma migrate deploy && react-router build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
@@ -21,7 +21,8 @@
     "vite": "vite",
     "render:check": "node scripts/render_check.mjs",
     "render:routes": "node scripts/render_routes.mjs",
-    "check:browser": "node scripts/browser_reset_check.mjs",
+    "check:browser": "node scripts/browser_reset_check.mjs && node scripts/browser_plan_check.mjs && node scripts/browser_export_check.mjs",
+    "check:server": "node scripts/billing_redirect_check.mjs && node scripts/export_route_check.mjs",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
   "type": "module",
@@ -46,8 +47,10 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^7.15.1",
+    "read-excel-file": "^9.3.10",
     "resend": "^6.16.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@shopify/api-codegen-preset": "^2.0.0",

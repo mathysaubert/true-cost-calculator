@@ -3,7 +3,8 @@
 // enregistrement (validateCostRow, source 'confirmed'), import CSV ('imported'), invalidation douane
 // et confirmation de classification : fonctions de variantCosts.js / customsClassification.server.js.
 import { buildCostRowsForDisplay } from "./variantCosts.js";
-import { costsCsvTemplate, parseCostsCsvStrict } from "./costsCsv.js";
+import { costsCsvTemplate, parseCostsCsvStrict, parseCostRows, decodeCsvBytes } from "./costsCsv.js";
+import { buildCostsXlsx, readCostsXlsx, isXlsx, isLegacyXls, XLSX_CONTENT_TYPE, XLSX_MAX_BYTES } from "./costsXlsx.server.js";
 import { applyCustomsInvalidation, confirmCustomsCategory } from "./customsClassification.server.js";
 
 const VARIANTS_QUERY = `query CostVariants($cursor: String) {
@@ -61,7 +62,7 @@ export async function loadProductCosts({ admin, supabase, shop }) {
   const { data: stored } = await supabase.from("variant_costs").select("*").eq("shop_domain", shop);
   const storedMap = new Map((stored ?? []).map((r) => [r.variant_id, r]));
   const rows = buildCostRowsForDisplay({ variants, storedMap, defaultCountry: d.defaultCountry, vatRegime: d.vatRegime, shippingModel: d.shippingModel });
-  return { rows, variantsCapped, giftCardCount, incomplete: incomplete || (hasNext && pages >= 20), currency: d.currency, csv: costsCsvTemplate(rows) };
+  return { rows, variantsCapped, giftCardCount, incomplete: incomplete || (hasNext && pages >= 20), currency: d.currency };
 }
 
 // Enregistrement d'un produit : lignes déjà validées (parseProductForm) → source 'confirmed'.
@@ -74,10 +75,33 @@ export async function saveProductCosts({ supabase, shop, rows }) {
   return error ? { ok: false, error: error.message } : { ok: true, saved: upserts.length };
 }
 
+// Téléchargement du modèle (route authentifiée) : .xlsx (principal) ou CSV UTF-8 avec BOM (second).
+export async function exportCosts({ admin, supabase, shop, format = "xlsx", sheetNames }) {
+  const { rows } = await loadProductCosts({ admin, supabase, shop });
+  if (format === "csv") return { body: costsCsvTemplate(rows, { bom: true }), contentType: "text/csv; charset=utf-8", filename: "true-cost-calculator-costs.csv" };
+  return { body: await buildCostsXlsx(rows, sheetNames), contentType: XLSX_CONTENT_TYPE, filename: "true-cost-calculator-costs.xlsx" };
+}
+
+// Fichier téléversé (.xlsx ou .csv) → mêmes règles d'import. Taille bornée ; .xls/.ods signalés.
+export async function importCostsFile({ supabase, shop, bytes }) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? []);
+  if (u8.length > XLSX_MAX_BYTES) return { ok: false, error: "header", saved: 0, header: { reason: "too_large" }, incomplete: 0, csvErrors: [], errorCount: 0 };
+  if (isLegacyXls(u8)) return { ok: false, error: "header", saved: 0, header: { reason: "unsupported_format" }, incomplete: 0, csvErrors: [], errorCount: 0 };
+  if (isXlsx(u8)) {
+    let rawRows;
+    try { rawRows = await readCostsXlsx(u8); }
+    catch (e) { console.error("[ProductCosts] xlsx illisible :", e?.message); return { ok: false, error: "header", saved: 0, header: { reason: "unreadable" }, incomplete: 0, csvErrors: [], errorCount: 0 }; }
+    return importParsed({ supabase, shop, parsed: parseCostRows(rawRows) });
+  }
+  return importCostsCsv({ supabase, shop, text: decodeCsvBytes(u8) });
+}
+
 // Import (2026-09-26) : lignes complètes enregistrées ('imported') ; lignes à coût vide « à compléter »
 // (comptées à part, rien d'écrit) ; rejets avec raison. Voir costsCsv.js.
 export async function importCostsCsv({ supabase, shop, text }) {
-  const parsed = parseCostsCsvStrict(text ?? "");
+  return importParsed({ supabase, shop, parsed: parseCostsCsvStrict(text ?? "") });
+}
+async function importParsed({ supabase, shop, parsed }) {
   const summary = { incomplete: parsed.incomplete.length, incompleteLines: parsed.incomplete.slice(0, 10), csvErrors: parsed.errors.slice(0, 20), errorCount: parsed.errors.length, header: parsed.header };
   if (parsed.header) return { ok: false, error: "header", saved: 0, ...summary };
   const upserts = parsed.rows.map((r) => ({ shop_domain: shop, variant_id: r.variant_id, ...r.value, source: "imported", updated_at: new Date().toISOString() }));

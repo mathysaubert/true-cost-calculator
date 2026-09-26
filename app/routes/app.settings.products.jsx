@@ -3,9 +3,8 @@ import { useLoaderData, useActionData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
-import { loadProductCosts, saveProductCosts, importCostsCsv, confirmCustoms } from "../lib/productCosts.server.js";
+import { loadProductCosts, saveProductCosts, importCostsFile, confirmCustoms } from "../lib/productCosts.server.js";
 import { groupProducts, statusCounts, filterProducts, parseProductForm, STATUS_FILTERS } from "../lib/productCosts.js";
-import { decodeCsvBytes } from "../lib/costsCsv.js";
 import { recordSettingsFix } from "../lib/settings.server.js";
 import { dayInTimeZone } from "../lib/overview.js";
 import { useI18n } from "../lib/i18n/context.jsx";
@@ -20,7 +19,7 @@ export const loader = async ({ request }) => {
   const status = STATUS_FILTERS.includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "all";
   const data = await loadProductCosts({ admin, supabase, shop: session.shop });
   const products = groupProducts(data.rows);
-  return { products: filterProducts(products, status), all: products, counts: statusCounts(products), filter: status, openId: url.searchParams.get("product"), currency: data.currency, csv: data.csv, variantsCapped: data.variantsCapped, giftCardCount: data.giftCardCount, incomplete: data.incomplete };
+  return { products: filterProducts(products, status), all: products, counts: statusCounts(products), filter: status, openId: url.searchParams.get("product"), currency: data.currency, variantsCapped: data.variantsCapped, giftCardCount: data.giftCardCount, incomplete: data.incomplete };
 };
 
 export const action = async ({ request }) => {
@@ -38,8 +37,9 @@ export const action = async ({ request }) => {
   }
   if (intent === "import_csv") {
     const file = form.get("csv");
-    const text = file && typeof file.arrayBuffer === "function" ? decodeCsvBytes(new Uint8Array(await file.arrayBuffer())) : String(file ?? "");
-    const res = await importCostsCsv({ supabase, shop, text });
+    // .xlsx ou .csv (UTF-8 ou Windows-1252) : mêmes règles d'import (costsCsv / costsXlsx.server).
+    const bytes = file && typeof file.arrayBuffer === "function" ? new Uint8Array(await file.arrayBuffer()) : new TextEncoder().encode(String(file ?? ""));
+    const res = await importCostsFile({ supabase, shop, bytes });
     if (res.ok && res.saved > 0) await recordSettingsFix({ supabase, shop, rule: "cost_coverage", field: "csv", day: today });
     return { intent, ...res };
   }
@@ -63,13 +63,13 @@ export default function SettingsProducts() {
         <SettingsNav current="products" />
         {result?.intent === "save_product" && (result.ok ? <s-banner tone="success">{t("productcosts.saved", { count: result.saved ?? 0 })}</s-banner> : <s-banner tone="warning">{t("productcosts.save_errors", { count: result.errors?.length ?? 0 })}</s-banner>)}
         {result?.intent === "save_product" && result.skipped?.length > 0 && <s-banner tone="info">{t("productcosts.skipped", { count: result.skipped.length })}</s-banner>}
-        {result && result.ok === false && result.error && result.intent !== "save_product" && <s-banner tone="critical">{t("settings.error.failed")}</s-banner>}
+        {result && result.ok === false && result.error && !["save_product", "import_csv"].includes(result.intent) && <s-banner tone="critical">{t("settings.error.failed")}</s-banner>}
         {(view.variantsCapped || view.incomplete) && <s-banner tone="warning">{t("productcosts.capped")}</s-banner>}
         {view.giftCardCount > 0 && <p className="tcc-muted">{t("productcosts.gift_cards", { count: view.giftCardCount })}</p>}
         <ProductCostSummary counts={view.counts} filter={view.filter} />
         <ProductCostList products={view.products} openId={view.openId} filter={view.filter} currency={view.currency} result={result?.intent === "save_product" ? result : null} />
         <CustomsPanel products={view.all} result={result} />
-        <CostsCsv csv={view.csv} result={result} />
+        <CostsCsv result={result} />
       </div>
     </s-page>
   );
