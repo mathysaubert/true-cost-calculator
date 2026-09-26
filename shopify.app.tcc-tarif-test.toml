@@ -1,0 +1,50 @@
+# D2-0 — configuration de l'app de TEST « TCC Tarification test » (Dev Dashboard), générée par
+# scripts/d2_0_dev.mjs prepare depuis shopify.app.toml. Ne pas utiliser pour la vraie app.
+# Webhooks à données client protégées retirés (4 abonnements) : l'essai ne porte que sur la facturation.
+
+client_id = "cd1eaae21e762608a473fb4e1381d115"
+name = "tcc-tarification-test"
+application_url = "https://example.com"
+embedded = true
+
+[access_scopes]
+# read_products,read_inventory : audit catalogue + coûts par variante (Brique A), instantané du stock (F2).
+# read_orders : commandes, remboursements, résumé de parcours (UTM), webhooks orders/* et refunds/create.
+#   Fenêtre 60 j par défaut ; read_all_orders (historique 24 mois) sera AJOUTÉ ici après approbation
+#   Shopify (décision B1) — jamais avant : la demande d'un scope non accordé bloque l'installation.
+# read_customers : Order.customer { id } seulement (décision 21) — niveau 1 des données protégées,
+#   AUCUN champ nominatif (ni nom/email/téléphone/adresse). La déclaration Protected Customer Data
+#   (Partner Dashboard) reste au niveau 1 : identifiant client, pays de livraison, résumé de parcours.
+# read_returns : retours et motifs (webhooks returns/*, Order.returns).
+# read_fulfillments : webhooks fulfillments/* et fulfillment_events/create.
+# read_merchant_managed_fulfillment_orders, read_third_party_fulfillment_orders : lecture de
+#   Order.fulfillments (dates d'expédition/livraison) dans le bulk — exigé par l'objet Fulfillment
+#   (vérifié contre le schéma 2026-01, décision B15).
+# read_shopify_payments_accounts : frais réels Shopify Payments (shopifyPaymentsAccount.balanceTransactions,
+#   vérifié contre le schéma 2026-01 : ce n'est PAS read_shopify_payments_payouts — décision B16).
+scopes = "read_products,read_inventory,read_orders,read_customers,read_returns,read_fulfillments,read_merchant_managed_fulfillment_orders,read_third_party_fulfillment_orders,read_shopify_payments_accounts"
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/bulk_operations"
+  topics = [ "bulk_operations/finish" ]
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/webhooks/compliance"
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true
