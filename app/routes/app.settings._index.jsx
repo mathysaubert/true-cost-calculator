@@ -12,6 +12,7 @@ import { SettingsNav } from "../components/settings/SettingsNav.jsx";
 import { SettingsIndex } from "../components/settings/SettingsIndex.jsx";
 import { DataHealth } from "../components/overview/DataHealth.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -41,7 +42,7 @@ export default function SettingsPage() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

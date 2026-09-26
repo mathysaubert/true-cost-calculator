@@ -98,6 +98,8 @@ const F4_FILES = [
     ...["results", "situation", "priorities", "opportunity", "chart", "waterfall", "health", "all"].map((b) => `overview.block.${b}`),
     ...["ca_ht", "cm2", "net_result"].map((r) => `results.${r}.label`),
     ...["data", "engine", "intelligence", "simulator", "results"].flatMap((s) => [`overview.engine.${s}.title`, `overview.engine.${s}.b1`, `overview.engine.${s}.b2`, `overview.engine.${s}.b3`]),
+    // Page d'erreur racine (app/lib/routeError.jsx : ROOT_ERROR_KEYS, clé choisie par describeRouteError).
+    ...["title", "generic", "session", "not_found", "unavailable", "reload", "code", "detail"].map((k) => `error.${k}`),
   ];
   const missingDyn = need.filter((k) => !enKeys.has(k));
   ok(missingDyn.length === 0, `membres des familles dynamiques présents (${need.length})${missingDyn.length ? " — absents : " + missingDyn.join(", ") : ""}`);

@@ -5,7 +5,7 @@ import { AUDIT_GROUPS, classifyAuditRows } from "../../lib/products.js";
 
 const GROUP_TONE = { loser: "tcc-badge--bad", risky: "tcc-badge--warn", winner: "tcc-badge--good" };
 
-export function CatalogAudit({ isExpert = false, indeterminate = false, returnRatePct = null, returnRateMissing = null, thresholdPct = 0, result = null }) {
+export function CatalogAudit({ isExpert = false, indeterminate = false, returnRatePct = null, returnRateMissing = null, returnRateNoOrders = false, thresholdPct = 0, result = null }) {
   const { t, money, pct } = useI18n();
   const nav = useNavigation();
   const running = nav.state === "submitting" && nav.formData?.get("intent") === "run_audit";
@@ -29,7 +29,7 @@ export function CatalogAudit({ isExpert = false, indeterminate = false, returnRa
         <label className="tcc-newp__field">{t("products.audit.return_rate")}<input type="number" name="return_rate_pct" inputMode="decimal" min="0" max="100" step="0.1" defaultValue={returnRatePct ?? ""} /></label>
         <s-button type="submit" variant="primary" disabled={running ? "true" : undefined}>{running ? t("products.audit.running") : t("products.audit.run")}</s-button>
       </Form>
-      {returnRatePct == null && <p className="tcc-muted" data-return-rate="unmeasured">{returnRateMissing != null ? t("products.audit.return_rate_missing", { count: returnRateMissing }) : t("products.audit.return_rate_none")}</p>}
+      {returnRatePct == null && <p className="tcc-muted" data-return-rate="unmeasured">{returnRateNoOrders ? t("products.audit.return_rate_no_orders") : returnRateMissing != null ? t("products.audit.return_rate_missing", { count: returnRateMissing }) : t("products.audit.return_rate_none")}</p>}
       {result && !result.ok && <s-banner tone="critical">{t(`products.audit.error.${result.error}`)}</s-banner>}
       {groups && (
         <div className="tcc-stack">

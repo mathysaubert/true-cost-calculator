@@ -22,6 +22,7 @@ import { NewProduct } from "../components/simulator/NewProduct.jsx";
 import { ModeBar, SIM_MODES } from "../components/simulator/ModeBar.jsx";
 import { unitEconomics, NEW_PRODUCT_FIELDS, NEW_PRODUCT_ENUMS } from "../lib/simulator/newProduct.js";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 const DAY_MS = 86_400_000;
 const periodDaysOf = (w) => (w?.start && w?.end ? Math.round((Date.parse(w.end) - Date.parse(w.start)) / DAY_MS) + 1 : 30);
@@ -112,7 +113,7 @@ export default function SimulatorPage() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

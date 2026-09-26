@@ -9,6 +9,7 @@ import { SectionRail } from "../components/overview/SectionRail.jsx";
 import { SettingsNav } from "../components/settings/SettingsNav.jsx";
 import { ConnectionsList } from "../components/settings/ConnectionsList.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -31,7 +32,7 @@ export default function SettingsConnections() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

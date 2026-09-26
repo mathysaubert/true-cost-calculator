@@ -515,7 +515,7 @@ check("fiabilité (manquante) : chaque manque a un lien « Compléter » vers sa
   (h) => (h.match(/data-fix="/g) ?? []).length === 3 && /data-fix="cost_coverage" href="\/app\/settings\/products"/.test(h.replace(/class="[^"]*" to=/g, "").replace(/href="([^"]*)"[^>]*data-fix="([^"]*)"/g, 'data-fix="$2" href="$1"')) && /Compléter</.test(h) && /data-fix="(payment_fees|shipping_costs)"/.test(h));
 check("état vide : « Compléter les réglages » vers /app/settings + écran classique en secondaire",
   wrap("fr", React.createElement(OverviewEmptyState, { excluded: {} })),
-  (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" href="\/app">Ouvrir l(?:&#x27;|')écran classique</.test(h));
+  (h) => /href="\/app\/settings"[^>]*>Compléter les réglages</.test(h) && /class="tcc-cta tcc-cta--ghost" data-legacy-link="" href="\/app" data-discover="true">Ouvrir l(?:&#x27;|')écran classique</.test(h));
 
 // ════════════════════════════════════════════════════════════════════════════════
 //  S2 — objectif (bloc initial), comparaison (2 scénarios + courant), mémoire avec attendu / observé.
@@ -644,6 +644,30 @@ check("audit en erreur (en) : plafond atteint",
   wrapEur("en", React.createElement(CatalogAudit, { isExpert: true, result: { ok: false, intent: "audit", error: "rate_limited" } })),
   (h) => /<s-banner tone="critical">Limit reached: 10 audits per day\./.test(h) && /data-audit="idle"/.test(h));
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  Page d'erreur racine (2026-09-26) : lisible et traduite, jamais « [object Object] ».
+// ════════════════════════════════════════════════════════════════════════════════
+const rootMod = await vite.ssrLoadModule("/app/root.jsx");
+const renderRootError = (error, loaderData) => {
+  const router = createMemoryRouter([{ id: "root", path: "/", Component: () => null, ErrorBoundary: rootMod.ErrorBoundary }], { hydrationData: { loaderData: { root: loaderData }, errors: { root: error } } });
+  return renderToStaticMarkup(React.createElement(RouterProvider, { router }));
+};
+const frErr = Object.fromEntries(["error.title", "error.generic", "error.session", "error.not_found", "error.unavailable", "error.reload", "error.code", "error.detail"].map((k) => [k, CATALOGS.fr[k]]));
+const ErrResp = class { constructor(status, statusText, data) { this.status = status; this.statusText = statusText; this.internal = false; this.data = data; } };
+console.log("\n=== RENDU RÉEL — Page d'erreur racine ===");
+for (const [label, error, expect] of [
+  ["réponse 401 (session) en fr", new ErrResp(401, "Unauthorized", ""), (h) => /<html lang="fr"/.test(h) && /Une erreur est survenue/.test(h) && /Votre session a expiré\. Rouvrez l(?:&#x27;|')app depuis votre admin Shopify\./.test(h) && /Code 401/.test(h)],
+  ["objet d'erreur inconnu (cas « [object Object] »)", { weird: { nested: true } }, (h) => /La page n(?:&#x27;|')a pas pu s(?:&#x27;|')afficher/.test(h) && !/\[object Object\]/.test(h) && !/data-root-error-detail/.test(h)],
+  ["Error JavaScript : message court en détail", new Error("Réseau indisponible"), (h) => /Détail : Réseau indisponible/.test(h) && /Recharger la page/.test(h)],
+]) {
+  try { const h = renderRootError(error, { locale: "fr", dir: "ltr", errorTexts: frErr }); const good = expect(h); if (!good) ko++; console.log(`  ${good ? "OK " : "ERR"} ${label}`); if (!good && process.env.RC_FULL) console.log("       FULL → " + h); }
+  catch (e) { ko++; console.log(`  ERR ${label} → THROW ${e.message}`); }
+}
+{
+  const h = renderRootError({ weird: true }, undefined);
+  const good = /<html lang="en"/.test(h) && /Something went wrong/.test(h) && !/\[object Object\]/.test(h);
+  if (!good) ko++; console.log(`  ${good ? "OK " : "ERR"} sans aucune donnée (loader racine en échec) : anglais de secours, lisible`);
+}
 console.log("\n" + (ko === 0 ? "✅ Tous les rendus réels OK" : `❌ ${ko} rendu(s) en échec`));
 await vite.close();
 process.exit(ko === 0 ? 0 : 1);

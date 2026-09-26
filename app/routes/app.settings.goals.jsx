@@ -11,6 +11,7 @@ import { SettingsNav } from "../components/settings/SettingsNav.jsx";
 import { SettingsBanner } from "../components/settings/Fields.jsx";
 import { GoalsForm } from "../components/settings/GoalsForm.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -51,7 +52,7 @@ export default function SettingsGoals() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

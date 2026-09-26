@@ -22,6 +22,7 @@ import { OverviewEmptyState } from "../components/overview/Blocks.jsx";
 import { ContributionChart } from "../components/charts/ContributionChart.jsx";
 import { WaterfallChart } from "../components/charts/WaterfallChart.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -94,7 +95,7 @@ export default function Overview() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

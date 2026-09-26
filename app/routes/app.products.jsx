@@ -18,6 +18,7 @@ import { OverviewEmptyState } from "../components/overview/Blocks.jsx";
 import { ProductList, ProductSummary } from "../components/products/ProductList.jsx";
 import { CatalogAudit } from "../components/products/CatalogAudit.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 const AUDIT_DAILY_LIMIT = 10; // même plafond que l'écran classique (clé run_audit partagée)
 
@@ -78,14 +79,14 @@ export default function Products() {
             <ProductList products={view.products} summary={view.summary} days={view.days} status={view.status} sort={view.sort} />
           </>
         )}
-        <CatalogAudit isExpert={view.isExpert} indeterminate={view.planIndeterminate} returnRatePct={view.returnRatePct} returnRateMissing={view.returnRateMissing} thresholdPct={view.thresholdPct} result={result?.intent === "audit" ? result : null} />
+        <CatalogAudit isExpert={view.isExpert} indeterminate={view.planIndeterminate} returnRatePct={view.returnRatePct} returnRateMissing={view.returnRateMissing} returnRateNoOrders={view.returnRateNoOrders} thresholdPct={view.thresholdPct} result={result?.intent === "audit" ? result : null} />
       </div>
     </s-page>
   );
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

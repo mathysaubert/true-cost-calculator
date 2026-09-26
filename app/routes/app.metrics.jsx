@@ -13,6 +13,7 @@ import { DataGapsBanner, OverviewNotes, DevShopBanner } from "../components/over
 import { OverviewEmptyState, EngineBanner } from "../components/overview/Blocks.jsx";
 import { MetricsLearn } from "../components/overview/MetricsLearn.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -49,7 +50,7 @@ export default function Metrics() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

@@ -14,6 +14,7 @@ import { resolveLocale, readCookie, localeCookieHeader, localeDir, LOCALE_COOKIE
 import { catalogsFor } from "../locales/index.js";
 import { I18nProvider } from "../lib/i18n/context.jsx";
 import { LIVE_SECTIONS } from "../lib/sections.js";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -74,7 +75,7 @@ function AppNav() {
 
 // Shopify needs React Router to catch some thrown responses, so that their headers are included in the response.
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => {

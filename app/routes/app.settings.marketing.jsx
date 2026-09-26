@@ -11,6 +11,7 @@ import { SettingsNav } from "../components/settings/SettingsNav.jsx";
 import { SettingsBanner } from "../components/settings/Fields.jsx";
 import { Partners, PromoRules, ManualCommissions } from "../components/settings/MarketingForms.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -66,7 +67,7 @@ export default function SettingsMarketing() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

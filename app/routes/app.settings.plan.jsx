@@ -11,6 +11,7 @@ import { SectionRail } from "../components/overview/SectionRail.jsx";
 import { SettingsNav } from "../components/settings/SettingsNav.jsx";
 import { PlanCards } from "../components/settings/PlanCards.jsx";
 import "../styles/overview.css";
+import { embeddedErrorBoundary } from "../lib/routeError.jsx";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -50,7 +51,7 @@ export default function SettingsPlan() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  return embeddedErrorBoundary(useRouteError());
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);

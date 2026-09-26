@@ -80,9 +80,11 @@ export const filterByStatus = (list = [], status = "all") => (PRODUCT_COST_STATU
 // arrondi à 0,1, seulement s'il est mesurable ; sinon null et le nombre de commandes qui manquent.
 export function returnRateFromKpis(kpis = []) {
   const k = (kpis ?? []).find((x) => x?.id === "return_rate");
-  if (k?.status === "ok" && Number.isFinite(Number(k.value))) return { returnRatePct: Math.round(Number(k.value) * 10) / 10, returnRateMissing: null };
-  const missing = k?.missing ? Object.values(k.missing).find((v) => Number.isFinite(Number(v))) : null;
-  return { returnRatePct: null, returnRateMissing: missing != null ? Number(missing) : null };
+  if (k?.status === "ok" && Number.isFinite(Number(k.value))) return { returnRatePct: Math.round(Number(k.value) * 10) / 10, returnRateMissing: null, returnRateNoOrders: false };
+  // Correctif 2026-09-26 : « missing » vaut { orders: 1 } quand AUCUNE commande n'est retenue (drapeau,
+  // pas un nombre de commandes manquantes) ; seul orders_out_of_window est un vrai manque.
+  const deficit = Number(k?.missing?.orders_out_of_window);
+  return { returnRatePct: null, returnRateMissing: Number.isFinite(deficit) && deficit > 0 ? deficit : null, returnRateNoOrders: k?.missing?.orders != null };
 }
 
 // ── Audit : entrées unitaires d'un produit ─────────────────────────────────────────────────────
