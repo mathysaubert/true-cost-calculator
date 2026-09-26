@@ -81,7 +81,9 @@ async function runForShop(shop) {
   const prevMap = new Map((prevRows ?? []).map((p) => [p.product_id, { last_state: p.last_state }]));
   const { data: settingsRow } = await supabase.from("shop_settings")
     .select("profitability_threshold_pct").eq("shop_domain", shop).maybeSingle();
-  const thresholdPct = settingsRow?.profitability_threshold_pct ?? 0;
+  // D2-4 : objectif non renseigné (NULL) = perte stricte pour le calcul ; l'e-mail le dit sans « 0 % ».
+  const thresholdRaw = settingsRow?.profitability_threshold_pct ?? null;
+  const thresholdPct = thresholdRaw ?? 0;
 
   // 4+5. DIFF (premier passage = prevMap vide → tout en seeds, zéro basculement).
   const { basculements, seeds, majNormales } = computeProfitabilityChanges(agg.byProduct, prevMap, thresholdPct);
@@ -148,7 +150,7 @@ async function runForShop(shop) {
     r.alertingEnabled = enabled; r.action = action;
 
     let sendOk = false;
-    if (action === "send") sendOk = await sendLossAlert({ to, shop, basculements, thresholdPct });
+    if (action === "send") sendOk = await sendLossAlert({ to, shop, basculements, thresholdPct: thresholdRaw });
     if (shouldAdvanceState(action, sendOk)) {
       await writeStates(basculements.map((e) => stateRow(e, shop, now)));
     }

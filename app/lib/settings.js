@@ -164,7 +164,7 @@ export function settingsStatus({ settings = {}, fixedCosts = [], gateways = [], 
     st("packaging", "costs", settings.packaging_cost_per_order != null ? "set" : "unset"),
     st("return_cost", "costs", settings.return_cost_per_return != null ? "set" : "unset"),
     st("fixed_costs", "costs", active.length ? "set" : "unset"),
-    st("cm2_target", "goals", Number(settings.profitability_threshold_pct) > 0 ? "set" : "unset"),
+    st("cm2_target", "goals", settings.profitability_threshold_pct != null ? "set" : "unset"), // D2-4 : NULL = non renseigné
     st("roas_target", "goals", settings.target_margin_after_ads_pct != null ? "set" : "unset"),
     st("main_product_price", "goals", settings.main_product_price != null ? "set" : "unset"),
   ];

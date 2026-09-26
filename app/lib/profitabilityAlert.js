@@ -18,7 +18,7 @@
 //   current      : aggregateOrderMargins(...).byProduct
 //                  [{ product_id, net_margin, net_revenue, marginPct, currency, ... }]
 //   prevStateMap : Map(product_id → { last_state: 'profitable'|'loss' })
-//   thresholdPct : seuil % global boutique (shop_plans.profitability_threshold_pct), défaut 0.
+//   thresholdPct : seuil % global boutique (shop_settings.profitability_threshold_pct), défaut 0 ; NULL = non renseigné (D2-4).
 // Sortie (3 listes DISJOINTES) :
 //   basculements : { product_id, state, margin, marginPct, currency, from, to } → mail + écriture (après envoi)
 //   seeds        : { product_id, state, margin, marginPct, currency }            → écriture, PAS d'alerte
@@ -77,10 +77,11 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const money  = (v, cur) => formatMoney(v, cur);
   const signed = (b) => (num(b.margin) > 0 ? "+" : "") + money(b.margin, b.currency);
   const pct    = (b) => b.marginPct == null ? "" : ` (${num(b.marginPct).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
+  const hasTarget = thresholdPct != null; // D2-4 : sans objectif, on parle de perte, jamais d'« objectif (0 %) »
   const X      = num(thresholdPct).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
   // Écart vs objectif en points (seuil − marge %), affiché seulement s'il est positif et connu.
   const gapPts = (b) => {
-    if (b.marginPct == null) return "";
+    if (b.marginPct == null || !hasTarget) return "";
     const gap = num(thresholdPct) - num(b.marginPct);
     if (gap <= 0) return "";
     return `, soit ${gap.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} point${gap >= 2 ? "s" : ""} sous votre objectif`;
@@ -95,8 +96,12 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
 
   // Ligne 1 : le fait (imposé). Adaptée si l'email ne porte QUE des retours au-dessus de l'objectif.
   const lead = under.length
-    ? `D'après vos commandes analysées, ${under.length} produit${under.length > 1 ? "s" : ""} ${under.length > 1 ? "sont" : "est"} sous votre objectif de marge (${X} %).`
-    : `D'après vos commandes analysées, ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} ${recoveries.length > 1 ? "sont" : "est"} repassé${recoveries.length > 1 ? "s" : ""} au-dessus de votre objectif de marge (${X} %).`;
+    ? (hasTarget
+      ? `D'après vos commandes analysées, ${under.length} produit${under.length > 1 ? "s" : ""} ${under.length > 1 ? "sont" : "est"} sous votre objectif de marge (${X} %).`
+      : `D'après vos commandes analysées, ${under.length} produit${under.length > 1 ? "s" : ""} ${under.length > 1 ? "sont" : "est"} à perte.`)
+    : hasTarget
+    ? `D'après vos commandes analysées, ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} ${recoveries.length > 1 ? "sont" : "est"} repassé${recoveries.length > 1 ? "s" : ""} au-dessus de votre objectif de marge (${X} %).`
+    : `D'après vos commandes analysées, ${recoveries.length} produit${recoveries.length > 1 ? "s" : ""} ${recoveries.length > 1 ? "sont" : "est"} repassé${recoveries.length > 1 ? "s" : ""} rentable${recoveries.length > 1 ? "s" : ""}.`;
   // Poste de coût dominant (« où part votre argent ») réinjecté sur les lignes à perte. Pire cas :
   // suffixe « (taux de douane estimé) » si le poste dominant est la douane sur classification estimée.
   const topCostClause = (b) => {
@@ -113,7 +118,8 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   const recoveryLine = (b) => `${productName(b)} : ${signed(b)}${pct(b)}.`;
 
   const cause    = "Calcul basé sur vos coûts enregistrés dans l'app et vos commandes des 30 derniers jours.";
-  const contract = "Vous recevez cette alerte quand une nouvelle commande ou un changement de coûts fait passer un produit sous votre objectif. Si vos coûts réels changent (prix fournisseur, port, emballage), mettez-les à jour dans l'app : vos marges et alertes resteront justes.";
+  const recoveryTitle = hasTarget ? "Repassés au-dessus de votre objectif" : "Repassés rentables";
+  const contract = (hasTarget ? "Vous recevez cette alerte quand une nouvelle commande ou un changement de coûts fait passer un produit sous votre objectif." : "Vous recevez cette alerte quand une nouvelle commande ou un changement de coûts fait passer un produit à perte.") + " Si vos coûts réels changent (prix fournisseur, port, emballage), mettez-les à jour dans l'app : vos marges et alertes resteront justes.";
   // Note fallback : au moins un produit à perte sans détail de coûts (commandes anté-Brique B).
   const missingDetail = realLosses.some((b) => b.breakdownAvailable === false);
   const noteText = "Le détail des coûts n'apparaît pas pour certains produits : leurs commandes sont plus anciennes que cette fonction. Complétez-le depuis l'onglet « Suivi des coûts ».";
@@ -121,7 +127,7 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
   // TEXTE brut — PARITÉ stricte avec le HTML (mêmes chaînes, mêmes chiffres).
   const lines = [lead, ""];
   if (under.length)      lines.push(...under.map((b) => `• ${underLine(b)}`), "");
-  if (recoveries.length) lines.push("Repassés au-dessus de votre objectif :", ...recoveries.map((b) => `• ${recoveryLine(b)}`), "");
+  if (recoveries.length) lines.push(`${recoveryTitle} :`, ...recoveries.map((b) => `• ${recoveryLine(b)}`), "");
   lines.push(cause, "", contract);
   if (appUrl) lines.push("", `Voir le suivi de marge dans l'app : ${appUrl}`);
   if (missingDetail) lines.push("", `Note : ${noteText}`);
@@ -133,7 +139,7 @@ export function renderLossAlertEmail({ shop, thresholdPct = 0, basculements = []
     ? `<ul style="margin:0 0 12px;padding-left:18px">${items.map((b) => `<li style="margin:4px 0;${EMAIL_TEXT}">${render(b)}</li>`).join("")}</ul>` : "";
   const html = emailShell(`<p style="${EMAIL_TEXT}">${lead}</p>
     ${list(under, underLine)}
-    ${recoveries.length ? `<h3 style="margin:16px 0 6px;font-size:14px;${EMAIL_TEXT}">Repassés au-dessus de votre objectif</h3>${list(recoveries, recoveryLine)}` : ""}
+    ${recoveries.length ? `<h3 style="margin:16px 0 6px;font-size:14px;${EMAIL_TEXT}">${recoveryTitle}</h3>${list(recoveries, recoveryLine)}` : ""}
     <p style="font-size:13px;${EMAIL_MUTED}">${cause}</p>
     <p style="${EMAIL_TEXT}">${contract}</p>
     ${appUrl ? `<p style="margin:20px 0;${EMAIL_TEXT}">

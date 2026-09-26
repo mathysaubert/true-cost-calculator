@@ -461,6 +461,7 @@ export default {
   "products.audit.band.loser": "CM2 sous 0 %",
   "products.audit.band.risky": "CM2 de 0 à {{pct}}",
   "products.audit.band.risky_off": "objectif à 0 % : bande inactive",
+  "products.audit.band.risky_unset": "objectif non renseigné : bande inactive (à définir dans Objectifs)",
   "products.audit.band.winner": "CM2 de {{pct}} ou plus",
   "products.audit.customs_estimated": "catégorie douanière estimée",
   "products.audit.cost": "coût {{amount}}",

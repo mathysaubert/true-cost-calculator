@@ -5,7 +5,7 @@ import { AUDIT_GROUPS, classifyAuditRows } from "../../lib/products.js";
 
 const GROUP_TONE = { loser: "tcc-badge--bad", risky: "tcc-badge--warn", winner: "tcc-badge--good" };
 
-export function CatalogAudit({ isExpert = false, indeterminate = false, returnRatePct = null, returnRateMissing = null, returnRateNoOrders = false, thresholdPct = 0, result = null }) {
+export function CatalogAudit({ isExpert = false, indeterminate = false, returnRatePct = null, returnRateMissing = null, returnRateNoOrders = false, thresholdPct = null, result = null }) {
   const { t, money, pct } = useI18n();
   const nav = useNavigation();
   const running = nav.state === "submitting" && nav.formData?.get("intent") === "run_audit";
@@ -18,8 +18,9 @@ export function CatalogAudit({ isExpert = false, indeterminate = false, returnRa
       </section>
     );
   }
-  const groups = result?.ok ? classifyAuditRows(result.rows, result.thresholdPct) : null;
+  // D2-4 : objectif non renseigné (null) = classement à 0 (perte stricte), libellé dédié.
   const t0 = result?.ok ? result.thresholdPct : thresholdPct;
+  const groups = result?.ok ? classifyAuditRows(result.rows, t0 ?? 0) : null;
   return (
     <section className="tcc-block tcc-table-host" aria-labelledby="tcc-audit" data-audit={result?.ok ? "done" : running ? "running" : "idle"}>
       <div className="tcc-block__head"><h3 id="tcc-audit">{t("products.audit.title")}</h3><span className="tcc-badge tcc-badge--accent">{t("products.audit.expert")}</span></div>
@@ -39,7 +40,7 @@ export function CatalogAudit({ isExpert = false, indeterminate = false, returnRa
           {!result.taxesIncluded && <p className="tcc-muted">{t("products.audit.prices_excl_tax")}</p>}
           {AUDIT_GROUPS.map((g) => (
             <div key={g} className="tcc-stack" data-audit-group={g}>
-              <h4 className="tcc-eyebrow"><span className={`tcc-badge ${GROUP_TONE[g]}`}>{t(`products.audit.group.${g}`, { count: groups[g].length })}</span>{" "}{g === "risky" && t0 <= 0 ? t("products.audit.band.risky_off") : t(`products.audit.band.${g}`, { pct: pct(t0, { digits: Number.isInteger(t0) ? 0 : 1 }) })}</h4>
+              <h4 className="tcc-eyebrow"><span className={`tcc-badge ${GROUP_TONE[g]}`}>{t(`products.audit.group.${g}`, { count: groups[g].length })}</span>{" "}{g === "risky" && t0 == null ? t("products.audit.band.risky_unset") : g === "risky" && t0 <= 0 ? t("products.audit.band.risky_off") : t(`products.audit.band.${g}`, { pct: pct(t0 ?? 0, { digits: Number.isInteger(t0 ?? 0) ? 0 : 1 }) })}</h4>
               {groups[g].length > 0 && (
                 <div className="tcc-prodtable tcc-prodtable--audit" role="table">
                   {groups[g].map((r) => (

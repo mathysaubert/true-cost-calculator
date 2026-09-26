@@ -26,8 +26,7 @@ export const action = async ({ request }) => {
   if (intent !== "save_goals") return { intent, ok: false, error: "unknown_intent" };
   const { values, errors } = parseFields(FIELDS.goals, form);
   if (Object.keys(errors).length) return { intent, ok: false, errors };
-  // Le seuil CM2 vide revient à 0 (colonne NOT NULL DEFAULT 0 : « perte stricte »).
-  if (values.profitability_threshold_pct === null) values.profitability_threshold_pct = 0;
+  // D2-4 : objectif de marge vide = non renseigné (NULL, colonne facultative) ; 0 saisi = vrai 0.
   return { intent, ...(await saveSettings({ supabase, shop: session.shop, values })) };
 };
 

@@ -464,6 +464,7 @@ export default {
   "products.audit.band.loser": "CM2 below 0 %",
   "products.audit.band.risky": "CM2 from 0 to {{pct}}",
   "products.audit.band.risky_off": "target at 0 %: band inactive",
+  "products.audit.band.risky_unset": "target not set: band inactive (set it in Goals)",
   "products.audit.band.winner": "CM2 of {{pct}} or more",
   "products.audit.customs_estimated": "customs category estimated",
   "products.audit.cost": "cost {{amount}}",

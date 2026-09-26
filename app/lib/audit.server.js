@@ -59,7 +59,7 @@ export async function runCatalogAudit({ admin, supabase, shop, returnRatePct = n
   }
   return {
     rows, scanned: products.length, noCost, incomplete, taxesIncluded,
-    thresholdPct: Number(st.profitability_threshold_pct) || 0,
+    thresholdPct: st.profitability_threshold_pct == null ? null : Number(st.profitability_threshold_pct),
     missingSettings: auditAssumptions(st), returnRatePct,
     ranAt: now.toISOString(),
   };

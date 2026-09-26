@@ -290,9 +290,12 @@ check("passerelles : 2 formulaires (shopify_payments 12 commandes à confirmer a
 check("coûts fixes : 2 lignes (Loyer actif avec Terminer + Supprimer ; ancien outil terminé, Supprimer seul), total « 1 200,00 $ par mois » sur l'actif, formulaire d'ajout ; vide → message",
   wrap("fr", React.createElement("div", null, React.createElement(FixedCosts, { rows: fixedRows, today: "2026-09-24" }), React.createElement(FixedCosts, { rows: [], today: "2026-09-24" }))),
   (h) => (h.match(/data-fixed-cost="/g) ?? []).length === 2 && /data-fixed-cost="a1"[\s\S]*?Terminer aujourd(?:&#x27;|')hui/.test(h) && /class="tcc-table__row is-off" role="row" data-fixed-cost="b2"/.test(h) && /1.200,00.\$ par mois/.test(h) && (h.match(/name="intent" value="add_fixed_cost"/g) ?? []).length === 2 && /Aucun coût fixe pour le moment/.test(h));
-check("objectifs : 3 champs avec suffixe % sur les taux, seuil 0 → vide, bande 40 % – 60 %, plus de seuil d'alerte de l'écran classique (D2-3)",
+check("objectifs : 3 champs avec suffixe % sur les taux, objectif 0 choisi → « 0 » (D2-4), bande 40 % – 60 %, plus de seuil d'alerte de l'écran classique (D2-3)",
   wrap("fr", React.createElement(GoalsForm, { settings: { profitability_threshold_pct: 0, main_product_price: 60 } })),
-  (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value=""[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && !/alertes de calcul/.test(h));
+  (h) => (h.match(/<s-text-field/g) ?? []).length === 3 && /name="profitability_threshold_pct"[^>]*value="0"[^>]*suffix="%"/.test(h) && /name="main_product_price"[^>]*value="60"/.test(h) && /entre 40.% et 60.% du CA/.test(h) && !/alertes de calcul/.test(h));
+check("objectifs, objectif non renseigné (NULL, D2-4) → champ vide ; réglages vides (état initial) → 3 champs vides",
+  wrap("fr", React.createElement("div", null, React.createElement(GoalsForm, { settings: { profitability_threshold_pct: null, main_product_price: 60 } }), React.createElement(GoalsForm, { settings: {} }))),
+  (h) => (h.match(/<s-text-field/g) ?? []).length === 6 && (h.match(/name="profitability_threshold_pct"[^>]*value=""/g) ?? []).length === 2 && /name="main_product_price"[^>]*value="60"/.test(h));
 check("état des réglages : 13 lignes en 5 pages (Boutique, Marketing, Connexions, Coûts, Objectifs) avec badges Renseigné / À confirmer / Manquant et lien Ouvrir",
   wrap("fr", React.createElement(SettingsIndex, { items: settingsStatus({ settings: setFull, fixedCosts: fixedRows, gateways: gws, day: "2026-09-24" }) })),
   (h) => (h.match(/data-setting="/g) ?? []).length === 13 && (h.match(/<section class="tcc-block"/g) ?? []).length === 5 && /href="\/app\/settings\/shop"/.test(h) && /data-setting="gateway_fees" data-state="unconfirmed"/.test(h) && /data-setting="fixed_costs" data-state="set"/.test(h) && /href="\/app\/settings\/costs"[^>]*>Ouvrir</.test(h) && /tcc-badge--warn">À confirmer</.test(h));
@@ -540,6 +543,12 @@ check("audit Expert au repos (fr) : formulaire run_audit, taux de retour observ�
 check("audit Expert avec résultat (fr) : 4 analysés dont 1 sans coût, réglages manquants nommés, 3 groupes (à perte, sous l'objectif 0 à 25 %, à l'objectif), coût Shopify à confirmer, douane estimée",
   wrapEur("fr", React.createElement(CatalogAudit, { isExpert: true, returnRatePct: 5, thresholdPct: 25, result: auditRes })),
   (h) => /data-audit="done"/.test(h) && /4 produits actifs analysés\. 1 produit n(?:&#x27;|')a ni prix ni coût/.test(h) && /Non renseignés, comptés 0 : Votre port par commande, Frais de paiement \(%\)\./.test(h) && /data-audit-group="loser"[\s\S]*?1 à perte[\s\S]*?CM2 sous 0.%[\s\S]*?Cap[\s\S]*?coût Shopify, à confirmer/.test(h) && /data-audit-group="risky"[\s\S]*?1 sous votre objectif[\s\S]*?CM2 de 0 à 25.%[\s\S]*?Bag/.test(h) && /data-audit-group="winner"[\s\S]*?1 à l(?:&#x27;|')objectif[\s\S]*?CM2 de 25.% ou plus[\s\S]*?Tee[\s\S]*?12,58.€[\s\S]*?25,2.%/.test(h) && /catégorie douanière estimée/.test(h) && !/ style="/.test(h));
+check("audit Expert, objectif non renseigné (fr, D2-4) : bande « sous l'objectif » inactive avec libellé dédié, classement à perte stricte (Cap à perte, Bag et Tee à l'objectif 0 %)",
+  wrapEur("fr", React.createElement(CatalogAudit, { isExpert: true, returnRatePct: 5, thresholdPct: null, result: { ...auditRes, thresholdPct: null } })),
+  (h) => /data-audit-group="loser"[\s\S]*?Cap/.test(h) && /data-audit-group="risky"[\s\S]*?objectif non renseigné : bande inactive/.test(h) && /data-audit-group="winner"[\s\S]*?2 à l(?:&#x27;|')objectif[\s\S]*?CM2 de 0.% ou plus/.test(h) && !/null/.test(h));
+check("audit Expert, objectif 0 % choisi (en) : bande inactive (libellé historique), pas le libellé « non renseigné »",
+  wrapEur("en", React.createElement(CatalogAudit, { isExpert: true, returnRatePct: 5, thresholdPct: 0, result: { ...auditRes, thresholdPct: 0 } })),
+  (h) => /data-audit-group="risky"/.test(h) && !/target not set/.test(h));
 check("audit en erreur (en) : plafond atteint",
   wrapEur("en", React.createElement(CatalogAudit, { isExpert: true, result: { ok: false, intent: "audit", error: "rate_limited" } })),
   (h) => /<s-banner tone="critical">Limit reached: 10 audits per day\./.test(h) && /data-audit="idle"/.test(h));

@@ -166,6 +166,6 @@ export async function loadOverview({ supabase, shop, admin = null, days, now = n
     previousNodes: previous.shop.nodes, previousOrders: previous.shop.leaves.orders ?? 0,
     // S3 : observé à J+30 d'une décision produit — nœuds du produit dans les deux fenêtres.
     productObs: observeProduct ? { after: current.byProduct?.[observeProduct]?.nodes ?? {}, before: previous.byProduct?.[observeProduct]?.nodes ?? {}, beforeOrders: previous.byProduct?.[observeProduct]?.leaves?.orders ?? 0 } : null,
-    productList, productLeaves, productCount, newProductDefaults: unitDefaultsFromSettings(settings), shopCountryCode: settings.shop_country_code ?? null, thresholdPct: Number(settings.profitability_threshold_pct) || 0,
+    productList, productLeaves, productCount, newProductDefaults: unitDefaultsFromSettings(settings), shopCountryCode: settings.shop_country_code ?? null, thresholdPct: settings.profitability_threshold_pct == null ? null : Number(settings.profitability_threshold_pct),
   };
 }

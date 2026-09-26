@@ -16,7 +16,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import {
-  ALL_TABLES, LEGACY_TABLES, F1_TABLES, I0_TABLES, PURGE_TABLES, SHARED_REFERENCE_TABLES,
+  ALL_TABLES, LEGACY_TABLES, F1_TABLES, I0_TABLES, PURGE_TABLES, SHARED_REFERENCE_TABLES, DROPPED_TABLES,
   ORDER_MARGINS_KEY, ORDER_MARGINS_SNAPSHOT_COLUMNS, ORDER_EXCLUSION_REASONS, DECISION_KINDS,
 } from "../app/lib/schema.js";
 import { encryptSecret, decryptSecret } from "../app/lib/crypto.server.js";
@@ -72,13 +72,16 @@ console.log("\n── 2. Migrations F1 ré-exécutables ──");
 // ── 3. Contrat de liste : schema.js = tables de toutes les migrations ──
 console.log("\n── 3. schema.js = ensemble des tables créées par les migrations ──");
 {
-  const fromSql = new Set(files.flatMap((f) => createdTables(read(f))));
+  // D2-4 : une table supprimée par une migration ultérieure (DROP TABLE) sort de l'ensemble.
+  const droppedSql = new Set(files.flatMap((f) => [...read(f).matchAll(/DROP TABLE(?: IF EXISTS)?\s+(?:public\.)?(\w+)/gi)].map((m) => m[1])));
+  const fromSql = new Set(files.flatMap((f) => createdTables(read(f))).filter((t) => !droppedSql.has(t)));
+  ok([...droppedSql].sort().join() === [...DROPPED_TABLES].sort().join(), `tables supprimées par migration = DROPPED_TABLES (${[...droppedSql].join(", ")})`);
   const fromJs = new Set(ALL_TABLES);
   const missingInJs = [...fromSql].filter((t) => !fromJs.has(t));
   const missingInSql = [...fromJs].filter((t) => !fromSql.has(t));
   ok(missingInJs.length === 0, `aucune table SQL absente de schema.js${missingInJs.length ? " : " + missingInJs.join(", ") : ""}`);
   ok(missingInSql.length === 0, `aucune table de schema.js absente des migrations${missingInSql.length ? " : " + missingInSql.join(", ") : ""}`);
-  ok(LEGACY_TABLES.length === 12 && F1_TABLES.length === 26 && I0_TABLES.length === 2, `12 tables historiques + 26 tables F1 + 2 tables I0 (${LEGACY_TABLES.length} + ${F1_TABLES.length} + ${I0_TABLES.length})`);
+  ok(LEGACY_TABLES.length === 9 && F1_TABLES.length === 26 && I0_TABLES.length === 2, `9 tables historiques (12 moins 3 supprimées en D2-4) + 26 tables F1 + 2 tables I0 (${LEGACY_TABLES.length} + ${F1_TABLES.length} + ${I0_TABLES.length})`);
   ok(new Set(ALL_TABLES).size === ALL_TABLES.length, "aucun doublon dans ALL_TABLES");
   const f1Created = new Set(f1Files.flatMap((f) => createdTables(read(f))));
   ok(F1_TABLES.every((t) => f1Created.has(t)) && [...f1Created].every((t) => F1_TABLES.includes(t)), "F1_TABLES = exactement les tables des fichiers 20260922_f1_*");
@@ -88,8 +91,10 @@ console.log("\n── 3. schema.js = ensemble des tables créées par les migrat
 console.log("\n── 4. purge_shop = PURGE_TABLES ; webhooks sans liste en dur ──");
 {
   const deleted = purgeDeletes(read(latestPurgeFile));
-  ok(latestPurgeFile === "20260924_i0_01_decision_memory.sql", `définition effective de purge_shop = dernier fichier qui la redéfinit (${latestPurgeFile})`);
-  ok(f1Deleted.every((t, i) => deleted[i] === t), "la liste F1-23 est un préfixe exact de la définition effective (ordre conservé)");
+  ok(latestPurgeFile === "20260926_d2_01_drop_legacy.sql", `définition effective de purge_shop = dernier fichier qui la redéfinit (${latestPurgeFile})`);
+  const f1Kept = f1Deleted.filter((t) => !DROPPED_TABLES.includes(t));
+  ok(f1Kept.every((t, i) => deleted[i] === t), "la liste F1-23, sans les tables supprimées en D2-4, est un préfixe exact de la définition effective (ordre conservé)");
+  ok(DROPPED_TABLES.every((t) => !deleted.includes(t)), "purge_shop ne vide plus les tables supprimées (sinon la désinstallation échouerait)");
   const notPurged = PURGE_TABLES.filter((t) => !deleted.includes(t));
   const extra = deleted.filter((t) => !PURGE_TABLES.includes(t));
   ok(notPurged.length === 0, `chaque table de PURGE_TABLES est vidée par purge_shop${notPurged.length ? " — manquantes : " + notPurged.join(", ") : ""}`);
@@ -97,7 +102,6 @@ console.log("\n── 4. purge_shop = PURGE_TABLES ; webhooks sans liste en dur 
   ok(new Set(deleted).size === deleted.length, "aucune table vidée deux fois");
   ok(SHARED_REFERENCE_TABLES.every((t) => !deleted.includes(t)), "fx_rates (référentiel partagé) hors purge");
   ok(deleted.indexOf("manual_commissions") < deleted.indexOf("partners") && deleted.indexOf("promo_code_rules") < deleted.indexOf("partners"), "enfants (commissions, codes) vidés avant partners (FK)");
-  ok(deleted.indexOf("calculation_annotations") < deleted.indexOf("calculations"), "annotations vidées avant calculations (FK)");
   ok(PURGE_TABLES.length === ALL_TABLES.length - SHARED_REFERENCE_TABLES.length, "purge totale : toutes les tables sauf les référentiels partagés (décision g)");
   for (const w of ["../app/routes/webhooks.app.uninstalled.jsx", "../app/routes/webhooks.compliance.jsx"]) {
     const src = readFileSync(new URL(w, import.meta.url), "utf8");

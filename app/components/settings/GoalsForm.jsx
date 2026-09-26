@@ -15,7 +15,7 @@ export function GoalsForm({ settings = {}, result = null }) {
         <input type="hidden" name="intent" value="save_goals" />
         <div className="tcc-form__grid">
           {FIELDS.goals.map((f) => (
-            <NumberField key={f.key} name={f.key} label={t(`settings.field.${f.key}.label`)} help={t(`settings.field.${f.key}.help`)} value={f.key === "profitability_threshold_pct" && Number(settings[f.key]) === 0 ? null : settings[f.key]} error={bad[f.key] ?? null} suffix={f.kind === "pct" ? "%" : null} />
+            <NumberField key={f.key} name={f.key} label={t(`settings.field.${f.key}.label`)} help={t(`settings.field.${f.key}.help`)} value={settings[f.key]} error={bad[f.key] ?? null} suffix={f.kind === "pct" ? "%" : null} />
           ))}
         </div>
         <div className="tcc-form__actions"><s-button type="submit" variant="secondary">{t("settings.save")}</s-button></div>

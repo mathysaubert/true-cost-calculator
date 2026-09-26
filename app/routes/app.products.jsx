@@ -41,7 +41,7 @@ export const loader = async ({ request }) => {
     isExpert: ent?.isExpert === true, planIndeterminate: ent?.source === "indeterminate",
     // Taux de retour = l'indicateur « Taux de retour » de l'app (commandes sorties de la fenêtre de retour
     // ayant un retour ou un remboursement), seulement s'il est mesurable ; sinon champ vide (non renseigné).
-    ...returnRateFromKpis(view.kpis), thresholdPct: view.thresholdPct ?? 0,
+    ...returnRateFromKpis(view.kpis), thresholdPct: view.thresholdPct ?? null,
   };
 };
 
