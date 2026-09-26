@@ -84,6 +84,23 @@ console.log("\n── 3. Objectif « non renseigné » ──");
   ok(/sous votre objectif de marge \(25 %\)/.test(t.text) && /15 points sous votre objectif/.test(t.text), "e-mail avec objectif 25 % : inchangé (écart en points)");
 }
 
+console.log("\n── 3b. Enregistrement d'un objectif vidé (vérification 3 en boutique) ──");
+{
+  const { saveSettings } = await import("../app/lib/settings.server.js");
+  const sent = [];
+  const fake = { from: (t) => ({ upsert: (row) => { sent.push({ t, row }); return Promise.resolve({ error: null }); } }) };
+  const form = new FormData();
+  form.set("intent", "save_goals"); form.set("profitability_threshold_pct", ""); form.set("target_margin_after_ads_pct", ""); form.set("main_product_price", "60");
+  const { values, errors } = parseFields(FIELDS.goals, form);
+  const r = await saveSettings({ supabase: fake, shop: "s.myshopify.com", values });
+  const row = sent[0]?.row ?? {};
+  ok(Object.keys(errors).length === 0 && r.ok && sent.length === 1 && sent[0].t === "shop_settings", "un seul upsert shop_settings, sans erreur");
+  ok("profitability_threshold_pct" in row && row.profitability_threshold_pct === null, `objectif vidé écrit NULL, clé présente (${JSON.stringify(row.profitability_threshold_pct)})`);
+  const action = read("app/routes/app.settings.goals.jsx").replace(/\/\/.*$/gm, "");
+  const body = action.slice(action.indexOf("export const action"), action.indexOf("export default"));
+  ok(/parseFields\(FIELDS\.goals, form\)/.test(body) && /saveSettings\(\{ supabase, shop: session\.shop, values \}\)/.test(body) && !/profitability_threshold_pct/.test(body), "l'action passe les valeurs lues telles quelles (aucune réécriture de l'objectif)");
+}
+
 console.log("\n── 4. Outils de migration ──");
 {
   const m = read("scripts/d2_4_migrate.mjs");

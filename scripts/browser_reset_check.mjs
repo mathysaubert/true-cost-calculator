@@ -83,6 +83,12 @@ async function scenario(label, { path }) {
   await discard(page);
   const s3 = await state(page);
   ok(s3.threshold.value === "50" && s3.threshold.inner === "50", `après un enregistrement à 50, « Annuler » remet 50 (${s3.threshold.inner})`);
+  // D2-4 : un objectif vidé part VIDE dans le formulaire (le serveur l'enregistre « non renseigné »), jamais 0.
+  const cleared = page.locator('s-text-field[name="profitability_threshold_pct"] input');
+  await cleared.click(); await cleared.press("Control+A"); await cleared.press("Backspace"); await cleared.press("Tab");
+  await page.waitForTimeout(150);
+  const sent = await page.evaluate(() => { const d = new FormData(document.getElementById("goals")); return { has: d.has("profitability_threshold_pct"), v: d.get("profitability_threshold_pct") }; });
+  ok(sent.has && sent.v === "", `objectif vidé : le formulaire envoie une valeur vide (${JSON.stringify(sent.v)}), pas 0`);
   await page.close();
 }
 
