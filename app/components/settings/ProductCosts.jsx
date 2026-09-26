@@ -104,6 +104,13 @@ export function CustomsPanel({ products = [], result = null }) {
 }
 
 // Import / export CSV : export = modèle pré-rempli (lien de téléchargement), import = fichier natif.
+// Un rejet dit pourquoi : champ, valeur reçue, raison, valeurs acceptées.
+function csvIssue(t, x) {
+  const field = t(`productcosts.error.${x.field}`);
+  const reason = t(`productcosts.csv.reason.${x.reason}`, { value: x.value, max: x.max ?? "", expected: (x.expected ?? []).join(", ") });
+  return x.value ? `${field} « ${x.value} » : ${reason}` : `${field} : ${reason}`;
+}
+
 export function CostsCsv({ csv = "", result = null }) {
   const { t, int } = useI18n();
   const imported = result?.intent === "import_csv" ? result : null;
@@ -119,10 +126,15 @@ export function CostsCsv({ csv = "", result = null }) {
         <label className="tcc-pc__file">{t("productcosts.csv.file")}<input type="file" name="csv" accept=".csv,text/csv" /></label>
         <div className="tcc-form__actions"><s-button type="submit" variant="secondary">{t("productcosts.csv.import")}</s-button></div>
       </Form>
-      {imported?.ok && <s-banner tone={imported.csvErrors?.length ? "warning" : "success"}>{t("productcosts.csv.done", { count: imported.saved ?? 0 })}{imported.csvErrors?.length ? ` ${t("productcosts.csv.line_errors", { count: imported.csvErrors.length })}` : ""}</s-banner>}
+      {imported?.header && <s-banner tone="critical" data-csv-header={imported.header.reason}>{imported.header.reason === "empty_file" ? t("productcosts.csv.empty_file") : t("productcosts.csv.missing_columns", { columns: imported.header.columns.join(", ") })}</s-banner>}
+      {imported && !imported.header && !imported.ok && <s-banner tone="critical">{t("settings.error.failed")}</s-banner>}
+      {imported?.ok && <s-banner tone={imported.errorCount ? "warning" : "success"}>{t("productcosts.csv.done", { count: imported.saved ?? 0 })}{imported.errorCount ? ` ${t("productcosts.csv.line_errors", { count: imported.errorCount })}` : ""}</s-banner>}
+      {imported?.incomplete > 0 && <s-banner tone="info" data-csv-incomplete={imported.incomplete}>{t("productcosts.csv.incomplete", { count: imported.incomplete })}</s-banner>}
       {imported?.csvErrors?.length > 0 && (
-        <ul className="tcc-partials" data-csv-errors={imported.csvErrors.length}>
-          {imported.csvErrors.slice(0, 10).map((e) => <li key={e.line}><Icon id="soon" /><span>{t("productcosts.csv.line", { line: int(e.line) })}{" "}{e.fields.map((f) => t(`productcosts.error.${f}`)).join(", ")}</span></li>)}
+        <ul className="tcc-partials" data-csv-errors={imported.errorCount}>
+          {imported.csvErrors.slice(0, 10).map((e) => (
+            <li key={e.line}><Icon id="soon" /><span>{t("productcosts.csv.line", { line: int(e.line) })}{" "}{e.issues.map((x) => csvIssue(t, x)).join(" ; ")}</span></li>
+          ))}
         </ul>
       )}
     </section>

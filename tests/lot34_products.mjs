@@ -6,7 +6,7 @@
 //  Pour lancer : node tests/lot34_products.mjs
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
-import { costSourcesByProduct, costStatus, productListEntry, productSummary, sortProducts, filterByStatus, observedReturnRatePct, auditInputs, auditAssumptions, classifyAuditRows, PRODUCT_COST_STATUSES } from "../app/lib/products.js";
+import { costSourcesByProduct, costStatus, productListEntry, productSummary, sortProducts, filterByStatus, returnRateFromKpis, auditInputs, auditAssumptions, classifyAuditRows, PRODUCT_COST_STATUSES } from "../app/lib/products.js";
 import { unitEconomics, unitDefaultsFromSettings } from "../app/lib/simulator/newProduct.js";
 import { runCatalogAudit } from "../app/lib/audit.server.js";
 import { sectionById } from "../app/lib/sections.js";
@@ -48,7 +48,8 @@ console.log("\n── 2. Liste, synthèse, tri, filtre ──");
   ok(s.total === 3 && s.counts.set === 1 && s.counts.missing === 1 && s.counts.partial === 1 && close(s.unknown_share, (350 / 600) * 100), "synthèse : compteurs par statut, part du CA sans coût");
   ok(sortProducts(list, "ca_ht").map((x) => x.id).join() === "2,3,1" && sortProducts(list, "cm2").map((x) => x.id).join() === "1,3,2" && sortProducts(list, "bogus").map((x) => x.id).join() === "2,3,1", "tri : CA par défaut ; CM2 absente en fin de liste ; tri inconnu → CA");
   ok(filterByStatus(list, "partial").length === 1 && filterByStatus(list, "nope").length === 3 && PRODUCT_COST_STATUSES.length === 4, "filtre par statut ; statut inconnu → tous");
-  ok(observedReturnRatePct({ ca_brut: 2480, rembours: 62 }) === 2.5 && observedReturnRatePct({ ca_brut: 0 }) === null, "taux de retour observé = remboursements / CA brut (2,5 %), null sans CA");
+  const ok1 = returnRateFromKpis([{ id: "return_rate", status: "ok", value: 3.456 }]), ko1 = returnRateFromKpis([{ id: "return_rate", status: "insufficient", value: null, missing: { orders_out_of_window: 33 } }]);
+  ok(ok1.returnRatePct === 3.5 && ok1.returnRateMissing === null && ko1.returnRatePct === null && ko1.returnRateMissing === 33 && returnRateFromKpis([]).returnRatePct === null, "taux de retour de l'audit = indicateur « Taux de retour » de l'app (3,5 %) ; non mesurable → vide, commandes manquantes (33)");
 }
 
 console.log("\n── 3. Audit : entrées, calcul, classement ──");

@@ -6,8 +6,8 @@
 // ════════════════════════════════════════════════════════════════════════════════
 import { readFileSync } from "node:fs";
 import { PLAN_OFFERS, planView, PLAN_CURRENCY } from "../app/lib/plans.js";
-import { groupProducts, statusCounts, filterProducts, parseProductForm, costErrorFields, csvErrorFields, COST_FIELDS, NUMBER_FIELDS } from "../app/lib/productCosts.js";
-import { PAYS_KEYS, CATEGORIE_KEYS, parseCostsCsv } from "../app/lib/variantCosts.js";
+import { groupProducts, statusCounts, filterProducts, parseProductForm, COST_FIELDS, NUMBER_FIELDS } from "../app/lib/productCosts.js";
+import { PAYS_KEYS, CATEGORIE_KEYS } from "../app/lib/variantCosts.js";
 import { CATALOGS } from "../app/locales/index.js";
 
 let failures = 0;
@@ -72,11 +72,10 @@ console.log("\n── 3. Coûts produits : groupement, formulaires, erreurs ─�
   ok(r.rows.length === 1 && r.errors.length === 0 && r.skipped.length === 0 && r.rows[0].value.prix_achat === 20.5 && r.rows[0].value.qty_par_lot === 1 && r.rows[0].value.cout_emballage === 0.3 && r.rows[0].value.shipping_model === "stock" && r.rows[0].product_id === "A", "formulaire : virgule acceptée, quantité par lot vide = 1 (seule exception), selects lus, produit rattaché");
   const sk = parseProductForm(fd({ vid_0: "v2", prix_achat_0: "20", port_entrant_0: "", qty_par_lot_0: "1", cout_emballage_0: "", vat_regime_0: "assujetti", shipping_model_0: "stock", pays_import_0: "Inde", categorie_0: "Textile", vid_1: "v3", prix_achat_1: "", port_entrant_1: "", qty_par_lot_1: "", cout_emballage_1: "", vat_regime_1: "assujetti", shipping_model_1: "stock", pays_import_1: "Chine", categorie_1: "Autre" }), { productId: "A" });
   ok(sk.rows.length === 0 && sk.errors.length === 0 && sk.skipped.length === 2 && sk.skipped[0].empty.join(",") === "port_entrant,cout_emballage" && sk.skipped[1].empty.join(",") === "prix_achat,port_entrant,cout_emballage", "arbitrage (c) : un champ de coût vide = non renseigné, variante non enregistrée, jamais la suggestion");
-  const bad = parseProductForm(fd({ vid_0: "v3", prix_achat_0: "0", port_entrant_0: "x", qty_par_lot_0: "0", cout_emballage_0: "0", vat_regime_0: "zz", shipping_model_0: "stock", pays_import_0: "Chine", categorie_0: "Autre" }));
-  ok(bad.rows.length === 0 && bad.errors.length === 1 && ["prix_achat", "port_entrant", "qty_par_lot", "vat_regime"].every((k) => bad.errors[0].fields.includes(k)), "erreurs : prix ≤ 0 refusé (jamais de coût fictif), texte, quantité < 1, régime inconnu → champs signalés");
-  ok(costErrorFields(["prix_achat : doit être ≥ 0 (reçu -1)", "Indiquez le prix d'achat fournisseur", "truc"]).join(",") === "prix_achat,row", "messages techniques → champs (prix d'achat reconnu), inconnus → « ligne »");
-  const csv = parseCostsCsv("variant_id,prix_achat\nv1,2");
-  ok(csvErrorFields(csv.errors)[0].fields.join(",") === "header" && csvErrorFields([{ line: 3, messages: ["variant_id manquant", "categorie : valeur invalide « x »"] }])[0].fields.join(",") === "variant_id,categorie", "erreurs CSV : en-tête ; identifiant manquant et catégorie");
+  const bad = parseProductForm(fd({ vid_0: "v3", prix_achat_0: "-1", port_entrant_0: "x", qty_par_lot_0: "0", cout_emballage_0: "0", vat_regime_0: "zz", shipping_model_0: "stock", pays_import_0: "Chine", categorie_0: "Autre" }));
+  ok(bad.rows.length === 0 && bad.errors.length === 1 && ["prix_achat", "port_entrant", "qty_par_lot", "vat_regime"].every((k) => bad.errors[0].fields.includes(k)) && bad.errors[0].issues.find((x) => x.field === "prix_achat").reason === "negative", "erreurs : prix négatif, texte, quantité < 1, régime inconnu → champs signalés avec leur raison");
+  const zero = parseProductForm(fd({ vid_0: "v4", prix_achat_0: "0", port_entrant_0: "0", qty_par_lot_0: "", cout_emballage_0: "0", vat_regime_0: "assujetti", shipping_model_0: "stock", pays_import_0: "Chine", categorie_0: "Autre" }));
+  ok(zero.rows.length === 1 && zero.rows[0].value.prix_achat === 0, "règle du 2026-09-26 : 0 saisi = vrai 0 (prix d'achat compris), enregistré ; vide = non renseigné");
   ok(COST_FIELDS.length === 8 && NUMBER_FIELDS.length === 4, "8 champs par variante (4 nombres, 4 listes)");
 }
 

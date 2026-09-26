@@ -9,7 +9,7 @@ import { loadOverview } from "../lib/overview.server.js";
 import { loadEntitlement } from "../lib/billing.server.js";
 import { checkRateLimit } from "../lib/rateLimit.server.js";
 import { runCatalogAudit } from "../lib/audit.server.js";
-import { PRODUCTS_MAX, PRODUCT_COST_STATUSES, PRODUCT_SORTS, productSummary, sortProducts, filterByStatus, observedReturnRatePct } from "../lib/products.js";
+import { PRODUCTS_MAX, PRODUCT_COST_STATUSES, PRODUCT_SORTS, productSummary, sortProducts, filterByStatus, returnRateFromKpis } from "../lib/products.js";
 import { useI18n } from "../lib/i18n/context.jsx";
 import { PeriodSelector } from "../components/overview/OverviewHeader.jsx";
 import { SectionRail } from "../components/overview/SectionRail.jsx";
@@ -38,7 +38,9 @@ export const loader = async ({ request }) => {
     summary: productSummary(all), productCount: view.productCount ?? all.length, capped: (view.productCount ?? 0) > all.length,
     ordersInPeriod: view.ordersInPeriod ?? 0, excludedCurrent: view.excludedCurrent, isDevShop: view.isDevShop, includeTestOrders: view.includeTestOrders,
     isExpert: ent?.isExpert === true, planIndeterminate: ent?.source === "indeterminate",
-    returnRatePct: observedReturnRatePct(view.waterfall?.leaves ?? {}), thresholdPct: view.thresholdPct ?? 0,
+    // Taux de retour = l'indicateur « Taux de retour » de l'app (commandes sorties de la fenêtre de retour
+    // ayant un retour ou un remboursement), seulement s'il est mesurable ; sinon champ vide (non renseigné).
+    ...returnRateFromKpis(view.kpis), thresholdPct: view.thresholdPct ?? 0,
   };
 };
 
@@ -76,7 +78,7 @@ export default function Products() {
             <ProductList products={view.products} summary={view.summary} days={view.days} status={view.status} sort={view.sort} />
           </>
         )}
-        <CatalogAudit isExpert={view.isExpert} indeterminate={view.planIndeterminate} returnRatePct={view.returnRatePct} thresholdPct={view.thresholdPct} result={result?.intent === "audit" ? result : null} />
+        <CatalogAudit isExpert={view.isExpert} indeterminate={view.planIndeterminate} returnRatePct={view.returnRatePct} returnRateMissing={view.returnRateMissing} thresholdPct={view.thresholdPct} result={result?.intent === "audit" ? result : null} />
       </div>
     </s-page>
   );

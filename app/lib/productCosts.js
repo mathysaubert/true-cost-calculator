@@ -2,7 +2,8 @@
 // Portage de l'onglet « Suivi des coûts » de l'écran classique : la logique reste celle de
 // variantCosts.js / customsClassification.js (testées aux lots 1, 5, 20) ; ce module ne fait que
 // grouper, lire les formulaires et traduire les erreurs en champs.
-import { productCostStatus, validateCostRow, VAT_REGIMES, SHIPPING_MODELS, PAYS_KEYS, CATEGORIE_KEYS } from "./variantCosts.js";
+import { productCostStatus, VAT_REGIMES, SHIPPING_MODELS, PAYS_KEYS, CATEGORIE_KEYS } from "./variantCosts.js";
+import { validateCostFields } from "./costsCsv.js";
 
 export const NUMBER_FIELDS = ["prix_achat", "port_entrant", "qty_par_lot", "cout_emballage"];
 export const ENUM_FIELDS = { vat_regime: VAT_REGIMES, shipping_model: SHIPPING_MODELS, pays_import: PAYS_KEYS, categorie: CATEGORIE_KEYS };
@@ -62,27 +63,11 @@ export function parseProductForm(form, { productId = null } = {}) {
       else raw[f] = s;
     }
     if (empty.length) { skipped.push({ variant_id: raw.variant_id, index: i, empty }); continue; }
-    const { value, errors: vErrors } = validateCostRow(raw);
-    if (vErrors.length) errors.push({ variant_id: raw.variant_id, index: i, fields: costErrorFields(vErrors) });
+    // Règle du 2026-09-26 : 0 saisi = vrai 0 (prix d'achat compris) ; vide = non renseigné (ci-dessus).
+    const { value, issues } = validateCostFields(raw);
+    if (issues.length) errors.push({ variant_id: raw.variant_id, index: i, fields: [...new Set(issues.map((x) => x.field))], issues });
     else rows.push({ variant_id: raw.variant_id, product_id: productId, value });
   }
   return { rows, errors, skipped };
 }
 
-// Messages de validateCostRow (français, techniques) → champs en erreur (affichage traduit).
-export function costErrorFields(messages = []) {
-  const out = new Set();
-  for (const m of messages) {
-    const f = COST_FIELDS.find((k) => String(m).startsWith(`${k} `) || String(m).startsWith(`${k}:`));
-    if (f) out.add(f); else if (/prix d'achat/i.test(m)) out.add("prix_achat"); else out.add("row");
-  }
-  return [...out];
-}
-
-// Erreurs d'import CSV { line, messages } → { line, fields } (en-tête ou fichier vide : fields ["header"]).
-export function csvErrorFields(errors = []) {
-  return errors.map((e) => {
-    const header = e.line === 1 && e.messages.some((m) => /en-tête|vide/i.test(m));
-    return { line: e.line, fields: header ? ["header"] : costErrorFields(e.messages).map((f) => (f === "row" && e.messages.some((m) => /variant_id/.test(m)) ? "variant_id" : f)) };
-  });
-}

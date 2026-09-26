@@ -75,10 +75,14 @@ export function sortProducts(list = [], sort = "ca_ht") {
 }
 export const filterByStatus = (list = [], status = "all") => (PRODUCT_COST_STATUSES.includes(status) ? list.filter((p) => p.status === status) : list);
 
-// Taux de retour observé sur la période (remboursements / CA brut), en %, ou null.
-export function observedReturnRatePct(leaves = {}) {
-  const brut = num(leaves.ca_brut) ?? 0, remb = num(leaves.rembours) ?? 0;
-  return brut > 0 ? Math.round((remb / brut) * 1000) / 10 : null;
+// Taux de retour pré-rempli dans l'audit = l'indicateur « Taux de retour » de l'app (kpis de
+// loadOverview : part des commandes sorties de la fenêtre de retour ayant un retour ou un remboursement),
+// arrondi à 0,1, seulement s'il est mesurable ; sinon null et le nombre de commandes qui manquent.
+export function returnRateFromKpis(kpis = []) {
+  const k = (kpis ?? []).find((x) => x?.id === "return_rate");
+  if (k?.status === "ok" && Number.isFinite(Number(k.value))) return { returnRatePct: Math.round(Number(k.value) * 10) / 10, returnRateMissing: null };
+  const missing = k?.missing ? Object.values(k.missing).find((v) => Number.isFinite(Number(v))) : null;
+  return { returnRatePct: null, returnRateMissing: missing != null ? Number(missing) : null };
 }
 
 // ── Audit : entrées unitaires d'un produit ─────────────────────────────────────────────────────

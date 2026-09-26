@@ -4,7 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
 import { loadProductCosts, saveProductCosts, importCostsCsv, confirmCustoms } from "../lib/productCosts.server.js";
-import { groupProducts, statusCounts, filterProducts, parseProductForm, csvErrorFields, STATUS_FILTERS } from "../lib/productCosts.js";
+import { groupProducts, statusCounts, filterProducts, parseProductForm, STATUS_FILTERS } from "../lib/productCosts.js";
+import { decodeCsvBytes } from "../lib/costsCsv.js";
 import { recordSettingsFix } from "../lib/settings.server.js";
 import { dayInTimeZone } from "../lib/overview.js";
 import { useI18n } from "../lib/i18n/context.jsx";
@@ -37,10 +38,10 @@ export const action = async ({ request }) => {
   }
   if (intent === "import_csv") {
     const file = form.get("csv");
-    const text = file && typeof file.text === "function" ? await file.text() : String(file ?? "");
+    const text = file && typeof file.arrayBuffer === "function" ? decodeCsvBytes(new Uint8Array(await file.arrayBuffer())) : String(file ?? "");
     const res = await importCostsCsv({ supabase, shop, text });
     if (res.ok && res.saved > 0) await recordSettingsFix({ supabase, shop, rule: "cost_coverage", field: "csv", day: today });
-    return { intent, ...res, csvErrors: csvErrorFields(res.csvErrors ?? []) };
+    return { intent, ...res };
   }
   if (intent === "confirm_customs") {
     const res = await confirmCustoms({ supabase, shop, productId: String(form.get("product_id") ?? ""), categorie: String(form.get("categorie") ?? "") });

@@ -2,7 +2,8 @@
 // Requête variantes, lecture variant_costs, suggestions (buildCostRowsForDisplay, jamais persistées),
 // enregistrement (validateCostRow, source 'confirmed'), import CSV ('imported'), invalidation douane
 // et confirmation de classification : fonctions de variantCosts.js / customsClassification.server.js.
-import { buildCostRowsForDisplay, parseCostsCsv, buildCostsCsv } from "./variantCosts.js";
+import { buildCostRowsForDisplay } from "./variantCosts.js";
+import { costsCsvTemplate, parseCostsCsvStrict } from "./costsCsv.js";
 import { applyCustomsInvalidation, confirmCustomsCategory } from "./customsClassification.server.js";
 
 const VARIANTS_QUERY = `query CostVariants($cursor: String) {
@@ -60,7 +61,7 @@ export async function loadProductCosts({ admin, supabase, shop }) {
   const { data: stored } = await supabase.from("variant_costs").select("*").eq("shop_domain", shop);
   const storedMap = new Map((stored ?? []).map((r) => [r.variant_id, r]));
   const rows = buildCostRowsForDisplay({ variants, storedMap, defaultCountry: d.defaultCountry, vatRegime: d.vatRegime, shippingModel: d.shippingModel });
-  return { rows, variantsCapped, giftCardCount, incomplete: incomplete || (hasNext && pages >= 20), currency: d.currency, csv: buildCostsCsv(rows) };
+  return { rows, variantsCapped, giftCardCount, incomplete: incomplete || (hasNext && pages >= 20), currency: d.currency, csv: costsCsvTemplate(rows) };
 }
 
 // Enregistrement d'un produit : lignes déjà validées (parseProductForm) → source 'confirmed'.
@@ -73,15 +74,19 @@ export async function saveProductCosts({ supabase, shop, rows }) {
   return error ? { ok: false, error: error.message } : { ok: true, saved: upserts.length };
 }
 
+// Import (2026-09-26) : lignes complètes enregistrées ('imported') ; lignes à coût vide « à compléter »
+// (comptées à part, rien d'écrit) ; rejets avec raison. Voir costsCsv.js.
 export async function importCostsCsv({ supabase, shop, text }) {
-  const { rows, errors } = parseCostsCsv(text ?? "");
-  const upserts = rows.map((r) => ({ shop_domain: shop, variant_id: r.variant_id, ...r.value, source: "imported", updated_at: new Date().toISOString() }));
+  const parsed = parseCostsCsvStrict(text ?? "");
+  const summary = { incomplete: parsed.incomplete.length, incompleteLines: parsed.incomplete.slice(0, 10), csvErrors: parsed.errors.slice(0, 20), errorCount: parsed.errors.length, header: parsed.header };
+  if (parsed.header) return { ok: false, error: "header", saved: 0, ...summary };
+  const upserts = parsed.rows.map((r) => ({ shop_domain: shop, variant_id: r.variant_id, ...r.value, source: "imported", updated_at: new Date().toISOString() }));
   if (upserts.length) {
     await applyCustomsInvalidation(supabase, shop, upserts);
     const { error } = await supabase.from("variant_costs").upsert(upserts, { onConflict: "shop_domain,variant_id" });
-    if (error) return { ok: false, error: error.message, csvErrors: errors };
+    if (error) return { ok: false, error: error.message, saved: 0, ...summary };
   }
-  return { ok: true, saved: upserts.length, csvErrors: errors };
+  return { ok: true, saved: upserts.length, ...summary };
 }
 
 export async function confirmCustoms({ supabase, shop, productId, categorie }) {
