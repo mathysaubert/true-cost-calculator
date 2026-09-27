@@ -52,7 +52,7 @@ console.log("\n── 2. Code de l'app ──");
   ok(hits.length === 0, `aucune lecture ni écriture des tables retirées (${hits.map(([f]) => f).join(", ") || "aucune"})`);
   const plans = src.filter(([, s]) => /from\(["']shop_plans["']\)/.test(s));
   const plansCols = plans.flatMap(([, s]) => [...s.matchAll(/from\(["']shop_plans["']\)[\s\S]{0,200}?\.(select|upsert)\(([\s\S]{0,160}?)\)/g)].map((m) => m[2]));
-  ok(plans.length === 1 && plansCols.length === 2 && plansCols.every((c) => !REMOVED_COLS.some((col) => new RegExp(`\\b${col}\\b`).test(c))), "shop_plans : seul plan.server.js y touche, sans colonne retirée");
+  ok(plans.map(([f]) => f.replace(/\\/g, "/").split("/app/").pop()).sort().join() === "lib/plan.server.js,routes/app.overview.jsx" && plansCols.length === 3 &&plansCols.every((c) => !REMOVED_COLS.some((col) => new RegExp(`\\b${col}\\b`).test(c))), "shop_plans : plan.server.js (cache) et Aujourd'hui (lecture de plan seule, D2-2 Z3), sans colonne retirée");
 }
 
 console.log("\n── 3. Objectif « non renseigné » ──");

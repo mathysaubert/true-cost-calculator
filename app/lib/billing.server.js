@@ -1,13 +1,16 @@
-// ── Facturation (F4-D1b, X4) — code DÉPLACÉ depuis l'écran classique, logique inchangée ─────────
-// Copie littérale de `isDevStore` et des deux appels `billing.request` de app._index.jsx (lignes
-// 853-897 au 2026-09-25). L'écran classique garde sa copie jusqu'à F4-D2 (fichier protégé, 0 diff) ;
-// le lot 32 vérifie que les deux copies restent identiques (plans, isTest, returnUrl, essai bêta).
+// ── Facturation (F4-D1b, X4 ; D2-1) — lecture de l'offre et abonnements par l'API de facturation ──
+// D2-1 : `requestSubscription` (API de facturation) ne sert que tant qu'App Pricing n'est pas activée
+// sur l'app (interrupteur SHOPIFY_APP_PRICING, plans.js). Une fois activée, Shopify interdit de créer
+// une facturation par l'API : l'écran Offre renvoie alors vers la page d'offres de Shopify.
+// W3 (b) : plus d'essai bêta fusionné ici (BETA_SHOPS retiré) ; la bêta passe par une prolongation
+// d'essai sur l'offre Expert publique.
 import { PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
-import { betaTrialOverride } from "./betaShops.js";
 import { resolveEntitlement } from "./plan.server.js";
 
+// shop { id } : identifiant de la boutique pour le secours par l'API Partner (W1, plan.server.js).
 export const ALL_SUBS_QUERY = `
   query AllSubscriptions {
+    shop { id }
     currentAppInstallation {
       allSubscriptions(first: 25, reverse: true) { edges { node { id name status } } }
     }
@@ -58,8 +61,6 @@ export async function requestSubscription({ billing, admin, session, plan }) {
       plan: PLAN_EXPERT,
       isTest: await isDevStore(admin), // dev store → test ; toute incertitude → false (facturation réelle)
       returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,
-      // Boutique bêta (BETA_SHOPS) → essai 45 j fusionné par-dessus la config ; sinon {} → config (7 j).
-      ...betaTrialOverride(session.shop, process.env.BETA_SHOPS),
     });
     return null;
   }

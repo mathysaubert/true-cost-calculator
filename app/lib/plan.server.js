@@ -7,18 +7,20 @@
 // Loader et action passent par ici → plus de logique dupliquée (c'est la duplication qui avait
 // laissé le bug survivre).
 import { supabase } from "../supabase.server";
-import { PLAN_PRO, PLAN_EXPERT } from "../shopify.server";
 import {
   planEntitlement,
   fallbackEntitlement,
+  entitlementFromPlan,
   retryForLiveEnvelope,
   subscriptionNodesFromResponse,
+  PRO_NAMES,
+  EXPERT_NAMES,
+  EXPERT_PREFIXES,
 } from "./plan.js";
+import { partnerPlan } from "./partnerPlan.server.js";
 
-// Alias de noms par palier (cf. D3, plan.js). Lors d'une refonte tarifaire qui RENOMME un plan :
-// AJOUTER ici le nouveau nom SANS retirer l'ancien → les subs déjà vendus (name figé) restent gatés.
-const PRO_NAMES = [PLAN_PRO];
-const EXPERT_NAMES = [PLAN_EXPERT];
+// Alias de noms par palier : voir plan.js (anciens noms de l'API de facturation + noms App Pricing,
+// préfixe « Expert » des offres sur mesure). Un renommage AJOUTE un nom, n'en retire jamais.
 
 const planLabel = (ent) => (ent.isExpert ? "expert" : ent.isPro ? "pro" : "free");
 const hasLiveEnvelope = (json) =>
@@ -98,12 +100,23 @@ export async function resolveEntitlement({ shop, json, refetch = null, retries =
   }
 
   const nodes = subscriptionNodesFromResponse(envelope);
-  const ent = planEntitlement(nodes, {
+  let ent = planEntitlement(nodes, {
     proNames: PRO_NAMES,
     expertNames: EXPERT_NAMES,
+    expertPrefixes: EXPERT_PREFIXES,
     frozenSince,
     now: Date.now(),
   });
+
+  // W1 (c) — secours : aucune offre payante reconnue par l'API Admin → on demande à l'API Partner
+  // (moyen documenté d'App Pricing). Inactif sans configuration ; un échec garde le résultat Admin.
+  if (!ent.isPro) {
+    const p = await partnerPlan({ shopGid: envelope?.data?.shop?.id });
+    if (p.ok && p.plan !== "free") {
+      console.warn(`[Plans] ${shop} : offre ${p.plan} lue par l'API Partner, absente de l'API Admin`);
+      ent = entitlementFromPlan(p.plan);
+    }
+  }
 
   // Persistance UNIQUEMENT sur succès live (cache de dernier plan connu pour le repli D1).
   supabase

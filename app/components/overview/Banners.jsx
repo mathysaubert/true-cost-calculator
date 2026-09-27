@@ -1,5 +1,5 @@
 // ── Bandeaux (Polaris s-banner) : trous de données, notes, boutique de développement ──────────
-import { useFetcher } from "react-router";
+import { useFetcher, Link } from "react-router";
 import { useI18n } from "../../lib/i18n/context.jsx";
 
 export function gapText(gap, t, int) {
@@ -59,6 +59,27 @@ export function DevShopBanner({ isDevShop, includeTestOrders }) {
           <s-button type="submit" variant="secondary" loading={busy ? "true" : undefined}>{includeTestOrders ? t("overview.dev.toggle_off") : t("overview.dev.toggle_on")}</s-button>
         </fetcher.Form>
         {failed && <s-paragraph>{t("settings.error.failed")}</s-paragraph>}
+      </s-stack>
+    </s-banner>
+  );
+}
+
+// ── D2-2 (Z3) : dépassement du volume au mois écoulé — constat, jamais de blocage ─────────────────
+// usage : sortie de loadPlanUsage (null → rien). Lien vers l'écran Offre ; au-delà de 3 000 : demande
+// d'offre sur mesure (customHref, mailto du contact public de l'app).
+export function PlanOverageBanner({ usage, customHref = null, showLink = true }) {
+  const { t, int, month: monthLabel } = useI18n();
+  if (!usage?.over) return null;
+  const month = monthLabel(usage.prevMonth);
+  const n = int;
+  const custom = usage.suggest === "custom";
+  return (
+    <s-banner tone="warning" heading={t("overage.title", { month })} data-overage={usage.suggest}>
+      <s-stack gap="base" alignItems="start">
+        <s-paragraph>{t("overage.body", { count: n(usage.count), cap: n(usage.cap), plan: t(`plan.name.${usage.plan}`) })}</s-paragraph>
+        <s-paragraph>{custom ? t("overage.custom") : t("overage.suggest", { plan: t(`plan.name.${usage.suggest}`) })}</s-paragraph>
+        {custom && customHref && <s-button variant="secondary" href={customHref} target="_blank">{t("overage.custom_cta")}</s-button>}
+        {!custom && showLink && <Link to="/app/settings/plan">{t("overage.cta")}</Link>}
       </s-stack>
     </s-banner>
   );

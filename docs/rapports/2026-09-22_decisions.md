@@ -599,3 +599,18 @@ Phase 0 : `2026-09-26_d2_phase0.md`.
 | Z9 | Route `debug.jsx` retirée avec l'écran classique | D2-3 |
 
 Ordre des lots : **D2-3 → D2-4 → D2-0 → D2-1 → D2-2 → D2-5 → D3**.
+
+## O. D2-1 : arbitrages de la Phase 0 (2026-09-26)
+
+Phase 0 : `2026-09-26_d2-1_phase0.md` (essai préalable : `2026-09-26_d2-0_app-pricing.md`).
+
+| # | Décision | Conséquence |
+|---|---|---|
+| W1 | (c) Offre du marchand lue par l'**API Admin d'abord** (`allSubscriptions`, prouvée en D2-0), **API Partner `activeSubscription` (2026-07) en secours et en contrôle** (écarts journalisés par le cron) | jeton d'organisation « Manage apps » en secret Vercel ; cache `shop_plans` et repli sur le dernier plan connu gardés |
+| W2 | (a) Plans nommés **« Free », « Pro », « Expert »** (identifiants `free`, `pro`, `expert`), mêmes noms sur la fiche App Store ; **remplace Z8** (noms longs impossibles : 18 caractères au plus) | anciens noms « True Cost Calculator Pro/Expert » gardés comme alias |
+| W3 | (b) Bêta Y6 : **Expert public + 31 jours de prolongation d'essai** depuis le Partner Dashboard, pendant l'essai (45 jours au total, un seul compteur) | `BETA_SHOPS` et l'essai de 45 jours de `requestSubscription` retirés ; vérification V1/V2 sur tcc-tarif-test |
+| W4 | (a) **Écran Offre gardé** : offre reconnue, arguments, bouton « Changer d'offre » vers la page d'offres de Shopify | boutons de l'API de facturation retirés ; essai affiché 14 jours |
+| W5 | (a) Abonnés existants **laissés en facturation manuelle** ; migration décidée plus tard | anciens noms reconnus |
+| W6 | (a) Offres sur mesure (Z5) : **plans privés nommés « Expert … »**, reconnus comme Expert par leur préfixe | liste exacte pour Pro, préfixe réservé à Expert |
+| W7 | Arguments des offres (Y4) **validés** (`2026-09-26_d2-1_w7_textes-offres.md`) : Gratuit 4 lignes, Pro 5 lignes (dont le résultat réel mesuré 30 jours après, toutes causes confondues), Expert 2 lignes ; volumes 50 / 500 / 3 000 ; essai 14 jours ; badge « Recommandé » sur Pro, « Populaire » retiré | textes écrits en D2-1 |
+| W8 | **D2-1 et D2-2 livrés ensemble**, avant l'activation d'App Pricing | les textes décrivent l'état après D2-2 ; aucun écart visible pour le marchand |

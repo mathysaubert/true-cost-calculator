@@ -136,6 +136,8 @@ console.log("\n=== RENDU RÉEL — pages demandées par paramètres (modes, filt
 await check("app.simulator ?mode=product", "/app/simulator?mode=product", "loaded", (r) => r.status === 200 && /data-product-picker/.test(r.html) && /Tee/.test(r.html));
 await check("app.simulator ?mode=new", "/app/simulator?mode=new", "loaded", (r) => r.status === 200 && /data-mode="new"/.test(r.html) && /name="intent" value="keep_new"/.test(r.html));
 await check("app.products ?status=missing&sort=cm2", "/app/products?status=missing&sort=cm2", "loaded", (r) => r.status === 200 && /data-cost-status="missing"/.test(r.html) && !/data-cost-status="set"/.test(r.html) && /data-audit="idle"/.test(r.html));
+await check("app.simulator, offre gratuite (D2-2 Z4) : carte « Simulateur » verrouillée (Pro), lien vers les offres, aucun calcul ni mémoire", "/app/simulator", "empty", (r) => r.status === 200 && /data-locked="simulator"/.test(r.html) && /href="\/app\/settings\/plan"/.test(r.html) && !/data-mode=|name="intent" value="keep/.test(r.html));
+await check("app.simulator, offre Expert : jamais de carte verrouillée", "/app/simulator", "loaded", (r) => r.status === 200 && !/data-locked=/.test(r.html));
 await check("app.products, offre gratuite : audit verrouillé", "/app/products", "empty", (r) => r.status === 200 && /data-audit="locked"/.test(r.html));
 await check("app.settings.products ?product= (panneau)", `/app/settings/products?product=${encodeURIComponent(PRODUCTS[0].id)}`, "loaded", (r) => r.status === 200 && /data-save-bar/.test(r.html));
 

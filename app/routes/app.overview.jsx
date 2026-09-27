@@ -15,7 +15,9 @@ import { background } from "../lib/sync/background.server.js";
 import { useI18n } from "../lib/i18n/context.jsx";
 import { OverviewHeader } from "../components/overview/OverviewHeader.jsx";
 import { SectionRail } from "../components/overview/SectionRail.jsx";
-import { DevShopBanner } from "../components/overview/Banners.jsx";
+import { DevShopBanner, PlanOverageBanner } from "../components/overview/Banners.jsx";
+import { loadPlanUsage } from "../lib/usage.server.js";
+import { customPlanMailto } from "../lib/plans.js";
 import { Results, Situation, Priorities, Opportunity, AllIndicators, DecisionBanner } from "../components/overview/Briefing.jsx";
 import { DataHealth } from "../components/overview/DataHealth.jsx";
 import { OverviewEmptyState } from "../components/overview/Blocks.jsx";
@@ -28,10 +30,17 @@ export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const days = parsePeriodDays(new URL(request.url).searchParams.get("days"));
   const hasAllOrders = String(session.scope ?? "").split(",").map((s) => s.trim()).includes("read_all_orders");
-  const view = await loadOverview({ supabase, shop: session.shop, admin, days, hasAllOrders, withBriefing: true });
+  const [view, { data: known }, { data: tz }] = await Promise.all([
+    loadOverview({ supabase, shop: session.shop, admin, days, hasAllOrders, withBriefing: true }),
+    supabase.from("shop_plans").select("plan").eq("shop_domain", session.shop).maybeSingle(),
+    supabase.from("shop_settings").select("shop_timezone").eq("shop_domain", session.shop).maybeSingle(),
+  ]);
+  // D2-2 (Z3) : bandeau de dépassement d'après la dernière offre connue (aucun appel Shopify de plus) ;
+  // aucune offre connue → aucun bandeau.
+  const planUsage = known?.plan ? await loadPlanUsage({ supabase, shop: session.shop, plan: known.plan, timeZone: tz?.shop_timezone ?? "UTC" }) : null;
   // I0-C (D7a) : mémoire silencieuse de ce qui est montré, après la réponse, jamais bloquante.
   background(recordShownInsights({ supabase, shop: session.shop, briefing: view.briefing, window: view.windows?.current, currency: view.currency, confidence: view.confidence }), "insight_log");
-  return { ...view, opportunityFingerprint: opportunityFingerprint(view.briefing?.opportunity, view.windows?.current) };
+  return { ...view, planUsage, customHref: customPlanMailto(session.shop), opportunityFingerprint: opportunityFingerprint(view.briefing?.opportunity, view.windows?.current) };
 };
 
 export const action = async ({ request }) => {
@@ -68,6 +77,7 @@ export default function Overview() {
         <OverviewHeader firstName={view.firstName} shopName={view.shopName} lastSync={view.lastSync} now={view.now} days={view.days} windows={view.windows} />
         <SectionRail current="overview" />
         <DevShopBanner isDevShop={view.isDevShop} includeTestOrders={view.includeTestOrders} />
+        <PlanOverageBanner usage={view.planUsage} customHref={view.customHref} />
         {view.mixedCurrency && <s-banner tone="warning">{t("overview.currency.mixed")}</s-banner>}
         <DecisionBanner result={actionResult?.intent === "simulate" ? actionResult : null} />
         {empty ? (

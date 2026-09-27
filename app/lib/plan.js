@@ -21,6 +21,17 @@
 // vendus. Pour ne pas rendre les abonnés existants invisibles au gating, on matche un ENSEMBLE de
 // noms par palier (proNames/expertNames) : lors d'un renommage, AJOUTER le nouveau nom sans retirer
 // l'ancien (voir la liste d'alias dans plan.server.js).
+//
+// D2-1 (W2, W5, W6) — Shopify App Pricing : un abonnement porte le NOM du plan créé dans le Partner
+// Dashboard (18 caractères au plus, définitif). « Pro » et « Expert » s'ajoutent aux anciens noms de
+// l'API de facturation, gardés pour les abonnés existants (facturation manuelle jusqu'à migration).
+// Offres sur mesure (Z5) : plans privés nommés « Expert … », reconnus comme Expert par ce préfixe.
+// « Free » (abonnement ACTIVE à 0 $) n'est dans aucune liste : il vaut Gratuit, comme tout nom inconnu.
+export const LEGACY_PRO_NAME = "True Cost Calculator Pro";
+export const LEGACY_EXPERT_NAME = "True Cost Calculator Expert";
+export const PRO_NAMES = [LEGACY_PRO_NAME, "Pro"];
+export const EXPERT_NAMES = [LEGACY_EXPERT_NAME, "Expert"];
+export const EXPERT_PREFIXES = ["Expert "];
 const ENTITLED_STATUSES = new Set(["ACTIVE", "FROZEN"]);
 export const FROZEN_GRACE_DAYS = 28;
 const DAY_MS = 86_400_000;
@@ -48,6 +59,7 @@ export function planEntitlement(subscriptionNodes = [], opts = {}) {
   const {
     proNames,
     expertNames,
+    expertPrefixes = [],
     frozenSince = null,
     now = Date.now(),
     frozenGraceDays = FROZEN_GRACE_DAYS,
@@ -66,27 +78,58 @@ export function planEntitlement(subscriptionNodes = [], opts = {}) {
 
   const entitles = (s) =>
     s?.status === "ACTIVE" || (s?.status === "FROZEN" && frozenWithinGrace);
-  const hasEntitled = (nameSet) =>
-    nodes.some((s) => nameSet.has(s?.name) && ENTITLED_STATUSES.has(s?.status) && entitles(s));
+  const prefixes = Array.isArray(expertPrefixes) ? expertPrefixes.filter(Boolean) : [];
+  const isExpertName = (n) => typeof n === "string" && (expert.has(n) || prefixes.some((p) => n.startsWith(p)));
+  const hasEntitled = (match) =>
+    nodes.some((s) => match(s?.name) && ENTITLED_STATUSES.has(s?.status) && entitles(s));
 
-  const isExpert = hasEntitled(expert);
-  const isPro = isExpert || hasEntitled(pro);
+  const isExpert = hasEntitled(isExpertName);
+  const isPro = isExpert || hasEntitled((n) => pro.has(n));
   return { isPro, isExpert };
 }
 
-// ── Plafond d'alerting au volume de commandes (C4a — fondation, branchement en C4b) ──────────
-// PUR. Palier de commandes ingérées/mois par plan : Gratuit 200 / Pro 1000 / Expert illimité.
-// isExpert ⇒ isPro (l'Expert englobe le Pro) → on teste isExpert d'abord. Entrée = { isPro, isExpert }
-// (la sortie de planEntitlement / resolveEntitlement).
-export function planToOrderCap(ent = {}) {
-  return ent.isExpert ? Infinity : ent.isPro ? 1000 : 200;
+// ── API Partner (W1, secours) : plan d'après `activeSubscription.items[].handle` — PUR ──────────
+// Identifiants des plans App Pricing : `pro`, `expert`, et `expert-…` pour les offres sur mesure (W6).
+// Abonnement absent ou identifiant inconnu (dont `free`) → 'free'.
+export function planFromPartnerSubscription(sub) {
+  const handles = (Array.isArray(sub?.items) ? sub.items : []).map((i) => String(i?.handle ?? "").toLowerCase());
+  if (handles.some((h) => h === "expert" || h.startsWith("expert-"))) return "expert";
+  if (handles.includes("pro")) return "pro";
+  return "free";
 }
 
-// alerting activé ce mois ⇔ le compteur du mois PRÉCÉDENT n'a pas dépassé le palier (bascule
-// DIFFÉRÉE : dépassement en M → coupure en M+1, le mois en cours toujours servi). Borne INCLUSIVE
-// (== cap → encore activé), cohérente avec la borne de grâce (planEntitlement). PUR.
-export function alertingEnabled(prevMonthCount, cap) {
-  return prevMonthCount <= cap;
+// ── D2-2 (Y2) : volume de commandes par mois compris dans chaque offre ──────────────────────────
+// Gratuit 50, Pro 500, Expert 3 000 ; au-delà de 3 000 : offre sur mesure sur demande (Z5).
+export const PLAN_ORDER_CAPS = { free: 50, pro: 500, expert: 3000 };
+
+// ── D2-2 : palier du mois — PUR ─────────────────────────────────────────────────────────────
+// Z2 : compte pour le palier toute commande CRÉÉE dans le mois (fuseau de la boutique, day_local), sauf
+// commandes de test et brouillons ; comptée depuis `orders`. Z3 : dépassement au mois M → bandeau, page
+// Offre mise en avant et UN e-mail, à partir du 1er du mois M+1 ; jamais de blocage. Y3 : plus aucune
+// coupure des alertes au volume (l'ancien plafond 200 / 1 000 / illimité et alertingEnabled sont retirés).
+const RANK = { free: 0, pro: 1, expert: 2 };
+export const planLabelOf = (ent = {}) => (ent?.isExpert ? "expert" : ent?.isPro ? "pro" : "free");
+
+// "YYYY-MM" → { from: "YYYY-MM-01", to: 1er du mois suivant } (bornes de day_local, fin exclue).
+export function monthRange(ym) {
+  const [y, m] = String(ym).split("-").map(Number);
+  const next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+  return { from: `${ym}-01`, to: `${next}-01` };
+}
+export function prevMonthOf(ym) {
+  const [y, m] = String(ym).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
+}
+
+// plan : 'free'|'pro'|'expert' ; count : commandes du mois écoulé. suggest : plus petite offre supérieure
+// dont le volume couvre le mois, sinon 'custom' (au-delà de 3 000 : offre sur mesure, Z5).
+export function overageOf({ plan = "free", count = 0 } = {}) {
+  const p = plan in PLAN_ORDER_CAPS ? plan : "free";
+  const cap = PLAN_ORDER_CAPS[p];
+  const n = Number(count) || 0;
+  const over = n > cap;
+  const suggest = !over ? null : (["pro", "expert"].find((q) => RANK[q] > RANK[p] && PLAN_ORDER_CAPS[q] >= n) ?? "custom");
+  return { plan: p, cap, count: n, over, suggest };
 }
 
 // Mois PRÉCÉDENT au format "YYYY-MM" — PUR. Le cron lit usage.orders_count de ce mois pour la

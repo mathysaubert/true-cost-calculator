@@ -9,7 +9,10 @@ import { I18nProvider } from "../../app/lib/i18n/context.jsx";
 import { CATALOGS } from "../../app/locales/index.js";
 
 window.__submits = [];
-const view = planView({ ent: { isPro: false, isExpert: false, source: "live" }, isBeta: false, betaTrialDays: 45 });
+// ?pricing=1 : App Pricing allumée (D2-1), un seul bouton « Changer d'offre » vers la page d'offres.
+export const PRICING_URL = "https://admin.shopify.com/store/tcc-tarif-test/charges/tcc-tarification-test/pricing_plans";
+const appPricing = new URLSearchParams(location.search).get("pricing") === "1";
+const view = planView({ ent: { isPro: false, isExpert: false, source: "live" }, appPricing, changeUrl: PRICING_URL });
 
 function Page() {
   return (

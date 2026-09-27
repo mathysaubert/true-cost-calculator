@@ -559,10 +559,12 @@ a.tcc-rail__item:hover { background: var(--tcc-surface-2); color: var(--tcc-ink)
 
 /* ── F4-D1b : offres ; F4-D1a : coûts produits ─────────────────────────────────────────────── */
 .tcc-plans-host { container-type: inline-size; container-name: tcc-plans; }
+.tcc-plan-change { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .tcc-plans { display: grid; gap: var(--tcc-gap); grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @container tcc-plans (max-width: 760px) { .tcc-plans { grid-template-columns: minmax(0, 1fr); } }
 .tcc-plan { display: grid; gap: 10px; align-content: start; padding: 18px; border-radius: var(--tcc-radius); background: var(--tcc-surface); border: 1px solid var(--tcc-line); box-shadow: var(--tcc-shadow); }
 .tcc-plan.is-current { border-color: var(--tcc-good); }
+.tcc-plan.is-suggested { border-color: var(--tcc-warn, #b98900); }
 .tcc-plan__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tcc-plan__head h3 { font-size: 1rem; font-weight: 700; }
 .tcc-plan__price { font: var(--tcc-num-hero); letter-spacing: -0.02em; }

@@ -10,6 +10,7 @@ import { supabase } from "../supabase.server";
 import prisma from "../db.server";
 import { decideDunningAction, deriveSubscriptionStatus, recurringLineItems } from "../lib/dunning.js";
 import { sendDunningEmail, sendDunningResolved } from "../lib/email.server.js";
+import { isAppPricing, pricingPageUrl } from "../lib/plans.js";
 
 // La sync n'a pas lieu ici (pas de bulk) ; 60 s reste un plafond large et sûr.
 export const config = { maxDuration: 60 };
@@ -98,7 +99,12 @@ async function runForShop(shop, now) {
     const isTest = frozenNode?.test === true;
 
     let confirmationUrl = null;
-    try {
+    // D2-1 : App Pricing activée → Shopify interdit de créer une facturation par l'API (y compris pour
+    // les anciens abonnés). Le lien de régularisation mène alors à la page d'offres de Shopify.
+    if (isAppPricing(process.env.SHOPIFY_APP_PRICING)) {
+      confirmationUrl = pricingPageUrl(shop, process.env.SHOPIFY_APP_HANDLE);
+      if (!confirmationUrl) { r.error = "no_pricing_url"; return r; }
+    } else try {
       const resp = await admin.graphql(CREATE_MUTATION, { variables: {
         name: plan,
         returnUrl: `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}?subscribed=true`,

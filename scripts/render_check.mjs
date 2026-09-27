@@ -453,16 +453,46 @@ const pcRows = [
 ];
 const pcProducts = groupProducts(pcRows);
 
-console.log("\n=== RENDU RÉEL — Offre (F4-D1b) ===");
-check("offre gratuite (fr), boutique de dev : bandeau test, « Offre actuelle : Gratuit », 3 cartes (prix /mois, essai 7 j), badges Populaire / Recommandé, boutons Choisir Pro et Choisir Expert (formulaires intent), aucun bouton sur Gratuit",
+console.log("\n=== RENDU RÉEL — Offre (F4-D1b ; D2-1 W4, W7) ===");
+check("offre gratuite (fr), App Pricing éteinte, boutique de dev : bandeau test, « Offre actuelle : Gratuit », 3 cartes (prix /mois, essai 14 j, volumes 50 / 500 / 3 000), « Recommandé » sur Pro seul, boutons Choisir Pro et Choisir Expert (formulaires intent), aucun bouton « Changer d'offre »",
   wrap("fr", React.createElement(PlanCards, { view: planView({ ent: { isPro: false, isExpert: false, source: "live" } }), isDevShop: true })),
-  (h) => /tone="info">Boutique de développement/.test(h) && /data-current-plan="free"/.test(h) && /Offre actuelle : Gratuit\./.test(h) && (h.match(/data-plan="/g) ?? []).length === 3 && /29.\$US \/ mois|29.\$ \/ mois/.test(h) && /7 jours d(?:&#x27;|')essai gratuit/.test(h) && /Populaire/.test(h) && /Recommandé/.test(h) && /name="intent" value="subscribe_pro"/.test(h) && /name="intent" value="subscribe_expert"/.test(h) && !/value="subscribe_free"/.test(h) && !/ style="/.test(h));
-check("offre Pro (en), boutique bêta : seul « Choose Expert » avec essai de 45 jours ; carte Pro « Current »",
-  wrap("en", React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: false, source: "live" }, isBeta: true, betaTrialDays: 45 }) })),
-  (h) => /data-plan="pro" [^>]*|class="tcc-plan is-current" data-plan="pro"/.test(h) && /Current</.test(h) && /45-day free trial/.test(h) && !/value="subscribe_pro"/.test(h) && /value="subscribe_expert"/.test(h));
+  (h) => /tone="info">Boutique de développement/.test(h) && /data-current-plan="free"/.test(h) && /Offre actuelle : Gratuit\./.test(h) && (h.match(/data-plan="/g) ?? []).length === 3 && /29.\$US \/ mois|29.\$ \/ mois/.test(h) && /14 jours d(?:&#x27;|')essai gratuit/.test(h) && !/Populaire/.test(h) && /data-plan="pro"[\s\S]*?Recommandé[\s\S]*?data-plan="expert"/.test(h) && (h.match(/Recommandé/g) ?? []).length === 1 && /Jusqu(?:&#x27;|')à 50 commandes par mois[\s\S]*?Jusqu(?:&#x27;|')à 500 commandes par mois[\s\S]*?Jusqu(?:&#x27;|')à 3.000 commandes par mois/.test(h) && !/data-plan-change/.test(h) && /name="intent" value="subscribe_pro"/.test(h) && /name="intent" value="subscribe_expert"/.test(h) && !/value="subscribe_free"/.test(h) && !/ style="/.test(h));
+check("offre Pro (en), seul « Choose Expert » avec essai de 14 jours (Y5, plus de bêta W3 b) ; carte Pro « Current »",
+  wrap("en", React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: false, source: "live" } }) })),
+  (h) => /data-plan="pro" [^>]*|class="tcc-plan is-current" data-plan="pro"/.test(h) && /Current</.test(h) && /14-day free trial/.test(h) && !/value="subscribe_pro"/.test(h) && /value="subscribe_expert"/.test(h));
 check("offre Expert (fr) : « la plus complète », aucun bouton ; plan indéterminé : bandeau avertissement, aucun bouton",
   wrap("fr", React.createElement("div", null, React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: true, source: "cache" } }) }), React.createElement(PlanCards, { view: planView({ ent: { source: "indeterminate" } }) }))),
   (h) => /Vous avez l(?:&#x27;|')offre la plus complète/.test(h) && /dernière offre connue/.test(h) && /tone="warning">Votre offre n(?:&#x27;|')a pas pu être lue/.test(h) && !/name="intent"/.test(h));
+
+check("offre (fr), App Pricing allumée, offre actuelle Gratuit : bouton « Changer d'offre » vers la page d'offres de Shopify (target _top) avec son aide, aucun bouton d'abonnement par carte, arguments W7 (Gratuit 4, Pro 5 dont le résultat à 30 jours, Expert 2), pied « Jamais de blocage » et offre sur mesure",
+  wrap("fr", React.createElement(PlanCards, { view: planView({ ent: { isPro: false, isExpert: false, source: "live" }, appPricing: true, changeUrl: "https://admin.shopify.com/store/tcc-tarif-test/charges/tcc-tarification-test/pricing_plans" }) })),
+  (h) => /data-plan-change=""[\s\S]*?<s-button variant="primary" href="https:\/\/admin\.shopify\.com\/store\/tcc-tarif-test\/charges\/tcc-tarification-test\/pricing_plans" target="_top">Changer d(?:&#x27;|')offre<\/s-button>/.test(h) && /Ouvre la page d(?:&#x27;|')offres de Shopify/.test(h) && !/name="intent"/.test(h) && (h.match(/<li>/g) ?? []).length === 11 && /Le résultat réel de vos décisions, mesuré 30 jours après \(toutes causes confondues\)/.test(h) && /Audit du catalogue : la marge de chaque produit actif/.test(h) && /Jamais de blocage/.test(h) && /Plus de 3.000 commandes par mois \? Une offre sur mesure/.test(h) && !/ style="/.test(h));
+check("offre (en), App Pricing allumée, offre actuelle Expert : « Change plan », carte Expert « Current », « You have the most complete plan. », offre sur mesure ; plan indéterminé : bouton quand même présent (changer reste possible), jamais « Gratuit »",
+  wrap("en", React.createElement("div", null, React.createElement(PlanCards, { view: planView({ ent: { isPro: true, isExpert: true, source: "live" }, appPricing: true, changeUrl: "https://admin.shopify.com/store/x/charges/y/pricing_plans" }) }), React.createElement(PlanCards, { view: planView({ ent: { source: "indeterminate" }, appPricing: true, changeUrl: "https://admin.shopify.com/store/x/charges/y/pricing_plans" }) }))),
+  (h) => (h.match(/>Change plan</g) ?? []).length === 2 && /class="tcc-plan is-current" data-plan="expert"/.test(h) && /You have the most complete plan\./.test(h) && /A custom plan is available on request/.test(h) && !/Current plan: Free/.test(h) && !/name="intent"/.test(h));
+
+const { PlanOverageBanner } = await vite.ssrLoadModule("/app/components/overview/Banners.jsx");
+const usageFree = { month: "2026-10", prevMonth: "2026-09", prevCount: 73, currentCount: 5, plan: "free", cap: 50, count: 73, over: true, suggest: "pro" };
+const usageExpert = { month: "2026-10", prevMonth: "2026-09", prevCount: 3412, currentCount: 40, plan: "expert", cap: 3000, count: 3412, over: true, suggest: "custom" };
+console.log("\n=== RENDU RÉEL — Paliers (D2-2, Z3) ===");
+check("bandeau de dépassement (fr), Gratuit à 73 commandes en septembre 2026 : titre avec le mois, 73 au-delà des 50 de l'offre Gratuit, « Rien n'est bloqué », offre adaptée Pro, lien « Voir les offres » ; aucun bandeau sans dépassement ni sans données",
+  wrap("fr", React.createElement("div", null, React.createElement(PlanOverageBanner, { usage: usageFree }), React.createElement(PlanOverageBanner, { usage: { ...usageFree, over: false, suggest: null } }), React.createElement(PlanOverageBanner, { usage: null }))),
+  (h) => (h.match(/<s-banner/g) ?? []).length === 1 && /tone="warning" heading="Volume dépassé en septembre 2026"/.test(h) && /73 commandes, au-delà des 50 comprises dans l(?:&#x27;|')offre Gratuit/.test(h) && /Rien n(?:&#x27;|')est bloqué/.test(h) && /L(?:&#x27;|')offre adaptée à ce volume : Pro\./.test(h) && /href="\/app\/settings\/plan"[^>]*>Voir les offres</.test(h));
+check("bandeau de dépassement (en), Expert à 3 412 commandes : offre sur mesure, bouton « Request a custom plan » (mailto), pas de lien d'offre",
+  wrap("en", React.createElement(PlanOverageBanner, { usage: usageExpert, customHref: "mailto:mathys.aubert@icloud.com?subject=x" })),
+  (h) => /Volume exceeded in September 2026/.test(h) && /3,412 orders, above the 3,000 included in the Expert plan/.test(h) && /custom plan is available on request/.test(h) && /<s-button variant="secondary" href="mailto:mathys\.aubert@icloud\.com\?subject=x" target="_blank">Request a custom plan<\/s-button>/.test(h) && !/settings\/plan/.test(h));
+check("offre (fr), Gratuit dépassé : bandeau en tête (sans lien, on est déjà sur l'écran Offre), carte Pro « Adaptée à votre volume » (à la place de « Recommandé »), lien « Demander une offre sur mesure » sous l'offre sur mesure",
+  wrap("fr", React.createElement(PlanCards, { view: planView({ ent: { isPro: false, isExpert: false, source: "live" }, appPricing: true, changeUrl: "https://admin.shopify.com/store/s/charges/a/pricing_plans", suggest: "pro" }), usage: usageFree, customHref: "mailto:mathys.aubert@icloud.com?subject=x" })),
+  (h) => /Volume dépassé en septembre 2026/.test(h) && !/>Voir les offres</.test(h) && /class="tcc-plan is-suggested" data-plan="pro"[\s\S]*?tcc-badge--warn">Adaptée à votre volume</.test(h) && !/Recommandé/.test(h) && /<a href="mailto:mathys\.aubert@icloud\.com\?subject=x" target="_blank" rel="noreferrer">Demander une offre sur mesure<\/a>/.test(h));
+
+const { LockedFeature } = await vite.ssrLoadModule("/app/components/overview/LockedFeature.jsx");
+console.log("\n=== RENDU RÉEL — Accès par offre (D2-2, Z4) ===");
+check("Simulateur non inclus (fr) : carte explicative (ce qu'il fait, dont la mesure à 30 jours), badge Pro, « Inclus dans l'offre Pro. », lien « Voir les offres »",
+  wrap("fr", React.createElement(LockedFeature, { feature: "simulator", plan: "pro" })),
+  (h) => /data-locked="simulator"/.test(h) && /tcc-badge--accent">Pro</.test(h) && /Testez une décision avant de la prendre/.test(h) && /mesurés 30 jours après/.test(h) && /Inclus dans l(?:&#x27;|')offre Pro\./.test(h) && /href="\/app\/settings\/plan"[^>]*>Voir les offres</.test(h) && !/ style="/.test(h));
+check("Simulateur, offre indéterminée (en) : message de rechargement, aucun verrou affirmé ni lien",
+  wrap("en", React.createElement(LockedFeature, { feature: "simulator", plan: "pro", indeterminate: true })),
+  (h) => /could not be verified right now/.test(h) && !/Included in the/.test(h) && !/settings\/plan/.test(h));
 
 console.log("\n=== RENDU RÉEL — Coûts produits (F4-D1a) ===");
 check("résumé et liste (fr) : filtres Tous (2) / À compléter (1) / Partiels (1) / Complets (0) ; Tee « Partiel : 1 variantes sur 2 » + « Douane à confirmer » ; Poster « À compléter » ; liens Saisir les coûts",

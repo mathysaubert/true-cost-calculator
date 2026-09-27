@@ -70,6 +70,9 @@ if (mode === "prepare") {
     DIRECT_URL: test.DIRECT_URL,
     TOKEN_ENCRYPTION_KEY: test.TOKEN_ENCRYPTION_KEY,
     BETA_SHOPS: "",
+    // D2-1 : l'app de test est en App Pricing (activée d'office) ; identifiant vu dans ses adresses admin.
+    SHOPIFY_APP_PRICING: "1",
+    SHOPIFY_APP_HANDLE: "tcc-tarification-test",
   };
   for (const [k, v] of Object.entries(env)) if (v == null) fail(`${k} : valeur source manquante`);
   fs.writeFileSync(ENVF, `# D2-0 — généré par scripts/d2_0_dev.mjs prepare ; base tcc-test et app de test. Jamais dans le chat.\n` + Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n") + "\n");

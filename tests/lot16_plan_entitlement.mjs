@@ -14,8 +14,6 @@ import {
   fallbackEntitlement,
   retryForLiveEnvelope,
   subscriptionNodesFromResponse,
-  planToOrderCap,
-  alertingEnabled,
   previousMonth,
   FROZEN_GRACE_DAYS,
 } from "../app/lib/plan.js";
@@ -200,17 +198,8 @@ console.log("\n── robustesse ──");
 }
 
 // ── C4a : plafond d'alerting — palier par plan + activation (bascule différée, borne inclusive) ──
-console.log("\n── C4a : planToOrderCap + alertingEnabled ──");
+console.log("\n── previousMonth (le plafond 200 / 1 000 / illimité et alertingEnabled sont retirés en D2-2, Y3 ; paliers : lot 43) ──");
 {
-  ok(planToOrderCap({ isPro: false, isExpert: false }) === 200, "Gratuit → 200 commandes/mois");
-  ok(planToOrderCap({ isPro: true, isExpert: false }) === 1000, "Pro → 1000 commandes/mois");
-  ok(planToOrderCap({ isPro: true, isExpert: true }) === Infinity, "Expert → illimité (Infinity)");
-  ok(planToOrderCap({}) === 200, "entrée vide (défaut) → 200 (traité comme gratuit)");
-  // alertingEnabled : compteur du mois PRÉCÉDENT vs palier, borne INCLUSIVE.
-  ok(alertingEnabled(150, 200) === true, "150 ≤ 200 (sous le palier) → alerting activé");
-  ok(alertingEnabled(200, 200) === true, "200 == 200 (pile au palier, borne inclusive) → encore activé");
-  ok(alertingEnabled(201, 200) === false, "201 > 200 (dépassé au mois M) → alerting coupé (M+1)");
-  ok(alertingEnabled(999999, Infinity) === true, "Expert (cap Infinity) → toujours activé quel que soit le volume");
   // previousMonth : mois M-1 au format "YYYY-MM", rollover d'année géré.
   ok(previousMonth(new Date("2026-07-16T12:00:00Z")) === "2026-06", "juillet 2026 → '2026-06' (mois normal)");
   ok(previousMonth(new Date("2026-01-05T12:00:00Z")) === "2025-12", "janvier 2026 → '2025-12' (rollover année)");

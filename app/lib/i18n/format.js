@@ -66,6 +66,13 @@ export function formatDay(day, locale = "en", { timeZone = "UTC", style = "mediu
   } catch { return new Intl.DateTimeFormat(loc, { dateStyle: style }).format(d); }
 }
 
+// "YYYY-MM" → « septembre 2026 » / « September 2026 » (D2-2 : mois du palier). Invalide → texte brut.
+export function formatMonth(ym, locale = "en") {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym ?? ""));
+  if (!m) return String(ym ?? "");
+  return new Intl.DateTimeFormat(safeLocale(locale), { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 15, 12)));
+}
+
 export function formatDateTime(iso, locale = "en", { timeZone = "UTC" } = {}) {
   if (!iso) return null;
   const d = new Date(iso);

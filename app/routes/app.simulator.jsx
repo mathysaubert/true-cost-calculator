@@ -8,6 +8,8 @@ import { supabase } from "../supabase.server";
 import { parsePeriodDays } from "../lib/overview.js";
 import { loadOverview } from "../lib/overview.server.js";
 import { recordDecision, reviewDueDecisions } from "../lib/decisions.server.js";
+import { loadEntitlement } from "../lib/billing.server.js";
+import { LockedFeature } from "../components/overview/LockedFeature.jsx";
 import { parseScenario, runScenario, scenarioRecord } from "../lib/simulator/index.js";
 import { parseCompareIds } from "../lib/simulator/compare.js";
 import { reviewAt } from "../lib/simulator/observed.js";
@@ -39,8 +41,14 @@ async function loadCompare(shop, ids) {
   return ids.map((id) => (data ?? []).find((d) => d.id === id)).filter(Boolean).map(rowToMemory).filter((m) => m.mode !== "new").map((m) => ({ id: m.id, rule_id: m.rule_id, values: m.values, decided_at: m.decided_at }));
 }
 
+// D2-2 (Z4) : le Simulateur (et la mesure à 30 jours qu'il affiche) fait partie de l'offre Pro. Offre
+// indéterminée → message de rechargement ; dernière offre connue (cache) → elle décide.
+const simulatorLock = (ent) => (ent.source === "indeterminate" ? "indeterminate" : ent.isPro ? null : "pro");
+
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
+  const lock = simulatorLock(await loadEntitlement({ admin, shop: session.shop }));
+  if (lock) return { locked: lock };
   const url = new URL(request.url);
   const days = parsePeriodDays(url.searchParams.get("days"));
   const compareIds = parseCompareIds(url.searchParams.get("compare"));
@@ -61,6 +69,7 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
+  if (simulatorLock(await loadEntitlement({ admin, shop: session.shop }))) return { intent: "simulate", ok: false, error: "not_included" };
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
   const days = parsePeriodDays(form.get("days"));
@@ -93,6 +102,16 @@ export default function SimulatorPage() {
   const view = useLoaderData();
   const result = useActionData();
   const { t } = useI18n();
+  if (view.locked) {
+    return (
+      <s-page heading={t("nav.simulator")} inlineSize="large">
+        <div className="tcc tcc-overview tcc-stack">
+          <SectionRail current="simulator" />
+          <LockedFeature feature="simulator" plan="pro" indeterminate={view.locked === "indeterminate"} />
+        </div>
+      </s-page>
+    );
+  }
   const empty = (view.ordersInPeriod ?? 0) === 0;
   return (
     <s-page heading={t("nav.simulator")} inlineSize="large">

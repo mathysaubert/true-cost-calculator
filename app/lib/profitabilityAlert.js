@@ -189,9 +189,13 @@ export function computeProfitabilityChanges(current = [], prevStateMap = new Map
 //   'advance_only' → alerting actif mais pas d'email → on avance l'état sans envoyer (G3).
 //   'send'         → alerting actif + email → tenter l'envoi ; l'avance (SSI succès) est résolue
 //                    par shouldAdvanceState.
-export function decideAlertAction({ alertingEnabled, hasEmail, hasBasculements } = {}) {
+// D2-2 (Z4) : included = l'alerte e-mail fait partie de l'offre (Pro et Expert). Non incluse (Gratuit) →
+// 'advance_only' : l'état avance sans e-mail, pour qu'un passage en Pro ne déclenche pas une rafale
+// d'alertes périmées. Défaut true (offre indéterminée : un doute ne doit jamais avaler une alerte).
+export function decideAlertAction({ alertingEnabled, hasEmail, hasBasculements, included = true } = {}) {
   if (!hasBasculements) return "nothing";
   if (!alertingEnabled) return "suppress";
+  if (!included) return "advance_only";
   return hasEmail ? "send" : "advance_only";
 }
 

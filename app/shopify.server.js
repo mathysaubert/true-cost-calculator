@@ -7,9 +7,12 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+import { LEGACY_PRO_NAME, LEGACY_EXPERT_NAME } from "./lib/plan.js";
 
-export const PLAN_PRO = "True Cost Calculator Pro";
-export const PLAN_EXPERT = "True Cost Calculator Expert";
+// Noms des plans de l'API de facturation (avant App Pricing) : servent tant que l'interrupteur
+// SHOPIFY_APP_PRICING est éteint, et restent reconnus pour les abonnés existants (plan.js).
+export const PLAN_PRO = LEGACY_PRO_NAME;
+export const PLAN_EXPERT = LEGACY_EXPERT_NAME;
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -25,11 +28,11 @@ const shopify = shopifyApp({
   },
   // trialDays au niveau du PLAN (sibling de lineItems, cf. BillingConfigSubscriptionLineItemPlan).
   // billing.request lit billingConfig.trialDays et le passe à appSubscriptionCreate → l'essai de
-  // 7 jours annoncé sur la fiche App Store est réellement appliqué à la charge (les handlers
+  // 14 jours (décision Y5) est réellement appliqué à la charge (les handlers
   // subscribe/subscribe_expert n'ont rien à passer, la valeur vient d'ici).
   billing: {
     [PLAN_PRO]: {
-      trialDays: 7,
+      trialDays: 14,
       lineItems: [
         {
           amount: 29,
@@ -39,7 +42,7 @@ const shopify = shopifyApp({
       ],
     },
     [PLAN_EXPERT]: {
-      trialDays: 7,
+      trialDays: 14,
       lineItems: [
         {
           amount: 69,

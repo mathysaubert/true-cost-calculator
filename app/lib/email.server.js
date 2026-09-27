@@ -6,6 +6,7 @@
 import { Resend } from "resend";
 import { renderLossAlertEmail } from "./profitabilityAlert.js";
 import { renderDunningEmail, renderDunningResolvedEmail } from "./dunning.js";
+import { renderOverageEmail } from "./overageEmail.js";
 
 // Expéditeur de TEST : onboarding@resend.dev (autorisé sans domaine vérifié).
 // Prod : remplacer par une adresse d'un domaine vérifié Resend avant envoi à de vrais marchands.
@@ -68,6 +69,24 @@ export async function sendDunningResolved({ to, shop, plan }) {
     return true;
   } catch (e) {
     console.error(`[Dunning] exception confirmation pour ${shop} :`, e?.message ?? e);
+    return false;
+  }
+}
+
+// ── D2-2 (Z3) : e-mail unique de dépassement de volume ─────────────────────────────────────────
+// Ne THROW JAMAIS (retourne bool) : le cron ne marque le mois comme notifié qu'après un true.
+export async function sendOverageEmail({ to, shop, usage }) {
+  if (!to) { console.warn(`[Overage] email absent pour ${shop}, envoi ignoré`); return false; }
+  if (!process.env.RESEND_API_KEY) { console.error("[Overage] RESEND_API_KEY manquant, envoi ignoré"); return false; }
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const appUrl = shop && process.env.SHOPIFY_API_KEY ? `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/settings/plan` : null;
+    const { subject, html, text } = renderOverageEmail({ shop, usage, appUrl });
+    const { error } = await resend.emails.send({ from: FROM, to, subject, html, text });
+    if (error) { console.error(`[Overage] envoi KO pour ${shop} :`, error?.message ?? error); return false; }
+    return true;
+  } catch (e) {
+    console.error(`[Overage] exception envoi pour ${shop} :`, e?.message ?? e);
     return false;
   }
 }
